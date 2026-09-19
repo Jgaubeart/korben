@@ -46,7 +46,7 @@ function safeJson(value: any, max = 30000) {
 
 const TOOL_ACTION_GUIDE: Record<string, string> = {
   "github.read":
-    "Valid actions: repo, file, branch, pull_request, commit, compare, workflow_run, workflow_jobs. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Use workflow_run with {run_id} to verify the exact Actions run SHA/status/conclusion, and workflow_jobs with {run_id} to verify job and step conclusions. Never use create/update/merge here.",
+    "Valid actions: repo, file, branch, pull_request, commit, compare, workflow_runs, workflow_run, workflow_jobs. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Use workflow_runs with {head_sha} to discover Actions runs tied to the exact commit under review; then use workflow_run with {run_id} to verify SHA/status/conclusion and workflow_jobs with {run_id} to verify job and step conclusions. Never use create/update/merge here.",
   "github.write":
     "Valid actions: create_branch, update_file, sync_branch. sync_branch may only merge main/master into an existing feature branch; it must never target main/master or force-reset history.",
   "github.pr":
@@ -395,7 +395,7 @@ export async function POST(request: Request) {
               action: {
                 type: "string",
                 description:
-                  "Provider action. Examples: repo, file, branch, pull_request, commit, compare, workflow_run, workflow_jobs, create_branch, update_file, sync_branch, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
+                  "Provider action. Examples: repo, file, branch, pull_request, commit, compare, workflow_runs, workflow_run, workflow_jobs, create_branch, update_file, sync_branch, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
               },
               params_json: {
                 type: "string",

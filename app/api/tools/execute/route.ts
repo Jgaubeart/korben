@@ -160,6 +160,18 @@ async function executeGitHub(tool: string, action: string, params: Record<string
       );
     }
 
+    if (action === "workflow_runs") {
+      const headSha = String(params.head_sha || params.sha || "").trim();
+
+      if (!headSha) {
+        throw new Error("head_sha is required.");
+      }
+
+      return githubRequest(
+        `/repos/${owner}/${name}/actions/runs?head_sha=${encodeURIComponent(headSha)}&per_page=20`
+      );
+    }
+
     if (action === "workflow_run") {
       const runId = Number(params.run_id || params.id);
 
