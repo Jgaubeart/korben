@@ -7141,3 +7141,450 @@ html[data-ambient-tone="night"] .webgl-orb .spirit-orb-webgl {
   .command-v2-quote { display: none; }
   .command-v2-hero { margin-top: 0 !important; }
 }
+
+
+/* Zen listener: preserve the approved left/right-node composition.
+   The outer orbit carries both nodes clockwise; the inner orbit counter-rotates. */
+.zen-ring-outer {
+  animation: korbenOrbitOuter 34s linear infinite;
+}
+
+.zen-ring-inner {
+  animation: korbenOrbitInner 46s linear infinite;
+}
+
+.zen-ring .zen-node {
+  position: absolute;
+  top: 50%;
+}
+
+.zen-ring .zen-node-left {
+  left: 0;
+  transform: translate(-50%, -50%);
+}
+
+.zen-ring .zen-node-right {
+  right: 0;
+  transform: translate(50%, -50%);
+}
+
+.zen-listener.thinking .zen-ring-outer {
+  animation: korbenOrbitOuter 8s linear infinite;
+}
+
+.zen-listener.thinking .zen-ring-inner {
+  animation: korbenOrbitInner 11s linear infinite;
+}
+
+@keyframes korbenOrbitOuter {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes korbenOrbitInner {
+  from { transform: translate(-50%, -50%) rotate(180deg); }
+  to { transform: translate(-50%, -50%) rotate(-180deg); }
+}
+
+
+/* === Zen authentication experience === */
+.zen-auth-shell {
+  --auth-bg: #f5efe6;
+  --auth-text: #102d2a;
+  --auth-muted: #7b817a;
+  --auth-line: rgba(117, 99, 74, .16);
+  --auth-panel: rgba(255, 252, 246, .68);
+  --auth-field: rgba(255, 253, 248, .78);
+  --auth-gold: #b98b52;
+  --auth-gold-soft: rgba(194, 151, 91, .56);
+  --auth-button: #244941;
+  --auth-button-text: #f8f3e9;
+
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 72px 24px 62px;
+  color: var(--auth-text);
+  background:
+    radial-gradient(circle at 82% 78%, rgba(218, 186, 137, .18), transparent 20%),
+    radial-gradient(circle at 23% 12%, rgba(193, 211, 199, .22), transparent 27%),
+    linear-gradient(180deg, #f8f4ed 0%, var(--auth-bg) 58%, #eee8df 100%);
+}
+
+.zen-auth-shell::before,
+.zen-auth-shell::after {
+  content: "";
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  bottom: -4%;
+  height: 39%;
+  pointer-events: none;
+  opacity: .26;
+  filter: blur(5px);
+  background:
+    radial-gradient(ellipse at 12% 100%, rgba(83, 105, 92, .19) 0 21%, transparent 22%),
+    radial-gradient(ellipse at 38% 100%, rgba(103, 121, 108, .16) 0 25%, transparent 26%),
+    radial-gradient(ellipse at 65% 100%, rgba(98, 116, 105, .15) 0 24%, transparent 25%),
+    radial-gradient(ellipse at 91% 100%, rgba(82, 102, 91, .17) 0 23%, transparent 24%);
+  transform: scaleY(.72);
+  transform-origin: bottom;
+}
+
+.zen-auth-shell::after {
+  bottom: -10%;
+  height: 34%;
+  opacity: .14;
+  filter: blur(11px);
+  transform: scaleY(.62) scaleX(1.08);
+}
+
+.zen-auth-wordmark {
+  position: absolute;
+  top: 34px;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  color: var(--auth-text);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: .42em;
+}
+
+.zen-auth-card {
+  position: relative;
+  z-index: 2;
+  width: min(430px, 100%);
+  padding: 38px 38px 34px;
+  border: 1px solid var(--auth-line);
+  border-radius: 28px;
+  background: var(--auth-panel);
+  box-shadow:
+    0 30px 80px rgba(62, 66, 56, .10),
+    inset 0 1px 0 rgba(255,255,255,.62);
+  backdrop-filter: blur(24px) saturate(.88);
+  -webkit-backdrop-filter: blur(24px) saturate(.88);
+}
+
+.zen-auth-loading {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 28px;
+}
+
+.zen-auth-presence {
+  position: relative;
+  width: 126px;
+  height: 126px;
+  margin: 0 auto 24px;
+}
+
+.zen-auth-ring,
+.zen-auth-pearl {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+.zen-auth-ring {
+  border: 1px solid var(--auth-gold-soft);
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-radius: 50%;
+}
+
+.zen-auth-ring-outer {
+  width: 122px;
+  height: 122px;
+  animation: authOrbitOuter 36s linear infinite;
+}
+
+.zen-auth-ring-inner {
+  width: 86px;
+  height: 86px;
+  opacity: .76;
+  animation: authOrbitInner 48s linear infinite;
+}
+
+.zen-auth-node {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d8b176;
+  box-shadow: 0 0 10px rgba(214, 176, 116, .20);
+}
+
+.zen-auth-node-left {
+  left: 0;
+  transform: translate(-50%, -50%);
+}
+
+.zen-auth-node-right {
+  right: 0;
+  transform: translate(50%, -50%);
+}
+
+.zen-auth-pearl {
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.75);
+  background:
+    radial-gradient(circle at 33% 28%, #fffdf7 0 6%, #f1dfc0 32%, #d3ac76 68%, #9d744d 100%);
+  box-shadow:
+    inset -7px -8px 16px rgba(78, 53, 31, .12),
+    inset 7px 7px 15px rgba(255,255,255,.40),
+    0 0 25px rgba(218, 179, 114, .22);
+  animation: authPearlBreathe 6s ease-in-out infinite;
+}
+
+.zen-auth-copy {
+  text-align: center;
+}
+
+.zen-auth-copy .kicker {
+  display: block;
+  color: var(--auth-gold);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .32em;
+}
+
+.zen-auth-copy h1 {
+  margin: 9px 0 8px;
+  color: var(--auth-text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(34px, 4vw, 43px);
+  font-weight: 400;
+  letter-spacing: -.025em;
+}
+
+.zen-auth-copy p,
+.zen-auth-shell .auth-status {
+  margin: 0;
+  color: var(--auth-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.zen-auth-shell .auth-status {
+  text-align: center;
+  letter-spacing: .03em;
+}
+
+.zen-auth-form {
+  gap: 15px;
+  margin-top: 30px;
+}
+
+.zen-auth-form label {
+  gap: 7px;
+  color: color-mix(in srgb, var(--auth-text) 76%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.zen-auth-form input {
+  height: 49px;
+  padding: 0 15px;
+  border: 1px solid var(--auth-line);
+  border-radius: 14px;
+  background: var(--auth-field);
+  color: var(--auth-text);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.42);
+}
+
+.zen-auth-form input::placeholder {
+  color: color-mix(in srgb, var(--auth-muted) 68%, transparent);
+}
+
+.zen-auth-form input:focus {
+  border-color: rgba(185, 139, 82, .46);
+  box-shadow:
+    0 0 0 3px rgba(185, 139, 82, .07),
+    inset 0 1px 0 rgba(255,255,255,.48);
+}
+
+.zen-auth-submit {
+  min-height: 50px;
+  margin-top: 3px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--auth-button);
+  color: var(--auth-button-text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  box-shadow: 0 10px 24px rgba(31, 67, 60, .14);
+  transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+
+.zen-auth-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(31, 67, 60, .18);
+}
+
+.zen-auth-shell .auth-error {
+  border-color: rgba(160, 87, 74, .18);
+  background: rgba(160, 87, 74, .07);
+  color: #915a4d;
+}
+
+.zen-auth-footer {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  z-index: 2;
+  transform: translateX(-50%);
+  color: var(--auth-muted);
+  font-size: 8px;
+  letter-spacing: .40em;
+  white-space: nowrap;
+}
+
+@keyframes authOrbitOuter {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes authOrbitInner {
+  from { transform: translate(-50%, -50%) rotate(180deg); }
+  to { transform: translate(-50%, -50%) rotate(-180deg); }
+}
+
+@keyframes authPearlBreathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(.98); }
+  50% { transform: translate(-50%, -50%) scale(1.035); }
+}
+
+@media (prefers-color-scheme: dark) {
+  .zen-auth-shell {
+    --auth-bg: #173a35;
+    --auth-text: #f5f0e6;
+    --auth-muted: #b2b9b0;
+    --auth-line: rgba(225, 207, 176, .14);
+    --auth-panel: rgba(21, 54, 49, .62);
+    --auth-field: rgba(17, 48, 43, .70);
+    --auth-gold: #d8b176;
+    --auth-gold-soft: rgba(225, 188, 127, .62);
+    --auth-button: #e3c18c;
+    --auth-button-text: #18352f;
+    background:
+      radial-gradient(circle at 82% 78%, rgba(230, 189, 120, .13), transparent 20%),
+      radial-gradient(circle at 23% 12%, rgba(81, 126, 111, .20), transparent 27%),
+      linear-gradient(180deg, #163b36 0%, #21483f 54%, #173630 100%);
+  }
+
+  .zen-auth-shell::before,
+  .zen-auth-shell::after {
+    opacity: .18;
+    background:
+      radial-gradient(ellipse at 12% 100%, rgba(6, 25, 22, .58) 0 21%, transparent 22%),
+      radial-gradient(ellipse at 38% 100%, rgba(8, 29, 25, .49) 0 25%, transparent 26%),
+      radial-gradient(ellipse at 65% 100%, rgba(10, 31, 27, .46) 0 24%, transparent 25%),
+      radial-gradient(ellipse at 91% 100%, rgba(5, 24, 21, .54) 0 23%, transparent 24%);
+  }
+
+  .zen-auth-card {
+    box-shadow:
+      0 34px 92px rgba(0, 20, 17, .24),
+      inset 0 1px 0 rgba(255,255,255,.08);
+  }
+
+  .zen-auth-form input {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+  }
+
+  .zen-auth-shell .auth-error {
+    background: rgba(187, 108, 92, .11);
+    color: #efb9aa;
+  }
+}
+
+html[data-theme="light"] .zen-auth-shell {
+  --auth-bg: #f5efe6;
+  --auth-text: #102d2a;
+  --auth-muted: #7b817a;
+  --auth-line: rgba(117, 99, 74, .16);
+  --auth-panel: rgba(255, 252, 246, .68);
+  --auth-field: rgba(255, 253, 248, .78);
+  --auth-gold: #b98b52;
+  --auth-gold-soft: rgba(194, 151, 91, .56);
+  --auth-button: #244941;
+  --auth-button-text: #f8f3e9;
+  background:
+    radial-gradient(circle at 82% 78%, rgba(218, 186, 137, .18), transparent 20%),
+    radial-gradient(circle at 23% 12%, rgba(193, 211, 199, .22), transparent 27%),
+    linear-gradient(180deg, #f8f4ed 0%, #f5efe6 58%, #eee8df 100%);
+}
+
+html[data-theme="dark"] .zen-auth-shell {
+  --auth-bg: #173a35;
+  --auth-text: #f5f0e6;
+  --auth-muted: #b2b9b0;
+  --auth-line: rgba(225, 207, 176, .14);
+  --auth-panel: rgba(21, 54, 49, .62);
+  --auth-field: rgba(17, 48, 43, .70);
+  --auth-gold: #d8b176;
+  --auth-gold-soft: rgba(225, 188, 127, .62);
+  --auth-button: #e3c18c;
+  --auth-button-text: #18352f;
+  background:
+    radial-gradient(circle at 82% 78%, rgba(230, 189, 120, .13), transparent 20%),
+    radial-gradient(circle at 23% 12%, rgba(81, 126, 111, .20), transparent 27%),
+    linear-gradient(180deg, #163b36 0%, #21483f 54%, #173630 100%);
+}
+
+@media (max-width: 560px) {
+  .zen-auth-shell {
+    padding: 78px 17px 64px;
+  }
+
+  .zen-auth-wordmark {
+    top: 28px;
+    font-size: 16px;
+  }
+
+  .zen-auth-card {
+    padding: 31px 23px 27px;
+    border-radius: 23px;
+  }
+
+  .zen-auth-presence {
+    width: 112px;
+    height: 112px;
+    margin-bottom: 20px;
+  }
+
+  .zen-auth-ring-outer {
+    width: 108px;
+    height: 108px;
+  }
+
+  .zen-auth-ring-inner {
+    width: 76px;
+    height: 76px;
+  }
+
+  .zen-auth-pearl {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zen-auth-ring-outer,
+  .zen-auth-ring-inner,
+  .zen-auth-pearl {
+    animation: none !important;
+  }
+}
