@@ -387,20 +387,27 @@ export default function Home() {
       createdTasks = data || [];
       setTasks(createdTasks);
 
-      const approvals = plan.tasks
-        .map((task, index) => ({ task, createdTask: createdTasks[index] }))
-        .filter(({ task, createdTask }) => task.approval_level >= 2 && createdTask)
-        .map(({ task, createdTask }) => ({
-          objective_id: objective.id,
-          task_id: createdTask.id,
-          action_type: task.title,
-          risk_level: task.approval_level,
-          status: "pending",
-          request_payload: {
-            description: task.description,
-            agent_system_key: task.agent_system_key,
+      const approvals = plan.tasks.flatMap((task, index) => {
+        const createdTask = createdTasks[index];
+
+        if (task.approval_level < 2 || !createdTask) {
+          return [];
+        }
+
+        return [
+          {
+            objective_id: objective.id,
+            task_id: createdTask.id,
+            action_type: task.title,
+            risk_level: task.approval_level,
+            status: "pending",
+            request_payload: {
+              description: task.description,
+              agent_system_key: task.agent_system_key,
+            },
           },
-        }));
+        ];
+      });
 
       if (approvals.length) {
         await supabase.from("approvals").insert(approvals);
