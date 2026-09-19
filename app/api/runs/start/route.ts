@@ -43,6 +43,30 @@ function safeJson(value: any, max = 30000) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+
+const TOOL_ACTION_GUIDE: Record<string, string> = {
+  "github.read":
+    "Valid actions: repo, file, branch, pull_request. Never use list/create/update/merge here.",
+  "github.write":
+    "Valid actions: create_branch, update_file. All writes must be on a feature branch, never main/master.",
+  "github.pr":
+    "Valid action: create only. Use this only to open a pull request; do not use it to list/read PRs.",
+  "github.merge":
+    "Valid action: merge only. This is L2 and requires explicit approval.",
+  "vercel.read":
+    "Valid actions: project, deployments, deployment.",
+  "vercel.preview":
+    "Valid action: deploy only. Branch/ref must not be main/master.",
+  "vercel.production":
+    "Production actions are L3 and require explicit owner approval.",
+  "supabase.read":
+    "Valid action: select.",
+  "supabase.write":
+    "Valid actions: insert, update.",
+  "knowledge.search":
+    "Valid action: search.",
+};
+
 const riskByTool: Record<string, number> = {
   "github.read": 0,
   "github.write": 1,
@@ -280,6 +304,8 @@ export async function POST(request: Request) {
     `You are ${agent.name}, Korben's ${agent.role}.`,
     "Complete only the assigned task. Do not broaden scope.",
     "Use tools only when they are necessary and only through execute_tool.",
+    "Use only the exact actions listed in the tool action contract. Never invent provider actions.",
+    "For read-only verification, use read tools only. Do not probe a write tool with a read/list action.",
     "Never attempt to bypass an approval boundary.",
     "GitHub writes must use a feature branch, never main or master.",
     "If a required tool is unavailable or an approval is required, clearly state the blocker and stop.",
@@ -294,6 +320,11 @@ export async function POST(request: Request) {
     task.description ? `Task details: ${task.description}` : "",
     `Acceptance criteria: ${safeJson(task.acceptance_criteria || [])}`,
     `Allowed tools: ${allowedToolKeys.join(", ") || "none"}`,
+    allowedToolKeys.length
+      ? `Exact tool action contract:\n${allowedToolKeys
+          .map((key) => `- ${key}: ${TOOL_ACTION_GUIDE[key] || "Use only documented actions."}`)
+          .join("\n")}`
+      : "No tools are available.",
     knowledgeContext
       ? `Shared knowledge retrieved before execution: ${safeJson(knowledgeContext, 16000)}`
       : "Shared knowledge search returned no additional context.",
