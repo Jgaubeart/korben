@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserSupabaseClient } from "../lib/supabase/client";
 import { AmbientScene } from "../components/ambient/AmbientScene";
-import { getGreetingForHour, getSimulatedTime } from "../lib/ambient-time";
+import { SpiritOrb } from "../components/orb/SpiritOrb";
+import { getAmbientState, getGreetingForHour, getSimulatedTime } from "../lib/ambient-time";
 
 type Message = {
   id?: string;
@@ -1718,136 +1719,14 @@ export default function Home() {
 
   const renderOrb = (large = false) => (
     <button
-      className={`calm-orb spirit-orb ${orbState} ${large ? "large" : ""}`}
+      className={`calm-orb spirit-orb webgl-orb ${orbState} ${large ? "large" : ""}`}
       onClick={toggleVoiceMode}
       aria-label="Talk to Korben"
     >
-      <span className="orb-glow" />
-      <span className="orb-glass-shell" />
-      <span className="orb-inner-field">
-        <svg className="spirit-wave-svg" viewBox="0 0 320 320" aria-hidden="true">
-          <defs>
-            <linearGradient id="silkA" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="rgba(255,244,214,0)" />
-              <stop offset="18%" stopColor="rgba(255,244,214,.34)" />
-              <stop offset="48%" stopColor="rgba(255,255,255,.66)" />
-              <stop offset="72%" stopColor="rgba(176,242,226,.42)" />
-              <stop offset="100%" stopColor="rgba(57,150,137,0)" />
-            </linearGradient>
-            <linearGradient id="silkB" x1="100%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="rgba(176,242,226,0)" />
-              <stop offset="22%" stopColor="rgba(176,242,226,.34)" />
-              <stop offset="50%" stopColor="rgba(246,255,252,.58)" />
-              <stop offset="78%" stopColor="rgba(255,232,194,.36)" />
-              <stop offset="100%" stopColor="rgba(255,232,194,0)" />
-            </linearGradient>
-            <linearGradient id="filamentA" x1="0%" y1="50%" x2="100%" y2="50%">
-              <stop offset="0%" stopColor="rgba(255,255,255,0)" />
-              <stop offset="24%" stopColor="rgba(255,248,223,.78)" />
-              <stop offset="52%" stopColor="rgba(255,255,255,.92)" />
-              <stop offset="78%" stopColor="rgba(176,242,226,.76)" />
-              <stop offset="100%" stopColor="rgba(176,242,226,0)" />
-            </linearGradient>
-
-            <filter id="silkWarp" x="-90%" y="-90%" width="280%" height="280%">
-              <feTurbulence type="fractalNoise" baseFrequency=".007 .012" numOctaves="3" seed="19" result="noise" />
-              <feDisplacementMap in="SourceGraphic" in2="noise" scale="14" xChannelSelector="R" yChannelSelector="B" result="warp" />
-              <feGaussianBlur in="warp" stdDeviation="2.2" result="softWarp" />
-              <feMerge>
-                <feMergeNode in="softWarp" />
-                <feMergeNode in="warp" />
-              </feMerge>
-            </filter>
-
-            <filter id="filamentGlow" x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur stdDeviation="2.2" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-
-            <filter id="mistBlur" x="-90%" y="-90%" width="280%" height="280%">
-              <feGaussianBlur stdDeviation="20" />
-            </filter>
-
-            <clipPath id="spiritSphereClip">
-              <circle cx="160" cy="160" r="147" />
-            </clipPath>
-          </defs>
-
-          <g clipPath="url(#spiritSphereClip)" className="spirit-vortex">
-            <g className="silk-sheet silk-one" filter="url(#silkWarp)">
-              <path
-                d="M18 206
-                   C58 161 96 118 136 109
-                   C178 100 205 122 227 151
-                   C249 180 269 196 304 182
-                   C282 220 248 246 210 247
-                   C169 248 145 221 124 194
-                   C103 167 80 164 53 181
-                   C39 190 27 199 18 206 Z"
-                fill="url(#silkA)"
-              />
-            </g>
-
-            <g className="silk-sheet silk-two" filter="url(#silkWarp)">
-              <path
-                d="M73 54
-                   C112 77 132 104 145 138
-                   C160 178 173 214 207 242
-                   C233 263 263 270 294 255
-                   C274 282 242 295 210 287
-                   C170 278 148 246 133 210
-                   C117 170 100 145 73 126
-                   C52 111 43 79 73 54 Z"
-                fill="url(#silkB)"
-              />
-            </g>
-
-            <g className="silk-sheet silk-three" filter="url(#silkWarp)">
-              <path
-                d="M118 303
-                   C115 254 128 217 158 186
-                   C190 153 224 136 252 105
-                   C270 85 284 56 286 24
-                   C304 58 305 91 292 121
-                   C276 157 244 181 213 205
-                   C179 231 161 259 153 302 Z"
-                fill="url(#silkA)"
-                opacity=".62"
-              />
-            </g>
-
-            <g className="silk-filament filament-one" filter="url(#filamentGlow)">
-              <path d="M31 217 C72 179 109 137 144 132 C182 126 202 155 226 177 C250 198 277 201 305 182"
-                fill="none" stroke="url(#filamentA)" strokeWidth="5.5" strokeLinecap="round" />
-            </g>
-            <g className="silk-filament filament-two" filter="url(#filamentGlow)">
-              <path d="M87 61 C121 92 132 125 149 163 C169 209 198 244 247 262"
-                fill="none" stroke="url(#filamentA)" strokeWidth="4" strokeLinecap="round" opacity=".74" />
-            </g>
-            <g className="silk-filament filament-three" filter="url(#filamentGlow)">
-              <path d="M121 297 C128 251 144 222 176 195 C207 169 242 144 270 99"
-                fill="none" stroke="url(#filamentA)" strokeWidth="3" strokeLinecap="round" opacity=".54" />
-            </g>
-
-            <g className="spirit-mist-svg" filter="url(#mistBlur)">
-              <ellipse cx="90" cy="112" rx="90" ry="50" className="mist-blob blob-a" />
-              <ellipse cx="228" cy="204" rx="94" ry="56" className="mist-blob blob-b" />
-              <ellipse cx="177" cy="82" rx="66" ry="36" className="mist-blob blob-c" />
-              <ellipse cx="154" cy="226" rx="80" ry="42" className="mist-blob blob-d" />
-            </g>
-          </g>
-        </svg>
-        <span className="orb-core-dot" />
-        <span className="orb-particle particle-one" />
-        <span className="orb-particle particle-two" />
-        <span className="orb-particle particle-three" />
-        <span className="orb-particle particle-four" />
-      </span>
-      <span className="orb-glass-highlight highlight-one" />
-      <span className="orb-glass-highlight highlight-two" />
+      <SpiritOrb
+        state={orbState}
+        tone={getAmbientState(ambientClock).current.key}
+      />
     </button>
   );
 
