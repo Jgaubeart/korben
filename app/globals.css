@@ -1270,3 +1270,27 @@ button { color: inherit; }
   .metric-strip { display: none; }
   .view-heading h1 { font-size: 24px; }
 }
+
+
+.workspace-select {
+  height: 36px;
+  min-width: 170px;
+  padding: 0 34px 0 12px;
+  border: 1px solid rgba(105,220,255,.12);
+  border-radius: 999px;
+  background: rgba(10,24,36,.72);
+  color: #9fc7d7;
+  font-size: 10px;
+  outline: none;
+  cursor: pointer;
+}
+
+.workspace-select:focus {
+  border-color: rgba(105,220,255,.35);
+  box-shadow: 0 0 0 3px rgba(105,220,255,.05);
+}
+
+.workspace-select option {
+  background: #08131d;
+  color: #d8f6ff;
+}
