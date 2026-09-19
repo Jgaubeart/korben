@@ -160,6 +160,30 @@ async function executeGitHub(tool: string, action: string, params: Record<string
       );
     }
 
+    if (action === "workflow_run") {
+      const runId = Number(params.run_id || params.id);
+
+      if (!Number.isFinite(runId) || runId <= 0) {
+        throw new Error("run_id is required.");
+      }
+
+      return githubRequest(
+        `/repos/${owner}/${name}/actions/runs/${runId}`
+      );
+    }
+
+    if (action === "workflow_jobs") {
+      const runId = Number(params.run_id || params.id);
+
+      if (!Number.isFinite(runId) || runId <= 0) {
+        throw new Error("run_id is required.");
+      }
+
+      return githubRequest(
+        `/repos/${owner}/${name}/actions/runs/${runId}/jobs?per_page=100`
+      );
+    }
+
     throw new Error("Unsupported GitHub read action.");
   }
 
