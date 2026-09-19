@@ -5776,3 +5776,159 @@ html[data-ambient-tone="night"] .webgl-orb .spirit-orb-webgl {
     filter: none !important;
   }
 }
+
+
+/* Static glass spirit orb */
+.webgl-orb {
+  width: clamp(290px, 30vw, 400px);
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent !important;
+  box-shadow: none !important;
+  filter: none !important;
+  overflow: visible;
+  transform: none;
+  animation: none !important;
+  position: relative;
+}
+
+.webgl-orb::before,
+.webgl-orb::after {
+  display: none !important;
+}
+
+.spirit-orb-webgl,
+.static-glass-orb {
+  position: absolute;
+  inset: -10%;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.static-glass-orb {
+  --orb-tint-deep: 18, 80, 74;
+  --orb-tint-mid: 53, 149, 134;
+  --orb-tint-light: 184, 234, 220;
+  --orb-tint-warm: 248, 232, 199;
+  filter:
+    drop-shadow(0 12px 30px rgba(8, 48, 51, .14))
+    drop-shadow(0 0 30px rgba(var(--orb-tint-light), .11));
+}
+
+.static-glass-orb-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.static-glass-orb .orb-aura-circle {
+  animation: static-orb-aura 5.8s ease-in-out infinite;
+}
+
+.static-glass-orb .orb-core-halo {
+  animation: static-orb-core 4.4s ease-in-out infinite;
+  transform-origin: 210px 210px;
+}
+
+.static-glass-orb .orb-core {
+  animation: static-orb-core-dot 4.4s ease-in-out infinite;
+  transform-origin: 210px 210px;
+}
+
+.static-glass-orb .orb-stars {
+  animation: static-orb-stars 7.5s ease-in-out infinite alternate;
+  transform-origin: 210px 210px;
+}
+
+.static-glass-orb .orb-wave {
+  transform-origin: 210px 210px;
+}
+
+.static-glass-orb.listening .orb-core-halo,
+.static-glass-orb.listening .orb-aura-circle {
+  animation-duration: 3.3s;
+}
+
+.static-glass-orb.thinking .orb-core-halo,
+.static-glass-orb.thinking .orb-aura-circle {
+  animation-duration: 2.6s;
+}
+
+.static-glass-orb.responding .orb-core-halo {
+  animation-duration: 2.9s;
+}
+
+.static-glass-orb.working .orb-core-halo {
+  animation-duration: 3.6s;
+}
+
+.static-glass-orb.orb-tone-pre-dawn,
+.static-glass-orb.orb-tone-dawn {
+  filter:
+    hue-rotate(8deg)
+    saturate(.88)
+    drop-shadow(0 12px 30px rgba(17, 50, 70, .19))
+    drop-shadow(0 0 30px rgba(174, 214, 220, .12));
+}
+
+.static-glass-orb.orb-tone-sunrise,
+.static-glass-orb.orb-tone-golden-hour,
+.static-glass-orb.orb-tone-sunset {
+  filter:
+    sepia(.10)
+    saturate(.92)
+    drop-shadow(0 12px 32px rgba(91, 66, 43, .15))
+    drop-shadow(0 0 32px rgba(255, 214, 168, .14));
+}
+
+.static-glass-orb.orb-tone-blue-hour,
+.static-glass-orb.orb-tone-night {
+  filter:
+    hue-rotate(12deg)
+    saturate(1.08)
+    brightness(.96)
+    drop-shadow(0 16px 34px rgba(0, 18, 36, .30))
+    drop-shadow(0 0 34px rgba(120, 204, 220, .15));
+}
+
+.webgl-orb.large {
+  width: min(440px, 46vw);
+}
+
+@keyframes static-orb-aura {
+  0%, 100% { opacity: .44; transform: scale(.985); }
+  50% { opacity: .74; transform: scale(1.015); }
+}
+
+@keyframes static-orb-core {
+  0%, 100% { opacity: .62; transform: scale(.92); }
+  50% { opacity: 1; transform: scale(1.13); }
+}
+
+@keyframes static-orb-core-dot {
+  0%, 100% { transform: scale(.98); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes static-orb-stars {
+  0% { opacity: .55; transform: rotate(-1deg) scale(.995); }
+  100% { opacity: .82; transform: rotate(1.5deg) scale(1.01); }
+}
+
+@media (max-width: 860px) {
+  .webgl-orb {
+    width: clamp(235px, 62vw, 320px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .static-glass-orb .orb-aura-circle,
+  .static-glass-orb .orb-core-halo,
+  .static-glass-orb .orb-core,
+  .static-glass-orb .orb-stars {
+    animation: none !important;
+  }
+}
