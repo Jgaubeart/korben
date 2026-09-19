@@ -183,9 +183,459 @@ export default function Home() {
         }
       }
 
-      let objective: { id: string; title: string } | null = null;
+      const { data: objective } = await supabase
+        .from("objectives")
+        .select("id,title,status,created_at")
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (objective) {
+        setActiveObjective(objective.title);
+        const { data: taskRows } = await supabase
+          .from("tasks")
+          .select("id,title,description,status,sequence,assigned_agent_id")
+          .eq("objective_id", objective.id)
+          .order("sequence");
+        setTasks(taskRows || []);
+      }
+
+      setLoadingState("System online");
+    };
+
+    bootstrap();
+  }, [supabase]);
+
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    recognition.onstart = () => {
+      setListening(true);
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+
+      if (
+        voiceModeRef.current &&
+        !sendingRef.current &&
+        !window.speechSynthesis?.speaking
+      ) {
+        window.setTimeout(() => {
+          try {
+            recognition.start();
+          } catch {}
+        }, 450);
+      }
+    };
+
+    recognition.onerror = () => {
+      setListening(false);
+    };
+
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      let hasFinalResult = false;
+
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          hasFinalResult = true;
+        }
+      }
+
+      const normalized = normalizeKorbenName(transcript.trim());
+
+      if (!conversationActiveRef.current) {
+        if (/\bkorben\b/i.test(normalized)) {
+          conversationActiveRef.current = true;
+          setConversationActive(true);
+          wakeDetectedRef.current = true;
+          voiceSubmittedRef.current = false;
+          setVoiceState("listening");
+          setInputMode("voice");
+          clearConversationTimeout();
+
+          const remainder = normalized
+            .replace(/^.*?\bkorben\b[\s,.:;!?-]*/i, "")
+            .trim();
+
+          setInput(remainder);
+
+          if (hasFinalResult && remainder && !sendingRef.current) {
+            voiceSubmittedRef.current = true;
+            try {
+              recognition.stop();
+            } catch {}
+            void sendMessageRef.current(remainder, "voice");
+          }
+        }
+        return;
+      }
+
+      const spokenText = normalized.trim();
+
+      if (/^(korben[\s,.:;!?-]*)?(go to sleep|sleep|standby|stop listening)$/i.test(spokenText)) {
+        try {
+          recognition.stop();
+        } catch {}
+        returnToWakeStandby();
+        return;
+      }
+
+      if (spokenText) {
+        clearConversationTimeout();
+        setVoiceState("listening");
+        setInput(spokenText);
+      }
+
+      if (
+        hasFinalResult &&
+        spokenText &&
+        !voiceSubmittedRef.current &&
+        !sendingRef.current
+      ) {
+        voiceSubmittedRef.current = true;
+        try {
+          recognition.stop();
+        } catch {}
+        void sendMessageRef.current(spokenText, "voice");
+      }
+    };
+    recognitionRef.current = recognition;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.code === "Space" && !event.repeat) {
+        event.preventDefault();
+        conversationActiveRef.current = true;
+        setConversationActive(true);
+        wakeDetectedRef.current = true;
+        clearConversationTimeout();
+        setVoiceState("listening");
+        setInputMode("voice");
+        try {
+          recognition.start();
+        } catch {}
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      try {
+        recognition.stop();
+      } catch {}
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
+  const clearConversationTimeout = () => {
+    if (conversationTimeoutRef.current) {
+      window.clearTimeout(conversationTimeoutRef.current);
+      conversationTimeoutRef.current = null;
+    }
+  };
+
+  const returnToWakeStandby = () => {
+    clearConversationTimeout();
+    conversationActiveRef.current = false;
+    setConversationActive(false);
+    wakeDetectedRef.current = false;
+    voiceSubmittedRef.current = false;
+    setInput("");
+    setVoiceState("waiting");
+
+    if (voiceModeRef.current && speechSupported) {
+      window.setTimeout(() => {
+        try {
+          recognitionRef.current?.start();
+        } catch {}
+      }, 350);
+    }
+  };
+
+  const armConversationTimeout = () => {
+    clearConversationTimeout();
+    conversationTimeoutRef.current = window.setTimeout(() => {
+      returnToWakeStandby();
+    }, 30000);
+  };
+
+  const signIn = async () => {
+    const email = loginEmail.trim();
+
+    if (!email || !loginPassword) {
+      setLoginError("Enter your email and password.");
+      return;
+    }
+
+    setLoginBusy(true);
+    setLoginError("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: loginPassword,
+    });
+
+    if (error) {
+      setLoginError(error.message);
+      setLoginBusy(false);
+      return;
+    }
+
+    setSignedIn(true);
+    setLoginPassword("");
+    setLoadingState("Connecting…");
+    setLoginBusy(false);
+    window.location.reload();
+  };
+
+  const signOut = async () => {
+    clearConversationTimeout();
+    await supabase.auth.signOut();
+    setSignedIn(false);
+    setMessages([fallbackGreeting]);
+    setTasks([]);
+    setProjectId(null);
+    setConversationId(null);
+    setActiveObjective("No active objective");
+    setLoadingState("Sign in required");
+  };
+
+  const toggleVoiceMode = () => {
+    const next = !voiceMode;
+    voiceModeRef.current = next;
+    setVoiceMode(next);
+    clearConversationTimeout();
+
+    if (!next) {
+      conversationActiveRef.current = false;
+      setConversationActive(false);
+      wakeDetectedRef.current = false;
+      voiceSubmittedRef.current = false;
+      setVoiceState("waiting");
+      setInput("");
+      window.speechSynthesis?.cancel();
+      try {
+        recognitionRef.current?.stop();
+      } catch {}
+      return;
+    }
+
+    conversationActiveRef.current = false;
+    setConversationActive(false);
+    wakeDetectedRef.current = false;
+    voiceSubmittedRef.current = false;
+    setVoiceState("waiting");
+
+    if (speechSupported) {
+      window.setTimeout(() => {
+        try {
+          recognitionRef.current?.start();
+        } catch {}
+      }, 250);
+    }
+  };
+
+  const fallbackPlan = (requestText: string): OrchestrationPlan => ({
+    intent: "work",
+    requires_execution: false,
+    title: requestText.length > 72 ? `${requestText.slice(0, 69)}…` : requestText,
+    summary: requestText,
+    assistant_reply:
+      "I could not reach the intent router, so I preserved this as structured work without executing any external action.",
+    tasks: [
+      {
+        title: "Product Spec",
+        description: "Define requirements and acceptance criteria",
+        agent_system_key: "product_manager",
+        acceptance_criteria: ["Requirements are explicit and testable."],
+        approval_level: 0,
+      },
+      {
+        title: "Architecture Review",
+        description: "Map dependencies and implementation path",
+        agent_system_key: "solutions_architect",
+        acceptance_criteria: ["Architecture and dependencies are documented."],
+        approval_level: 0,
+      },
+      {
+        title: "Build",
+        description: "Implement the requested change on a feature branch",
+        agent_system_key: "frontend_engineer",
+        acceptance_criteria: ["Requested behavior is implemented."],
+        approval_level: 1,
+      },
+      {
+        title: "QA & Security",
+        description: "Test behavior, permissions and regressions",
+        agent_system_key: "qa_engineer",
+        acceptance_criteria: ["Acceptance criteria pass without critical regressions."],
+        approval_level: 0,
+      },
+      {
+        title: "Preview Deploy",
+        description: "Ship a Vercel preview for owner review",
+        agent_system_key: "devops_engineer",
+        acceptance_criteria: ["A preview deployment is available for review."],
+        approval_level: 1,
+      },
+    ],
+  });
+
+  const ensureWorkspace = async (): Promise<{ projectId: string; conversationId: string }> => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !userData.user) {
+      throw new Error("You are not signed in to Korben. Sign in first, then try again.");
+    }
+
+    let resolvedProjectId = projectId;
+
+    if (!resolvedProjectId) {
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("id")
+        .eq("slug", "general-workspace")
+        .single();
+
+      if (projectError || !project) {
+        throw new Error("Korben could not load the current project.");
+      }
+
+      resolvedProjectId = project.id;
+      setProjectId(project.id);
+    }
+
+    if (!resolvedProjectId) {
+      throw new Error("Korben could not resolve the current project.");
+    }
+
+    let resolvedConversationId = conversationId;
+
+    if (!resolvedConversationId) {
+      const { data: existingConversation } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("project_id", resolvedProjectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingConversation) {
+        resolvedConversationId = existingConversation.id;
+      } else {
+        const { data: createdConversation, error: conversationError } = await supabase
+          .from("conversations")
+          .insert({
+            project_id: resolvedProjectId,
+            title: "Command Center",
+          })
+          .select("id")
+          .single();
+
+        if (conversationError || !createdConversation) {
+          throw new Error("Korben could not start a conversation.");
+        }
+
+        resolvedConversationId = createdConversation.id;
+      }
+
+      if (resolvedConversationId) {
+        setConversationId(resolvedConversationId);
+      }
+    }
+
+    if (!resolvedConversationId) {
+      throw new Error("Korben could not resolve the current conversation.");
+    }
+
+    return {
+      projectId: resolvedProjectId,
+      conversationId: resolvedConversationId,
+    };
+  };
+
+  const sendMessage = async (
+    messageText?: string,
+    mode?: "text" | "voice"
+  ) => {
+    const text = normalizeKorbenName((messageText ?? input).trim());
+    if (!text || sendingRef.current) return;
+
+    sendingRef.current = true;
+    setSending(true);
+    setInput("");
+    setLoadingState("Korben is thinking…");
+    setVoiceState("thinking");
+    const currentInputMode = mode ?? inputMode;
+    const userMessage: Message = { role: "user", text, inputMode: currentInputMode };
+    setMessages((current) => [...current, userMessage]);
+
+    let resolvedProjectId: string;
+    let resolvedConversationId: string;
+
+    try {
+      const workspace = await ensureWorkspace();
+      resolvedProjectId = workspace.projectId;
+      resolvedConversationId = workspace.conversationId;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Korben could not connect to the workspace.";
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", text: message },
+      ]);
+      setLoadingState("Connection required");
+      sendingRef.current = false;
+      setSending(false);
+      return;
+    }
+
+    const { data: insertedMessage } = await supabase
+      .from("messages")
+      .insert({
+        conversation_id: resolvedConversationId,
+        role: "user",
+        content: text,
+        input_mode: currentInputMode,
+      })
+      .select("id")
+      .single();
+
+    let plan = fallbackPlan(text);
+
+    try {
+      const planResponse = await fetch("/api/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request: text,
+          projectName: "General Workspace",
+        }),
+      });
+
+      if (planResponse.ok) {
+        plan = (await planResponse.json()) as OrchestrationPlan;
+      }
+    } catch (error) {
+      console.error("Korben planning failed; using fallback plan.", error);
+    }
+
+    let objective: { id: string; title: string } | null = null;
     let createdTasks: Task[] = [];
-    let orchestrationRunId: string | null = null;
 
     if (plan.tasks.length > 0 && !["conversation", "question"].includes(plan.intent)) {
       const { data: createdObjective } = await supabase
@@ -195,109 +645,76 @@ export default function Home() {
           conversation_id: resolvedConversationId,
           title: plan.title,
           description: plan.summary || text,
-          status: plan.intent === "approval" ? "awaiting_approval" : "planned",
+          status: "planned",
           priority: "normal",
         })
         .select("id,title")
         .single();
 
       objective = createdObjective;
-
-      if (objective) {
-        setActiveObjective(objective.title);
-
-        const taskRows = plan.tasks.map((task, index) => ({
-          objective_id: objective!.id,
-          assigned_agent_id:
-            agents.find((agent) => agent.system_key === task.agent_system_key)?.id || null,
-          title: task.title,
-          description: task.description,
-          status: task.approval_level >= 2 ? "awaiting_approval" : "queued",
-          sequence: index + 1,
-          acceptance_criteria: task.acceptance_criteria,
-        }));
-
-        const { data } = await supabase
-          .from("tasks")
-          .insert(taskRows)
-          .select("id,title,description,status,sequence,assigned_agent_id")
-          .order("sequence");
-
-        createdTasks = data || [];
-        setTasks(createdTasks);
-
-        const approvals = plan.tasks.flatMap((task, index) => {
-          const createdTask = createdTasks[index];
-
-          if (task.approval_level < 2 || !createdTask) {
-            return [];
-          }
-
-          return [
-            {
-              objective_id: objective!.id,
-              task_id: createdTask.id,
-              action_type: task.title,
-              risk_level: task.approval_level,
-              status: "pending",
-              request_payload: {
-                description: task.description,
-                agent_system_key: task.agent_system_key,
-                intent: plan.intent,
-              },
-            },
-          ];
-        });
-
-        if (approvals.length) {
-          await supabase.from("approvals").insert(approvals);
-        }
-
-        const orchestrator = agents.find((agent) => agent.system_key === "orchestrator");
-        const { data: run } = await supabase
-          .from("agent_runs")
-          .insert({
-            agent_id: orchestrator?.id || null,
-            status: "complete",
-            model: "gpt-5.6-sol",
-            input: {
-              request: text,
-              input_mode: currentInputMode,
-              intent: plan.intent,
-            },
-            output: plan,
-            started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-          })
-          .select("id")
-          .single();
-
-        orchestrationRunId = run?.id || null;
-
-        if (createdTasks.length) {
-          await supabase.from("run_events").insert(
-            createdTasks.map((task) => {
-              const owner = agents.find((agent) => agent.id === task.assigned_agent_id);
-              return {
-                run_id: orchestrationRunId,
-                project_id: resolvedProjectId,
-                task_id: task.id,
-                agent_id: task.assigned_agent_id || null,
-                event_type: "task_routed",
-                status: task.status,
-                message: owner
-                  ? `Routed "${task.title}" to ${owner.name}`
-                  : `Created unassigned task "${task.title}"`,
-                payload: {
-                  objective_id: objective!.id,
-                  intent: plan.intent,
-                },
-              };
-            })
-          );
-        }
-      }
     }
+
+    if (objective) {
+      setActiveObjective(objective.title);
+
+      const taskRows = plan.tasks.map((task, index) => ({
+        objective_id: objective.id,
+        assigned_agent_id:
+          agents.find((agent) => agent.system_key === task.agent_system_key)?.id || null,
+        title: task.title,
+        description: task.description,
+        status: "queued",
+        sequence: index + 1,
+        acceptance_criteria: task.acceptance_criteria,
+      }));
+
+      const { data } = await supabase
+        .from("tasks")
+        .insert(taskRows)
+        .select("id,title,description,status,sequence,assigned_agent_id")
+        .order("sequence");
+
+      createdTasks = data || [];
+      setTasks(createdTasks);
+
+      const approvals = plan.tasks.flatMap((task, index) => {
+        const createdTask = createdTasks[index];
+
+        if (task.approval_level < 2 || !createdTask) {
+          return [];
+        }
+
+        return [
+          {
+            objective_id: objective.id,
+            task_id: createdTask.id,
+            action_type: task.title,
+            risk_level: task.approval_level,
+            status: "pending",
+            request_payload: {
+              description: task.description,
+              agent_system_key: task.agent_system_key,
+            },
+          },
+        ];
+      });
+
+      if (approvals.length) {
+        await supabase.from("approvals").insert(approvals);
+      }
+
+      const orchestrator = agents.find((agent) => agent.system_key === "orchestrator");
+      await supabase.from("agent_runs").insert({
+        agent_id: orchestrator?.id || null,
+        status: "complete",
+        model: "gpt-5.6-sol",
+        input: { request: text, input_mode: currentInputMode },
+        output: plan,
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      });
+    }
+
     await supabase
       .from("conversations")
       .update({ updated_at: new Date().toISOString() })
@@ -334,7 +751,6 @@ export default function Home() {
           task_count: createdTasks.length,
           intent: plan.intent,
           requires_execution: plan.requires_execution,
-          run_id: orchestrationRunId,
         },
       },
     ]);
