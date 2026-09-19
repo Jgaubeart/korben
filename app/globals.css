@@ -7143,7 +7143,8 @@ html[data-ambient-tone="night"] .webgl-orb .spirit-orb-webgl {
 }
 
 
-/* Zen listener: orbit nodes are physically attached to their rings. */
+/* Zen listener: preserve the approved left/right-node composition.
+   The outer orbit carries both nodes clockwise; the inner orbit counter-rotates. */
 .zen-ring-outer {
   animation: korbenOrbitOuter 34s linear infinite;
 }
@@ -7154,22 +7155,17 @@ html[data-ambient-tone="night"] .webgl-orb .spirit-orb-webgl {
 
 .zen-ring .zen-node {
   position: absolute;
-  left: auto;
-  top: auto;
-  transform: none;
+  top: 50%;
 }
 
-.zen-ring .zen-node-outer {
-  left: 50%;
-  top: 0;
+.zen-ring .zen-node-left {
+  left: 0;
   transform: translate(-50%, -50%);
 }
 
-.zen-ring .zen-node-inner {
-  left: 50%;
-  top: auto;
-  bottom: 0;
-  transform: translate(-50%, 50%);
+.zen-ring .zen-node-right {
+  right: 0;
+  transform: translate(50%, -50%);
 }
 
 .zen-listener.thinking .zen-ring-outer {
