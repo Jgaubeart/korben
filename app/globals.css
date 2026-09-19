@@ -5975,3 +5975,139 @@ html[data-ambient-tone="night"] .webgl-orb .spirit-orb-webgl {
     width: clamp(220px, 56vw, 290px) !important;
   }
 }
+
+
+/* Generated simple glass orb asset */
+.webgl-orb {
+  width: clamp(250px, 25vw, 330px) !important;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible;
+  position: relative;
+  transform: none;
+  animation: none !important;
+}
+
+.webgl-orb::before,
+.webgl-orb::after {
+  display: none !important;
+}
+
+.webgl-orb.large {
+  width: min(360px, 38vw) !important;
+}
+
+.simple-glass-orb {
+  position: absolute;
+  inset: -4%;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transform-origin: center;
+}
+
+.simple-glass-orb-image {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+  filter:
+    drop-shadow(0 14px 30px rgba(7, 42, 47, .14))
+    drop-shadow(0 0 18px rgba(220, 245, 240, .10));
+  animation: simple-orb-breathe 6.5s ease-in-out infinite;
+}
+
+.simple-glass-orb-glow {
+  position: absolute;
+  z-index: 1;
+  inset: 18%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 250, 230, .18) 0%,
+    rgba(187, 232, 224, .11) 42%,
+    rgba(120, 190, 185, .05) 66%,
+    transparent 76%
+  );
+  filter: blur(16px);
+  animation: simple-orb-glow 6.5s ease-in-out infinite;
+}
+
+.simple-glass-orb.listening .simple-glass-orb-image,
+.simple-glass-orb.listening .simple-glass-orb-glow {
+  animation-duration: 3.6s;
+}
+
+.simple-glass-orb.thinking .simple-glass-orb-image,
+.simple-glass-orb.thinking .simple-glass-orb-glow {
+  animation-duration: 2.8s;
+}
+
+.simple-glass-orb.responding .simple-glass-orb-image,
+.simple-glass-orb.responding .simple-glass-orb-glow {
+  animation-duration: 3.2s;
+}
+
+.simple-glass-orb.working .simple-glass-orb-image,
+.simple-glass-orb.working .simple-glass-orb-glow {
+  animation-duration: 4.1s;
+}
+
+.simple-glass-orb.orb-tone-pre-dawn,
+.simple-glass-orb.orb-tone-dawn {
+  filter: hue-rotate(8deg) saturate(.92) brightness(.98);
+}
+
+.simple-glass-orb.orb-tone-sunrise,
+.simple-glass-orb.orb-tone-golden-hour,
+.simple-glass-orb.orb-tone-sunset {
+  filter: sepia(.08) saturate(.96) brightness(1.01);
+}
+
+.simple-glass-orb.orb-tone-blue-hour,
+.simple-glass-orb.orb-tone-night {
+  filter: hue-rotate(12deg) saturate(1.05) brightness(.94);
+}
+
+@keyframes simple-orb-breathe {
+  0%, 100% {
+    transform: scale(.985);
+    opacity: .96;
+  }
+  50% {
+    transform: scale(1.015);
+    opacity: 1;
+  }
+}
+
+@keyframes simple-orb-glow {
+  0%, 100% {
+    transform: scale(.92);
+    opacity: .34;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: .62;
+  }
+}
+
+@media (max-width: 860px) {
+  .webgl-orb {
+    width: clamp(220px, 56vw, 290px) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .simple-glass-orb-image,
+  .simple-glass-orb-glow {
+    animation: none !important;
+  }
+}
