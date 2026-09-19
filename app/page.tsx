@@ -1625,58 +1625,200 @@ export default function Home() {
     activeView === "focus" ? "Focus" :
     "Preflight";
 
+  const currentTask =
+    tasks.find((task) => task.status === "in_progress") ||
+    tasks.find((task) => task.status === "awaiting_approval") ||
+    tasks.find((task) => task.status === "queued");
+  const currentAgent = agentById(currentTask?.assigned_agent_id);
+  const latestRunEvent = runEvents[0];
+  const workingAgentCount = agents.filter((agent) => agent.status === "working").length;
+  const hasPendingApproval = approvals.some((approval) => approval.status === "pending");
+  const coreMode = hasPendingApproval
+    ? "blocked"
+    : tasks.some((task) => task.status === "in_progress")
+      ? "executing"
+      : focusRunning && !focusPaused
+        ? "focus"
+        : voiceState;
+
   const renderCommandCenter = () => (
-    <section className="korben-stage">
+    <section className={`korben-stage alive ${coreMode}`}>
       <div className="ambient-grid" />
+      <div className="ambient-scan scan-a" />
+      <div className="ambient-scan scan-b" />
+      <div className="ambient-scan scan-c" />
+      <div className="ambient-particles" aria-hidden="true">
+        {Array.from({ length: 22 }).map((_, index) => (
+          <i key={index} style={{ "--i": index } as React.CSSProperties} />
+        ))}
+      </div>
+
+      <div className="command-hud">
+        <div className="hud-cluster">
+          <span className="hud-label">CORE STATE</span>
+          <strong>{runtimeState}</strong>
+        </div>
+        <div className="hud-cluster">
+          <span className="hud-label">ROUTING</span>
+          <strong>AUTO · {currentProjectName}</strong>
+        </div>
+        <div className="hud-cluster">
+          <span className="hud-label">AGENTS</span>
+          <strong>{workingAgentCount} ACTIVE / {agents.length} READY</strong>
+        </div>
+        <div className="hud-cluster">
+          <span className="hud-label">APPROVALS</span>
+          <strong className={hasPendingApproval ? "warn" : ""}>
+            {hasPendingApproval ? `${approvals.filter((approval) => approval.status === "pending").length} WAITING` : "CLEAR"}
+          </strong>
+        </div>
+      </div>
 
       <div className="core-column">
-        <div
-          className={`korben-core ${voiceState} ${voiceMode ? "armed" : ""}`}
-          onClick={toggleVoiceMode}
-          role="button"
-          tabIndex={0}
-          aria-label="Korben voice core"
-        >
-          <div className="core-orbit orbit-one" />
-          <div className="core-orbit orbit-two" />
-          <div className="core-orbit orbit-three" />
-          <div className="core-energy" />
-          <div className="core-center"><span>K</span></div>
-          <div className="voice-ripple ripple-one" />
-          <div className="voice-ripple ripple-two" />
-          <div className="voice-ripple ripple-three" />
+        <div className="telemetry-rail telemetry-left">
+          <div className="telemetry-title">MISSION</div>
+          <div className="telemetry-value">{progress}%</div>
+          <div className="telemetry-copy">{activeObjective}</div>
+          <div className="telemetry-progress"><span style={{ width: `${progress}%` }} /></div>
+
+          <div className="telemetry-title spaced">CURRENT AGENT</div>
+          <div className="agent-live-row">
+            <span className={`live-dot ${currentTask?.status || "idle"}`} />
+            <div>
+              <strong>{currentAgent?.name || "Korben"}</strong>
+              <small>{currentTask?.title || "Standing by"}</small>
+            </div>
+          </div>
+
+          <div className="telemetry-title spaced">LAST SIGNAL</div>
+          <div className="telemetry-event">
+            <strong>{latestRunEvent?.event_type?.replaceAll("_", " ") || "system ready"}</strong>
+            <small>{latestRunEvent?.message || "No active execution event."}</small>
+          </div>
         </div>
 
-        <div className="core-status">
-          <span className={`status-light ${voiceState}`} />
-          <strong>{statusCopy}</strong>
+        <div className="reactor-shell">
+          <div className="reactor-label top">KORBEN / CORE</div>
+          <div
+            className={`korben-core ${coreMode} ${voiceMode ? "armed" : ""}`}
+            onClick={toggleVoiceMode}
+            role="button"
+            tabIndex={0}
+            aria-label="Korben voice core"
+          >
+            <div className="reactor-crosshair horizontal" />
+            <div className="reactor-crosshair vertical" />
+            <div className="core-orbit orbit-one" />
+            <div className="core-orbit orbit-two" />
+            <div className="core-orbit orbit-three" />
+            <div className="core-segment-ring">
+              {Array.from({ length: 18 }).map((_, index) => (
+                <i key={index} style={{ "--n": index } as React.CSSProperties} />
+              ))}
+            </div>
+            <div className="core-energy" />
+            <div className="core-center"><span>K</span></div>
+            <div className="voice-ripple ripple-one" />
+            <div className="voice-ripple ripple-two" />
+            <div className="voice-ripple ripple-three" />
+            <div className="reactor-node node-1" />
+            <div className="reactor-node node-2" />
+            <div className="reactor-node node-3" />
+            <div className="reactor-node node-4" />
+          </div>
+          <div className="reactor-label bottom">{runtimeState.toUpperCase()}</div>
+        </div>
+
+        <div className="organ-dock" aria-label="Korben organs">
+          <button className="organ-card live" onClick={() => setActiveView("brain")}>
+            <span className="organ-icon">◇</span>
+            <div><strong>BRAIN</strong><small>{knowledgeEntries.length} memories / facts</small></div>
+            <b>LIVE</b>
+          </button>
+          <button className={`organ-card ${tasks.length ? "live" : ""}`} onClick={() => setActiveView("work")}>
+            <span className="organ-icon">◎</span>
+            <div><strong>MISSIONS</strong><small>{tasks.filter((task) => task.status !== "complete").length} open tasks</small></div>
+            <b>{tasks.length ? "ARMED" : "IDLE"}</b>
+          </button>
+          <button className={`organ-card ${focusRunning ? "live" : ""}`} onClick={() => setActiveView("focus")}>
+            <span className="organ-icon">◷</span>
+            <div><strong>FOCUS</strong><small>{focusRunning ? focusClock : "accountability bay"}</small></div>
+            <b>{focusRunning ? "ON" : "OFF"}</b>
+          </button>
+          <button className="organ-card live" onClick={() => setActiveView("tools")}>
+            <span className="organ-icon">⌁</span>
+            <div><strong>TOOLS</strong><small>{tools.filter((tool) => tool.status === "available").length} capabilities</small></div>
+            <b>LIVE</b>
+          </button>
+          <button
+            className={`organ-card ${preflightReport?.overall === "healthy" ? "live" : preflightReport ? "warn" : ""}`}
+            onClick={() => setActiveView("preflight")}
+          >
+            <span className="organ-icon">✓</span>
+            <div><strong>PREFLIGHT</strong><small>{preflightReport ? preflightReport.overall : "health unknown"}</small></div>
+            <b>{preflightReport ? preflightReport.overall.toUpperCase() : "CHECK"}</b>
+          </button>
+          <button className="organ-card dormant" title="Camera organ deferred pending explicit privacy design">
+            <span className="organ-icon">◉</span>
+            <div><strong>EYES</strong><small>sensor bay reserved</small></div>
+            <b>LOCKED</b>
+          </button>
+          <button className="organ-card dormant" title="Screen organ deferred pending explicit privacy design">
+            <span className="organ-icon">▣</span>
+            <div><strong>WATCH</strong><small>screen bay reserved</small></div>
+            <b>LOCKED</b>
+          </button>
+          <button className="organ-card dormant" title="Calling organ planned after safe facts and communication approvals">
+            <span className="organ-icon">☎</span>
+            <div><strong>CALLS</strong><small>external comms bay</small></div>
+            <b>LOCKED</b>
+          </button>
+        </div>
+
+        <div className="core-status alive-status">
+          <span className={`status-light ${coreMode}`} />
+          <strong>{runtimeState}</strong>
           <p>
-            {voiceState === "listening"
-              ? input || "I’m listening."
-              : voiceState === "thinking"
-                ? "Processing your request."
-                : voiceState === "speaking"
-                  ? "Korben is responding."
-                  : voiceMode
-                    ? conversationActive
-                      ? "Conversation is open. Speak naturally."
-                      : "Wake me by saying “Korben”."
-                    : "Activate voice or type below."}
+            {hasPendingApproval
+              ? "A protected action is waiting for your approval."
+              : currentTask?.status === "in_progress"
+                ? `${currentAgent?.name || "An agent"} is executing: ${currentTask.title}`
+                : focusRunning && !focusPaused
+                  ? `Focus lock active on: ${focusGoal || "current priority"}`
+                  : voiceState === "listening"
+                    ? input || "I’m listening."
+                    : voiceState === "thinking"
+                      ? "Routing intent and building the execution path."
+                      : voiceState === "speaking"
+                        ? "Korben is responding."
+                        : voiceMode
+                          ? conversationActive
+                            ? "Conversation is open. Speak naturally."
+                            : "Say “Korben” to wake the system."
+                          : "Voice offline. Type below or activate the ear."}
           </p>
         </div>
 
-        <div className="voice-actions">
+        <div className={`signal-wave ${coreMode}`} aria-hidden="true">
+          {Array.from({ length: 36 }).map((_, index) => (
+            <i key={index} style={{ "--i": index } as React.CSSProperties} />
+          ))}
+        </div>
+
+        <div className="voice-actions alive-actions">
           <button
             className={`voice-primary ${voiceMode ? "active" : ""}`}
             onClick={toggleVoiceMode}
             disabled={!speechSupported}
           >
             <span className="voice-primary-dot" />
-            {voiceMode ? "Voice online" : "Activate voice"}
+            {voiceMode ? "Ear online" : "Activate ear"}
           </button>
+          <button className="voice-secondary" onClick={() => setActiveView("focus")}>Focus</button>
+          <button className="voice-secondary" onClick={() => setActiveView("preflight")}>Preflight</button>
         </div>
 
-        <div className="command-input">
+        <div className="command-input alive-input">
           <input
             value={input}
             onChange={(event) => {
@@ -1688,7 +1830,7 @@ export default function Home() {
                 void sendMessage();
               }
             }}
-            placeholder="Type a message to Korben…"
+            placeholder="Tell Korben what you want done…"
           />
           <button onClick={() => void sendMessage()} disabled={!input.trim() || sending}>
             {sending ? "…" : "↗"}
@@ -1698,15 +1840,23 @@ export default function Home() {
         {!speechSupported && (
           <div className="voice-warning">Voice recognition is unavailable in this browser.</div>
         )}
+
+        <div className="mission-ribbon">
+          <span>ACTIVE OBJECTIVE</span>
+          <strong>{activeObjective}</strong>
+          <small>
+            {currentTask ? `STEP ${currentTask.sequence} · ${currentTask.status.replaceAll("_", " ")}` : "NO ACTIVE STEP"}
+          </small>
+        </div>
       </div>
 
-      <aside className="conversation-rail">
+      <aside className="conversation-rail alive-rail">
         <div className="rail-header">
           <div>
             <span>CONVERSATION</span>
-            <strong>Command log</strong>
+            <strong>Live command channel</strong>
           </div>
-          <span className="rail-live">● LIVE</span>
+          <span className="rail-live">● LINKED</span>
         </div>
 
         <div className="rail-messages">
@@ -1726,7 +1876,7 @@ export default function Home() {
                 <span>KORBEN</span>
                 <small>PROCESSING</small>
               </div>
-              <p>Thinking…</p>
+              <p>Parsing intent and routing work…</p>
             </div>
           )}
         </div>
@@ -1734,11 +1884,11 @@ export default function Home() {
         <div className="rail-footer">
           <div>
             <span className="footer-label">SYSTEM</span>
-            <strong>{loadingState}</strong>
+            <strong>{runtimeState}</strong>
           </div>
           <div>
-            <span className="footer-label">ACTIVE OBJECTIVE</span>
-            <strong>{activeObjective}</strong>
+            <span className="footer-label">MISSION</span>
+            <strong>{progress}% complete</strong>
           </div>
           <div>
             <span className="footer-label">TASKS</span>
@@ -1748,7 +1898,6 @@ export default function Home() {
       </aside>
     </section>
   );
-
   const renderNetwork = () => (
     <section className="os-view">
       <div className="view-heading">
