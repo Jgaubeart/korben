@@ -900,7 +900,9 @@ export default function Home() {
 
   const executeTaskQueue = async (
     createdTasks: Task[],
-    plannedTasks: PlannedTask[]
+    plannedTasks: PlannedTask[],
+    conversationIdForReport: string,
+    projectNameForReport: string
   ) => {
     if (!createdTasks.length) return;
 
@@ -910,6 +912,12 @@ export default function Home() {
     if (!token) return;
 
     setLoadingState("Agents working…");
+
+    const outcomes: Array<{
+      title: string;
+      status: string;
+      summary: string;
+    }> = [];
 
     for (let index = 0; index < createdTasks.length; index += 1) {
       const task = createdTasks[index];
@@ -923,6 +931,11 @@ export default function Home() {
             item.id === task.id ? { ...item, status: "awaiting_approval" } : item
           )
         );
+        outcomes.push({
+          title: task.title,
+          status: "awaiting_approval",
+          summary: `Waiting for L${planned.approval_level} approval.`,
+        });
         break;
       }
 
@@ -956,18 +969,75 @@ export default function Home() {
           )
         );
 
+        outcomes.push({
+          title: task.title,
+          status: nextStatus,
+          summary:
+            typeof result.summary === "string" && result.summary.trim()
+              ? result.summary.trim()
+              : nextStatus === "complete"
+                ? "Completed."
+                : nextStatus === "awaiting_approval"
+                  ? "Waiting for approval."
+                  : result.error || "Task failed.",
+        });
+
         if (nextStatus !== "complete") break;
-      } catch {
+      } catch (error) {
         setTasks((current) =>
           current.map((item) =>
             item.id === task.id ? { ...item, status: "failed" } : item
           )
         );
+        outcomes.push({
+          title: task.title,
+          status: "failed",
+          summary:
+            error instanceof Error ? error.message : "Task failed unexpectedly.",
+        });
         break;
       }
     }
 
-    setLoadingState("System online");
+    const completedCount = outcomes.filter(
+      (outcome) => outcome.status === "complete"
+    ).length;
+    const blocked = outcomes.find(
+      (outcome) => outcome.status !== "complete"
+    );
+
+    const reportHeader = blocked
+      ? `Korben stopped after ${completedCount} completed step${completedCount === 1 ? "" : "s"} in ${projectNameForReport}.`
+      : `Korben completed all ${completedCount} step${completedCount === 1 ? "" : "s"} in ${projectNameForReport}.`;
+
+    const reportBody = outcomes
+      .map(
+        (outcome) =>
+          `[${outcome.status.toUpperCase()}] ${outcome.title}\n${outcome.summary}`
+      )
+      .join("\n\n");
+
+    const completionReport = `${reportHeader}\n\n${reportBody}`.trim();
+
+    setMessages((current) => [
+      ...current,
+      { role: "assistant", text: completionReport },
+    ]);
+
+    await supabase.from("messages").insert({
+      conversation_id: conversationIdForReport,
+      role: "assistant",
+      content: completionReport,
+      input_mode: "system",
+    });
+
+    setLoadingState(
+      blocked?.status === "awaiting_approval"
+        ? "Approval required"
+        : blocked
+          ? "Execution stopped"
+          : "System online"
+    );
   };
 
   const sendMessage = async (
@@ -1215,10 +1285,16 @@ export default function Home() {
 
     if (
       objective &&
+      plan.requires_execution &&
       createdTasks.length > 0 &&
       ["work", "action"].includes(plan.intent)
     ) {
-      void executeTaskQueue(createdTasks, plan.tasks);
+      void executeTaskQueue(
+        createdTasks,
+        plan.tasks,
+        resolvedConversationId,
+        executionProjectName
+      );
     }
 
     if (voiceModeRef.current && "speechSynthesis" in window) {
