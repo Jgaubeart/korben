@@ -74,6 +74,12 @@ export default function Home() {
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const recognitionRef = useRef<any>(null);
   const heldShortcutRef = useRef(false);
+  const sendingRef = useRef(false);
+  const voiceModeRef = useRef(false);
+  const voiceSubmittedRef = useRef(false);
+  const sendMessageRef = useRef<(messageText?: string, mode?: "text" | "voice") => Promise<void>>(
+    async () => {}
+  );
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -200,26 +206,37 @@ export default function Home() {
     recognition.continuous = false;
 
     recognition.onstart = () => {
+      voiceSubmittedRef.current = false;
       setListening(true);
       setInputMode("voice");
     };
     recognition.onend = () => {
       setListening(false);
-      if (voiceMode && !heldShortcutRef.current) {
-        window.setTimeout(() => {
-          try {
-            recognition.start();
-          } catch {}
-        }, 300);
-      }
     };
     recognition.onerror = () => setListening(false);
     recognition.onresult = (event: any) => {
       let transcript = "";
+      let hasFinalResult = false;
+
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         transcript += event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          hasFinalResult = true;
+        }
       }
-      setInput(normalizeKorbenName(transcript.trim()));
+
+      const normalizedTranscript = normalizeKorbenName(transcript.trim());
+      setInput(normalizedTranscript);
+
+      if (
+        hasFinalResult &&
+        normalizedTranscript &&
+        !voiceSubmittedRef.current &&
+        !sendingRef.current
+      ) {
+        voiceSubmittedRef.current = true;
+        void sendMessageRef.current(normalizedTranscript, "voice");
+      }
     };
 
     recognitionRef.current = recognition;
@@ -254,7 +271,7 @@ export default function Home() {
         recognition.stop();
       } catch {}
     };
-  }, [voiceMode]);
+  }, []);
 
   const signIn = async () => {
     const email = loginEmail.trim();
@@ -309,6 +326,7 @@ export default function Home() {
 
   const toggleVoiceMode = () => {
     const next = !voiceMode;
+    voiceModeRef.current = next;
     setVoiceMode(next);
     if (!next && listening) {
       try {
@@ -439,14 +457,18 @@ export default function Home() {
     };
   };
 
-  const sendMessage = async () => {
-    const text = normalizeKorbenName(input.trim());
-    if (!text || sending) return;
+  const sendMessage = async (
+    messageText?: string,
+    mode?: "text" | "voice"
+  ) => {
+    const text = normalizeKorbenName((messageText ?? input).trim());
+    if (!text || sendingRef.current) return;
 
+    sendingRef.current = true;
     setSending(true);
     setInput("");
-    setLoadingState("Korben is planning…");
-    const currentInputMode = inputMode;
+    setLoadingState("Korben is thinking…");
+    const currentInputMode = mode ?? inputMode;
     const userMessage: Message = { role: "user", text, inputMode: currentInputMode };
     setMessages((current) => [...current, userMessage]);
 
@@ -465,6 +487,7 @@ export default function Home() {
         { role: "assistant", text: message },
       ]);
       setLoadingState("Connection required");
+      sendingRef.current = false;
       setSending(false);
       return;
     }
@@ -615,8 +638,19 @@ export default function Home() {
 
     setInputMode("text");
     setLoadingState("System online");
+    sendingRef.current = false;
     setSending(false);
+
+    if (voiceModeRef.current && speechSupported) {
+      window.setTimeout(() => {
+        try {
+          recognitionRef.current?.start();
+        } catch {}
+      }, 350);
+    }
   };
+
+  sendMessageRef.current = sendMessage;
 
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
@@ -802,9 +836,9 @@ export default function Home() {
                   >
                     ◉
                   </button>
-                  <span className="shortcut">Hold <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> to talk</span>
+                  <span className="shortcut">{voiceMode ? "Speak naturally — Korben sends when you finish" : <>Hold <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> to talk</>}</span>
                 </div>
-                <button className="send-button" onClick={sendMessage} disabled={!input.trim() || sending}>{sending ? "Planning…" : "Send"} <span>↗</span></button>
+                <button className="send-button" onClick={() => sendMessage()} disabled={!input.trim() || sending}>{sending ? "Thinking…" : "Send"} <span>↗</span></button>
               </div>
             </div>
             {!speechSupported && (
