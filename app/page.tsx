@@ -68,6 +68,26 @@ type IntegrationStatus = {
   obsidian: boolean;
 };
 
+type PreflightCheck = {
+  key: string;
+  label: string;
+  status: "healthy" | "warning" | "error" | "not_configured";
+  detail: string;
+};
+
+type PreflightReport = {
+  checked_at: string;
+  overall: "healthy" | "degraded" | "error";
+  project: {
+    id: string;
+    name: string;
+    slug: string;
+    github_repo: string | null;
+    vercel_project_id: string | null;
+  };
+  checks: PreflightCheck[];
+};
+
 type RunEvent = {
   id: string;
   run_id: string | null;
@@ -149,7 +169,7 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
-  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "runs" | "brain" | "sops" | "tools" | "integrations">("command");
+  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [selectedProjectSlug, setSelectedProjectSlug] = useState(() => {
@@ -161,6 +181,20 @@ export default function Home() {
   const [agentToolPermissions, setAgentToolPermissions] = useState<AgentToolPermission[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
+  const [preflightReport, setPreflightReport] = useState<PreflightReport | null>(null);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const [focusGoal, setFocusGoal] = useState("");
+  const [focusMinutes, setFocusMinutes] = useState(30);
+  const [focusRemaining, setFocusRemaining] = useState(0);
+  const [focusRunning, setFocusRunning] = useState(false);
+  const [focusPaused, setFocusPaused] = useState(false);
+  const [focusLockTab, setFocusLockTab] = useState(false);
+  const [focusInterruptions, setFocusInterruptions] = useState(0);
+  const [focusReport, setFocusReport] = useState<string | null>(null);
+  const [focusStreak, setFocusStreak] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    return Number(window.localStorage.getItem("korben:focus-streak") || "0");
+  });
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>([]);
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
@@ -520,6 +554,71 @@ export default function Home() {
       window.speechSynthesis?.cancel();
     };
   }, []);
+
+  useEffect(() => {
+    if (!focusRunning || focusPaused) return;
+
+    const timer = window.setInterval(() => {
+      setFocusRemaining((current) => {
+        if (current <= 1) {
+          window.clearInterval(timer);
+          setFocusRunning(false);
+          setFocusPaused(false);
+          setFocusLockTab(false);
+
+          const nextStreak = focusStreak + 1;
+          setFocusStreak(nextStreak);
+          window.localStorage.setItem("korben:focus-streak", String(nextStreak));
+
+          setFocusReport(
+            `Focus session complete — ${focusMinutes} minutes on ${focusGoal || "your priority"}, with ${focusInterruptions} detected tab drift${focusInterruptions === 1 ? "" : "s"}.`
+          );
+
+          if ("speechSynthesis" in window && voiceModeRef.current) {
+            const utterance = new SpeechSynthesisUtterance(
+              `Focus session complete. ${focusInterruptions} interruptions detected.`
+            );
+            utterance.rate = 0.96;
+            window.speechSynthesis.speak(utterance);
+          }
+
+          return 0;
+        }
+
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    focusRunning,
+    focusPaused,
+    focusMinutes,
+    focusGoal,
+    focusInterruptions,
+    focusStreak,
+  ]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!focusRunning || focusPaused || !focusLockTab || !document.hidden) return;
+
+      setFocusInterruptions((count) => count + 1);
+
+      if ("speechSynthesis" in window && voiceModeRef.current) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(
+          "Focus drift detected. Return to the locked Korben tab when you are ready."
+        );
+        utterance.rate = 0.96;
+        window.speechSynthesis.speak(utterance);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [focusRunning, focusPaused, focusLockTab]);
+
   const clearConversationTimeout = () => {
     if (conversationTimeoutRef.current) {
       window.clearTimeout(conversationTimeoutRef.current);
@@ -591,6 +690,55 @@ export default function Home() {
     setConversationId(null);
     setActiveObjective("No active objective");
     setLoadingState("Sign in required");
+  };
+
+  const runPreflight = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+
+    if (!token) return;
+
+    setPreflightBusy(true);
+
+    try {
+      const response = await fetch(
+        `/api/health/preflight${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }
+      );
+
+      if (response.ok) {
+        setPreflightReport(await response.json());
+      }
+    } finally {
+      setPreflightBusy(false);
+    }
+  };
+
+  const startFocus = () => {
+    const minutes = Math.max(1, Math.min(240, Number(focusMinutes) || 30));
+    setFocusMinutes(minutes);
+    setFocusRemaining(minutes * 60);
+    setFocusInterruptions(0);
+    setFocusReport(null);
+    setFocusPaused(false);
+    setFocusRunning(true);
+    setLoadingState("Focus session active");
+  };
+
+  const endFocus = () => {
+    const elapsedSeconds = Math.max(0, focusMinutes * 60 - focusRemaining);
+    const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+
+    setFocusRunning(false);
+    setFocusPaused(false);
+    setFocusLockTab(false);
+    setFocusReport(
+      `Focus session ended after ${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} on ${focusGoal || "your priority"}, with ${focusInterruptions} detected tab drift${focusInterruptions === 1 ? "" : "s"}.`
+    );
+    setLoadingState("System online");
   };
 
   const toggleVoiceMode = () => {
@@ -1356,6 +1504,25 @@ export default function Home() {
 
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
+  const focusClock = `${String(Math.floor(focusRemaining / 60)).padStart(2, "0")}:${String(
+    focusRemaining % 60
+  ).padStart(2, "0")}`;
+  const runtimeState =
+    approvals.some((approval) => approval.status === "pending")
+      ? "Blocked · approval"
+      : tasks.some((task) => task.status === "in_progress")
+        ? "Executing"
+        : focusRunning
+          ? focusPaused
+            ? "Focus paused"
+            : "Focus active"
+          : voiceState === "thinking"
+            ? "Thinking"
+            : voiceState === "speaking"
+              ? "Speaking"
+              : voiceState === "listening"
+                ? "Listening"
+                : loadingState;
 
   if (!authReady) {
     return (
@@ -1450,7 +1617,9 @@ export default function Home() {
     activeView === "brain" ? "Brain & Memory" :
     activeView === "sops" ? "SOP Library" :
     activeView === "tools" ? "Tool Registry" :
-    "Integrations";
+    activeView === "integrations" ? "Integrations" :
+    activeView === "focus" ? "Focus" :
+    "Preflight";
 
   const renderCommandCenter = () => (
     <section className="korben-stage">
@@ -1773,6 +1942,133 @@ export default function Home() {
     </section>
   );
 
+  const renderFocus = () => (
+    <section className="os-view">
+      <div className="view-heading">
+        <div>
+          <span className="eyebrow">ACCOUNTABILITY ORGAN</span>
+          <h1>Focus</h1>
+          <p>A privacy-safe focus session inspired by JARVIS: timer, goal, optional tab lock, interruption tracking and a report card.</p>
+        </div>
+        <div className="metric-strip">
+          <div><strong>{focusStreak}</strong><span>Streak</span></div>
+          <div><strong>{focusInterruptions}</strong><span>Drifts</span></div>
+          <div><strong>{focusRunning ? "LIVE" : "OFF"}</strong><span>State</span></div>
+        </div>
+      </div>
+
+      <div className="focus-layout">
+        <article className="focus-console">
+          <span className="eyebrow">SESSION TIMER</span>
+          <div className={`focus-clock ${focusRunning && !focusPaused ? "running" : ""}`}>
+            {focusRunning || focusRemaining ? focusClock : `${String(focusMinutes).padStart(2, "0")}:00`}
+          </div>
+          <input
+            className="focus-goal-input"
+            value={focusGoal}
+            onChange={(event) => setFocusGoal(event.target.value)}
+            placeholder="What are we focusing on?"
+            disabled={focusRunning}
+          />
+          <div className="focus-duration-row">
+            {[15, 25, 30, 45, 60].map((minutes) => (
+              <button
+                key={minutes}
+                className={focusMinutes === minutes ? "active" : ""}
+                onClick={() => setFocusMinutes(minutes)}
+                disabled={focusRunning}
+              >
+                {minutes}m
+              </button>
+            ))}
+          </div>
+          <div className="focus-actions">
+            {!focusRunning ? (
+              <button className="focus-start" onClick={startFocus}>Start focus</button>
+            ) : (
+              <>
+                <button onClick={() => setFocusPaused((paused) => !paused)}>
+                  {focusPaused ? "Resume" : "Pause"}
+                </button>
+                <button
+                  className={focusLockTab ? "active" : ""}
+                  onClick={() => setFocusLockTab((locked) => !locked)}
+                >
+                  {focusLockTab ? "Tab locked" : "Lock this tab"}
+                </button>
+                <button className="focus-stop" onClick={endFocus}>End session</button>
+              </>
+            )}
+          </div>
+        </article>
+
+        <aside className="focus-side">
+          <article className="focus-card">
+            <span className="eyebrow">PRIVACY BOUNDARY</span>
+            <strong>Nothing is watching your camera or screen.</strong>
+            <p>The optional tab lock uses only the browser visibility signal. Korben knows only that you left this tab—not what you opened.</p>
+          </article>
+          <article className="focus-card">
+            <span className="eyebrow">REPORT CARD</span>
+            <strong>{focusReport ? "Latest session" : "No completed session yet"}</strong>
+            <p>{focusReport || "Finish a session and Korben will summarize duration, goal and detected tab drift."}</p>
+          </article>
+        </aside>
+      </div>
+    </section>
+  );
+
+  const renderPreflight = () => (
+    <section className="os-view">
+      <div className="view-heading">
+        <div>
+          <span className="eyebrow">SYSTEM PREFLIGHT</span>
+          <h1>Preflight</h1>
+          <p>JARVIS-style health check for the active Korben execution environment before you trust it with autonomous work.</p>
+        </div>
+        <button className="preflight-run" onClick={() => void runPreflight()} disabled={preflightBusy}>
+          {preflightBusy ? "Checking…" : "Run preflight"}
+        </button>
+      </div>
+
+      <div className={`preflight-summary ${preflightReport?.overall || "idle"}`}>
+        <div>
+          <span className="eyebrow">SYSTEM VERDICT</span>
+          <strong>
+            {preflightReport
+              ? preflightReport.overall === "healthy"
+                ? "All core systems healthy"
+                : preflightReport.overall === "degraded"
+                  ? "Operational with warnings"
+                  : "Attention required"
+              : "Preflight has not been run"}
+          </strong>
+        </div>
+        <small>
+          {preflightReport
+            ? `${preflightReport.project.name} · checked ${new Date(preflightReport.checked_at).toLocaleString()}`
+            : "Run the check to verify credentials, agents, tools, Brain, approvals and recent run health."}
+        </small>
+      </div>
+
+      <div className="preflight-grid">
+        {(preflightReport?.checks || []).map((check) => (
+          <article className={`preflight-card ${check.status}`} key={check.key}>
+            <span className="preflight-dot" />
+            <div>
+              <strong>{check.label}</strong>
+              <span>{check.status.replaceAll("_", " ")}</span>
+              <p>{check.detail}</p>
+            </div>
+          </article>
+        ))}
+        {!preflightReport && (
+          <div className="empty-state large">No health snapshot yet.</div>
+        )}
+      </div>
+    </section>
+  );
+
   const renderKnowledgeView = () => {
     const content = {
       brain: {
@@ -1873,13 +2169,15 @@ export default function Home() {
           <button className={activeView === "sops" ? "active" : ""} onClick={() => setActiveView("sops")}><i>▤</i><span>SOPs</span></button>
 
           <span className="nav-section">SYSTEM</span>
+          <button className={activeView === "focus" ? "active" : ""} onClick={() => setActiveView("focus")}><i>◷</i><span>Focus</span>{focusRunning && <b>LIVE</b>}</button>
+          <button className={activeView === "preflight" ? "active" : ""} onClick={() => setActiveView("preflight")}><i>✓</i><span>Preflight</span></button>
           <button className={activeView === "tools" ? "active" : ""} onClick={() => setActiveView("tools")}><i>⌁</i><span>Tools</span></button>
           <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>⬡</i><span>Integrations</span></button>
         </nav>
 
         <div className="sidebar-system">
           <span className="system-pulse" />
-          <div><strong>{loadingState}</strong><small>{currentProjectName}</small></div>
+          <div><strong>{runtimeState}</strong><small>{currentProjectName}</small></div>
         </div>
       </aside>
 
@@ -1910,6 +2208,8 @@ export default function Home() {
         {activeView === "network" && renderNetwork()}
         {activeView === "work" && renderWork()}
         {activeView === "runs" && renderRuns()}
+        {activeView === "focus" && renderFocus()}
+        {activeView === "preflight" && renderPreflight()}
         {["brain", "sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
       </div>
     </main>
