@@ -135,6 +135,31 @@ async function executeGitHub(tool: string, action: string, params: Record<string
       );
     }
 
+    if (action === "commit") {
+      const ref = String(params.ref || params.sha || "").trim();
+
+      if (!ref) {
+        throw new Error("ref or sha is required.");
+      }
+
+      return githubRequest(
+        `/repos/${owner}/${name}/commits/${encodeURIComponent(ref)}`
+      );
+    }
+
+    if (action === "compare") {
+      const base = String(params.base || "").trim();
+      const head = String(params.head || "").trim();
+
+      if (!base || !head) {
+        throw new Error("base and head are required.");
+      }
+
+      return githubRequest(
+        `/repos/${owner}/${name}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`
+      );
+    }
+
     throw new Error("Unsupported GitHub read action.");
   }
 
