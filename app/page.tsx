@@ -207,6 +207,7 @@ export default function Home() {
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [calmMode, setCalmMode] = useState(false);
   const [voiceState, setVoiceState] = useState<"waiting" | "listening" | "thinking" | "speaking">("waiting");
   const [conversationActive, setConversationActive] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
@@ -1641,263 +1642,312 @@ export default function Home() {
         ? "focus"
         : voiceState;
 
+  const todayEvents = [
+    ["8:30", "Team standup", "work"],
+    ["10:00", "Client strategy call", "work"],
+    ["11:30", "Review contract", "work"],
+    ["1:00", "Lunch", "personal"],
+    ["2:30", "Prepare proposal", "focus"],
+    ["4:00", "Gym", "personal"],
+  ];
+
+  const priorityItems = [
+    ["Prepare proposal", "Due today · High impact"],
+    ["Review contract", "Due today"],
+    ["Plan next campaign", "This week"],
+  ];
+
+  const communicationItems = [
+    ["Natalie", "Re: Proposal looks great!", "8:47 AM", "mail"],
+    ["Client Team", "Upcoming call agenda", "8:12 AM", "team"],
+    ["Mom", "Dinner this weekend?", "7:34 AM", "text"],
+    ["Travel", "Your flight is confirmed", "7:14 AM", "travel"],
+  ];
+
+  const dashboardTasks = tasks.length
+    ? tasks.slice(0, 6)
+    : [
+        { id: "mock-1", title: "Draft client email", status: "complete", sequence: 1 },
+        { id: "mock-2", title: "Review contract", status: "complete", sequence: 2 },
+        { id: "mock-3", title: "Prepare proposal", status: "queued", sequence: 3 },
+        { id: "mock-4", title: "Book flight to Atlanta", status: "queued", sequence: 4 },
+        { id: "mock-5", title: "Set gym reminder", status: "queued", sequence: 5 },
+      ] as Task[];
+
+  const dashboardCompleted = dashboardTasks.filter((task) => task.status === "complete").length;
+  const dashboardProgress = dashboardTasks.length
+    ? Math.round((dashboardCompleted / dashboardTasks.length) * 100)
+    : 0;
+
+  const orbState =
+    tasks.some((task) => task.status === "in_progress")
+      ? "working"
+      : voiceState === "thinking"
+        ? "thinking"
+        : voiceState === "speaking"
+          ? "responding"
+          : voiceState === "listening"
+            ? "listening"
+            : "idle";
+
+  const compactStatus = hasPendingApproval
+    ? "A protected action needs your approval."
+    : currentTask?.status === "in_progress"
+      ? `${currentAgent?.name || "Korben"} is handling ${currentTask.title.toLowerCase()}.`
+      : sending
+        ? "Reviewing your request."
+        : voiceState === "listening"
+          ? "I’m listening."
+          : "Reviewing inbox priorities · 2 agents active";
+
+  const renderOrb = (large = false) => (
+    <button
+      className={`calm-orb ${orbState} ${large ? "large" : ""}`}
+      onClick={toggleVoiceMode}
+      aria-label="Talk to Korben"
+    >
+      <span className="orb-glow" />
+      <span className="orb-ring ring-one" />
+      <span className="orb-ring ring-two" />
+      <span className="orb-ring ring-three" />
+      <span className="orb-strand strand-one" />
+      <span className="orb-strand strand-two" />
+      <span className="orb-strand strand-three" />
+      <span className="orb-core-dot" />
+      <span className="orb-particle particle-one" />
+      <span className="orb-particle particle-two" />
+      <span className="orb-particle particle-three" />
+    </button>
+  );
+
   const renderCommandCenter = () => (
-    <section className={`korben-stage alive ${coreMode}`}>
-      <div className="ambient-grid" />
-      <div className="ambient-scan scan-a" />
-      <div className="ambient-scan scan-b" />
-      <div className="ambient-scan scan-c" />
-      <div className="ambient-particles" aria-hidden="true">
-        {Array.from({ length: 22 }).map((_, index) => (
-          <i key={index} style={{ "--i": index } as React.CSSProperties} />
-        ))}
+    <section className="calm-dashboard">
+      <div className="dashboard-atmosphere" aria-hidden="true">
+        <span className="mountain mountain-a" />
+        <span className="mountain mountain-b" />
+        <span className="mountain mountain-c" />
+        <span className="lake-haze" />
       </div>
 
-      <div className="command-hud">
-        <div className="hud-cluster">
-          <span className="hud-label">CORE STATE</span>
-          <strong>{runtimeState}</strong>
+      <div className="dashboard-header-row">
+        <div className="morning-copy">
+          <span className="dashboard-date">
+            {new Intl.DateTimeFormat("en-US", {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            }).format(new Date())}
+          </span>
+          <h1>Good morning, Jordan.</h1>
+          <p>Two key priorities, focused work ahead, and room to breathe later.</p>
         </div>
-        <div className="hud-cluster">
-          <span className="hud-label">ROUTING</span>
-          <strong>AUTO · {currentProjectName}</strong>
-        </div>
-        <div className="hud-cluster">
-          <span className="hud-label">AGENTS</span>
-          <strong>{workingAgentCount} ACTIVE / {agents.length} READY</strong>
-        </div>
-        <div className="hud-cluster">
-          <span className="hud-label">APPROVALS</span>
-          <strong className={hasPendingApproval ? "warn" : ""}>
-            {hasPendingApproval ? `${approvals.filter((approval) => approval.status === "pending").length} WAITING` : "CLEAR"}
-          </strong>
+
+        <div className="dashboard-header-actions">
+          <label className="top-search">
+            <span>⌕</span>
+            <input
+              value={input}
+              onChange={(event) => {
+                setInput(event.target.value);
+                setInputMode("text");
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void sendMessage();
+              }}
+              placeholder="Ask Korben anything..."
+            />
+          </label>
+          <button className="header-icon" title="Notifications">●</button>
+          <div className="weather-chip">
+            <span className="sun-icon">☼</span>
+            <div><strong>78°</strong><small>Cape Coral, FL</small></div>
+          </div>
+          <button className="mode-switch" onClick={() => setCalmMode(true)}>
+            Calm mode
+          </button>
         </div>
       </div>
 
-      <div className="core-column">
-        <div className="telemetry-rail telemetry-left">
-          <div className="telemetry-title">MISSION</div>
-          <div className="telemetry-value">{progress}%</div>
-          <div className="telemetry-copy">{activeObjective}</div>
-          <div className="telemetry-progress"><span style={{ width: `${progress}%` }} /></div>
-
-          <div className="telemetry-title spaced">CURRENT AGENT</div>
-          <div className="agent-live-row">
-            <span className={`live-dot ${currentTask?.status || "idle"}`} />
-            <div>
-              <strong>{currentAgent?.name || "Korben"}</strong>
-              <small>{currentTask?.title || "Standing by"}</small>
+      <div className="dashboard-grid">
+        <div className="dashboard-column left-column">
+          <article className="soft-card today-card">
+            <div className="soft-card-heading">
+              <div><h2>Today</h2><span>Most relevant moments</span></div>
+              <button>View Calendar →</button>
             </div>
-          </div>
-
-          <div className="telemetry-title spaced">LAST SIGNAL</div>
-          <div className="telemetry-event">
-            <strong>{latestRunEvent?.event_type?.replaceAll("_", " ") || "system ready"}</strong>
-            <small>{latestRunEvent?.message || "No active execution event."}</small>
-          </div>
-        </div>
-
-        <div className="reactor-shell">
-          <div className="reactor-label top">KORBEN / CORE</div>
-          <div
-            className={`korben-core ${coreMode} ${voiceMode ? "armed" : ""}`}
-            onClick={toggleVoiceMode}
-            role="button"
-            tabIndex={0}
-            aria-label="Korben voice core"
-          >
-            <div className="reactor-crosshair horizontal" />
-            <div className="reactor-crosshair vertical" />
-            <div className="core-orbit orbit-one" />
-            <div className="core-orbit orbit-two" />
-            <div className="core-orbit orbit-three" />
-            <div className="core-segment-ring">
-              {Array.from({ length: 18 }).map((_, index) => (
-                <i key={index} style={{ "--n": index } as React.CSSProperties} />
+            <div className="today-list">
+              {todayEvents.map(([time, label, kind]) => (
+                <div className="today-row" key={`${time}-${label}`}>
+                  <time>{time}</time>
+                  <span className={`event-dot ${kind}`} />
+                  <strong>{label}</strong>
+                </div>
               ))}
             </div>
-            <div className="core-energy" />
-            <div className="core-center"><span>K</span></div>
-            <div className="voice-ripple ripple-one" />
-            <div className="voice-ripple ripple-two" />
-            <div className="voice-ripple ripple-three" />
-            <div className="reactor-node node-1" />
-            <div className="reactor-node node-2" />
-            <div className="reactor-node node-3" />
-            <div className="reactor-node node-4" />
+          </article>
+
+          <article className="soft-card tasks-card">
+            <div className="soft-card-heading">
+              <div><h2>Tasks</h2><span>{dashboardCompleted}/{dashboardTasks.length} completed</span></div>
+              <button onClick={() => setActiveView("work")}>View All →</button>
+            </div>
+            <div className="task-progress"><span style={{ width: `${dashboardProgress}%` }} /></div>
+            <div className="calm-task-list">
+              {dashboardTasks.map((task) => (
+                <div className="calm-task-row" key={task.id}>
+                  <span className={`task-check ${task.status === "complete" ? "done" : ""}`}>
+                    {task.status === "complete" ? "✓" : ""}
+                  </span>
+                  <strong>{task.title}</strong>
+                  <small>{task.status === "complete" ? "Done" : task.status.replaceAll("_", " ")}</small>
+                </div>
+              ))}
+            </div>
+            <button className="agent-activity-link" onClick={() => setActiveView("network")}>
+              <span><i /> Agents active: {Math.max(workingAgentCount, currentTask ? 1 : 0)}</span>
+              <b>›</b>
+            </button>
+          </article>
+        </div>
+
+        <div className="dashboard-center">
+          {renderOrb()}
+          <div className="orb-context">
+            <strong>{compactStatus}</strong>
+            <span>{currentTask?.title || "Today’s brief nearly ready"}</span>
+            <span>{currentTask ? `Watching step ${currentTask.sequence}` : "Watching calendar changes"}</span>
           </div>
-          <div className="reactor-label bottom">{runtimeState.toUpperCase()}</div>
         </div>
 
-        <div className="organ-dock" aria-label="Korben organs">
-          <button className="organ-card live" onClick={() => setActiveView("brain")}>
-            <span className="organ-icon">◇</span>
-            <div><strong>BRAIN</strong><small>{knowledgeEntries.length} memories / facts</small></div>
-            <b>LIVE</b>
-          </button>
-          <button className={`organ-card ${tasks.length ? "live" : ""}`} onClick={() => setActiveView("work")}>
-            <span className="organ-icon">◎</span>
-            <div><strong>MISSIONS</strong><small>{tasks.filter((task) => task.status !== "complete").length} open tasks</small></div>
-            <b>{tasks.length ? "ARMED" : "IDLE"}</b>
-          </button>
-          <button className={`organ-card ${focusRunning ? "live" : ""}`} onClick={() => setActiveView("focus")}>
-            <span className="organ-icon">◷</span>
-            <div><strong>FOCUS</strong><small>{focusRunning ? focusClock : "accountability bay"}</small></div>
-            <b>{focusRunning ? "ON" : "OFF"}</b>
-          </button>
-          <button className="organ-card live" onClick={() => setActiveView("tools")}>
-            <span className="organ-icon">⌁</span>
-            <div><strong>TOOLS</strong><small>{tools.filter((tool) => tool.status === "available").length} capabilities</small></div>
-            <b>LIVE</b>
-          </button>
-          <button
-            className={`organ-card ${preflightReport?.overall === "healthy" ? "live" : preflightReport ? "warn" : ""}`}
-            onClick={() => setActiveView("preflight")}
-          >
-            <span className="organ-icon">✓</span>
-            <div><strong>PREFLIGHT</strong><small>{preflightReport ? preflightReport.overall : "health unknown"}</small></div>
-            <b>{preflightReport ? preflightReport.overall.toUpperCase() : "CHECK"}</b>
-          </button>
-          <button className="organ-card dormant" title="Camera organ deferred pending explicit privacy design">
-            <span className="organ-icon">◉</span>
-            <div><strong>EYES</strong><small>sensor bay reserved</small></div>
-            <b>LOCKED</b>
-          </button>
-          <button className="organ-card dormant" title="Screen organ deferred pending explicit privacy design">
-            <span className="organ-icon">▣</span>
-            <div><strong>WATCH</strong><small>screen bay reserved</small></div>
-            <b>LOCKED</b>
-          </button>
-          <button className="organ-card dormant" title="Calling organ planned after safe facts and communication approvals">
-            <span className="organ-icon">☎</span>
-            <div><strong>CALLS</strong><small>external comms bay</small></div>
-            <b>LOCKED</b>
-          </button>
-        </div>
+        <div className="dashboard-column right-column">
+          <article className="soft-card priorities-card">
+            <div className="soft-card-heading">
+              <h2>Top Priorities</h2>
+              <button onClick={() => setActiveView("work")}>View All →</button>
+            </div>
+            <div className="priority-list">
+              {priorityItems.map(([title, meta], index) => (
+                <div className="priority-row" key={title}>
+                  <span className={`priority-number p${index + 1}`}>{index + 1}</span>
+                  <div><strong>{title}</strong><small>{meta}</small></div>
+                  <b>›</b>
+                </div>
+              ))}
+            </div>
+          </article>
 
-        <div className="core-status alive-status">
-          <span className={`status-light ${coreMode}`} />
-          <strong>{runtimeState}</strong>
-          <p>
-            {hasPendingApproval
-              ? "A protected action is waiting for your approval."
-              : currentTask?.status === "in_progress"
-                ? `${currentAgent?.name || "An agent"} is executing: ${currentTask.title}`
-                : focusRunning && !focusPaused
-                  ? `Focus lock active on: ${focusGoal || "current priority"}`
-                  : voiceState === "listening"
-                    ? input || "I’m listening."
-                    : voiceState === "thinking"
-                      ? "Routing intent and building the execution path."
-                      : voiceState === "speaking"
-                        ? "Korben is responding."
-                        : voiceMode
-                          ? conversationActive
-                            ? "Conversation is open. Speak naturally."
-                            : "Say “Korben” to wake the system."
-                          : "Voice offline. Type below or activate the ear."}
-          </p>
-        </div>
+          <article className="soft-card communications-card">
+            <div className="soft-card-heading">
+              <h2>Communications</h2>
+              <button>View All →</button>
+            </div>
+            <div className="communication-list">
+              {communicationItems.map(([name, subject, time, kind]) => (
+                <div className="communication-row" key={`${name}-${subject}`}>
+                  <span className={`communication-icon ${kind}`}>
+                    {kind === "mail" ? "M" : kind === "team" ? "T" : kind === "travel" ? "✈" : "●"}
+                  </span>
+                  <strong>{name}</strong>
+                  <span>{subject}</span>
+                  <time>{time}</time>
+                </div>
+              ))}
+            </div>
+          </article>
 
-        <div className={`signal-wave ${coreMode}`} aria-hidden="true">
-          {Array.from({ length: 36 }).map((_, index) => (
-            <i key={index} style={{ "--i": index } as React.CSSProperties} />
-          ))}
-        </div>
-
-        <div className="voice-actions alive-actions">
-          <button
-            className={`voice-primary ${voiceMode ? "active" : ""}`}
-            onClick={toggleVoiceMode}
-            disabled={!speechSupported}
-          >
-            <span className="voice-primary-dot" />
-            {voiceMode ? "Ear online" : "Activate ear"}
-          </button>
-          <button className="voice-secondary" onClick={() => setActiveView("focus")}>Focus</button>
-          <button className="voice-secondary" onClick={() => setActiveView("preflight")}>Preflight</button>
-        </div>
-
-        <div className="command-input alive-input">
-          <input
-            value={input}
-            onChange={(event) => {
-              setInput(event.target.value);
-              setInputMode("text");
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void sendMessage();
-              }
-            }}
-            placeholder="Tell Korben what you want done…"
-          />
-          <button onClick={() => void sendMessage()} disabled={!input.trim() || sending}>
-            {sending ? "…" : "↗"}
-          </button>
-        </div>
-
-        {!speechSupported && (
-          <div className="voice-warning">Voice recognition is unavailable in this browser.</div>
-        )}
-
-        <div className="mission-ribbon">
-          <span>ACTIVE OBJECTIVE</span>
-          <strong>{activeObjective}</strong>
-          <small>
-            {currentTask ? `STEP ${currentTask.sequence} · ${currentTask.status.replaceAll("_", " ")}` : "NO ACTIVE STEP"}
-          </small>
+          <article className="soft-card look-forward-card">
+            <div className="soft-card-heading">
+              <h2>Something to Look Forward To</h2>
+              <button>View All →</button>
+            </div>
+            <div className="look-forward-content">
+              <div className="look-forward-image" aria-hidden="true">
+                <span className="sunset" />
+                <span className="table-light t1" />
+                <span className="table-light t2" />
+                <span className="table-light t3" />
+              </div>
+              <div>
+                <strong>Dinner with Melissa</strong>
+                <small>Today · 7:00 PM</small>
+                <p>Good food, great company, a well-deserved evening.</p>
+              </div>
+            </div>
+          </article>
         </div>
       </div>
 
-      <aside className="conversation-rail alive-rail">
-        <div className="rail-header">
-          <div>
-            <span>CONVERSATION</span>
-            <strong>Live command channel</strong>
-          </div>
-          <span className="rail-live">● LINKED</span>
-        </div>
-
-        <div className="rail-messages">
-          {messages.map((message, index) => (
-            <div key={message.id || index} className={`rail-message ${message.role}`}>
-              <div className="rail-message-meta">
-                <span>{message.role === "user" ? "YOU" : "KORBEN"}</span>
-                <small>{message.inputMode === "voice" ? "VOICE" : "TEXT"}</small>
-              </div>
-              <p>{message.text}</p>
-            </div>
-          ))}
-
-          {sending && (
-            <div className="rail-message assistant pending">
-              <div className="rail-message-meta">
-                <span>KORBEN</span>
-                <small>PROCESSING</small>
-              </div>
-              <p>Parsing intent and routing work…</p>
-            </div>
-          )}
-        </div>
-
-        <div className="rail-footer">
-          <div>
-            <span className="footer-label">SYSTEM</span>
-            <strong>{runtimeState}</strong>
-          </div>
-          <div>
-            <span className="footer-label">MISSION</span>
-            <strong>{progress}% complete</strong>
-          </div>
-          <div>
-            <span className="footer-label">TASKS</span>
-            <strong>{tasks.length}</strong>
-          </div>
-        </div>
-      </aside>
+      <div className="bottom-command-bar">
+        <button
+          className={`voice-command ${voiceMode ? "active" : ""}`}
+          onClick={toggleVoiceMode}
+          disabled={!speechSupported}
+          aria-label="Voice input"
+        >
+          ◉
+        </button>
+        <input
+          value={input}
+          onChange={(event) => {
+            setInput(event.target.value);
+            setInputMode("text");
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void sendMessage();
+          }}
+          placeholder="Ask Korben to do something..."
+        />
+        <button className="send-command" onClick={() => void sendMessage()} disabled={!input.trim() || sending}>
+          {sending ? "…" : "→"}
+        </button>
+        <button className="quick-command">▣ <span>Plan My Day</span></button>
+        <button className="quick-command">⌕ <span>Deep Research</span></button>
+        <button className="quick-command">＋ <span>Create</span></button>
+      </div>
     </section>
   );
+
+  const renderCalmMode = () => (
+    <section className="ambient-calm-mode">
+      <div className="calm-landscape" aria-hidden="true">
+        <span className="calm-sun" />
+        <span className="calm-mountain cm-a" />
+        <span className="calm-mountain cm-b" />
+        <span className="calm-mountain cm-c" />
+        <span className="calm-water" />
+        <span className="calm-mist mist-one" />
+        <span className="calm-mist mist-two" />
+      </div>
+
+      <div className="calm-brand">
+        <strong>KORBEN</strong>
+        <span>THINK AHEAD</span>
+      </div>
+
+      <button className="calm-exit" onClick={() => setCalmMode(false)}>Command Center</button>
+
+      <div className="calm-mode-center">
+        {renderOrb(true)}
+        <div className="calm-mode-copy">
+          <strong>{voiceState === "listening" ? "Listening" : compactStatus}</strong>
+          <span className="calm-divider" />
+          <small>{currentTask?.title || "I’ve handled everything for now."}</small>
+        </div>
+      </div>
+
+      <div className="calm-quote">“A calmer mind builds a brighter you.”</div>
+
+      <button
+        className="calm-voice-trigger"
+        onClick={toggleVoiceMode}
+        aria-label="Talk to Korben"
+      >
+        {voiceMode ? "Listening for you" : "Talk to Korben"}
+      </button>
+    </section>
+  );
+
   const renderNetwork = () => (
     <section className="os-view">
       <div className="view-heading">
@@ -2388,60 +2438,58 @@ export default function Home() {
     );
   };
 
+  if (calmMode) {
+    return renderCalmMode();
+  }
+
   return (
-    <main className="os-shell">
-      <aside className="os-sidebar">
-        <button className="sidebar-brand" onClick={() => setActiveView("command")}>
-          <span className="mini-core">K</span>
-          <div><strong>KORBEN</strong><small>OPERATING SYSTEM</small></div>
+    <main className="calm-os-shell">
+      <aside className="calm-sidebar">
+        <button className="calm-sidebar-brand" onClick={() => setActiveView("command")}>
+          <strong>KORBEN</strong>
+          <span>THINK AHEAD</span>
         </button>
 
-        <nav className="os-nav">
-          <span className="nav-section">CORE</span>
-          <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>◉</i><span>Command</span></button>
-          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}><i>⌘</i><span>Agent Network</span><b>{agents.length}</b></button>
-          <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}><i>↗</i><span>Work Routing</span><b>{tasks.length}</b></button>
-          <button className={activeView === "runs" ? "active" : ""} onClick={() => setActiveView("runs")}><i>◎</i><span>Runs</span><b>{runEvents.length}</b></button>
+        <nav className="calm-nav">
+          <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>⌂</i><span>Home</span></button>
+          <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}><i>☑</i><span>Tasks</span></button>
+          <button onClick={() => setActiveView("command")}><i>□</i><span>Calendar</span></button>
+          <button onClick={() => setActiveView("work")}><i>▱</i><span>Projects</span></button>
+          <button onClick={() => setActiveView("command")}><i>✉</i><span>Communications</span></button>
+          <button onClick={() => setActiveView("runs")}><i>▥</i><span>Finances</span></button>
+          <button onClick={() => setActiveView("focus")}><i>♡</i><span>Personal Life</span></button>
+          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>⌑</i><span>Knowledge</span></button>
 
-          <span className="nav-section">KNOWLEDGE</span>
-          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>◇</i><span>Brain</span></button>
-          <button className={activeView === "sops" ? "active" : ""} onClick={() => setActiveView("sops")}><i>▤</i><span>SOPs</span></button>
+          <span className="calm-nav-divider" />
 
-          <span className="nav-section">SYSTEM</span>
-          <button className={activeView === "focus" ? "active" : ""} onClick={() => setActiveView("focus")}><i>◷</i><span>Focus</span>{focusRunning && <b>LIVE</b>}</button>
-          <button className={activeView === "preflight" ? "active" : ""} onClick={() => setActiveView("preflight")}><i>✓</i><span>Preflight</span></button>
-          <button className={activeView === "tools" ? "active" : ""} onClick={() => setActiveView("tools")}><i>⌁</i><span>Tools</span></button>
-          <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>⬡</i><span>Integrations</span></button>
+          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}><i>⌘</i><span>Agent Network</span></button>
+          <button onClick={() => setActiveView("network")}><i>⌘</i><span>Org Chart</span></button>
+          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>✧</i><span>Brain View</span></button>
+
+          <span className="calm-nav-divider" />
+
+          <button className={activeView === "runs" ? "active" : ""} onClick={() => setActiveView("runs")}><i>ϟ</i><span>Automations</span></button>
+          <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>⚙</i><span>Settings</span></button>
         </nav>
 
-        <div className="sidebar-system">
-          <span className="system-pulse" />
-          <div><strong>{runtimeState}</strong><small>{currentProjectName}</small></div>
-        </div>
+        <div className="sidebar-affirmation">“A calmer mind<br />builds a bigger life.”</div>
+        <div className="sidebar-signature">PEOPLE<br />IDEAS<br />PROGRESS<br />A BRIGHTER YOU</div>
       </aside>
 
-      <div className="os-main">
-        <header className="korben-topbar">
-          <div>
-            <span className="topbar-kicker">KORBEN / {viewTitle.toUpperCase()}</span>
-            <strong className="topbar-title">{viewTitle}</strong>
-          </div>
-          <div className="korben-top-actions">
-            <select
-              className="workspace-select"
-              value={selectedProjectSlug}
-              onChange={(event) => switchProject(event.target.value)}
-              aria-label="Current project"
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.slug}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-            <button className="avatar" onClick={signOut} title="Sign out">JG</button>
-          </div>
-        </header>
+      <div className="calm-main">
+        {activeView !== "command" && (
+          <header className="calm-inner-header">
+            <button onClick={() => setActiveView("command")}>← Home</button>
+            <div>
+              <span>{currentProjectName}</span>
+              <strong>{viewTitle}</strong>
+            </div>
+            <div className="inner-header-actions">
+              <button onClick={() => setCalmMode(true)}>Calm mode</button>
+              <button className="avatar calm-avatar" onClick={signOut} title="Sign out">JG</button>
+            </div>
+          </header>
+        )}
 
         {activeView === "command" && renderCommandCenter()}
         {activeView === "network" && renderNetwork()}
@@ -2454,4 +2502,5 @@ export default function Home() {
       </div>
     </main>
   );
+}
 }
