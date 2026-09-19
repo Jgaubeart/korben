@@ -15,6 +15,22 @@ type Agent = {
   name: string;
   role: string;
   status: string;
+  system_key: string;
+};
+
+type PlannedTask = {
+  title: string;
+  description: string;
+  agent_system_key: string;
+  acceptance_criteria: string[];
+  approval_level: number;
+};
+
+type OrchestrationPlan = {
+  title: string;
+  summary: string;
+  assistant_reply: string;
+  tasks: PlannedTask[];
 };
 
 type Task = {
@@ -77,7 +93,7 @@ export default function Home() {
       if (dept) {
         const { data: agentRows } = await supabase
           .from("agents")
-          .select("id,name,role,status")
+          .select("id,name,role,status,system_key")
           .eq("department_id", dept.id)
           .order("name");
         setAgents(agentRows || []);
@@ -249,57 +265,58 @@ export default function Home() {
     }
   };
 
-  const buildDefaultTasks = (objectiveId: string) => [
-    {
-      objective_id: objectiveId,
-      title: "Product Spec",
-      description: "Define requirements and acceptance criteria",
-      status: "queued",
-      sequence: 1,
-    },
-    {
-      objective_id: objectiveId,
-      title: "Architecture Review",
-      description: "Map dependencies and implementation path",
-      status: "queued",
-      sequence: 2,
-    },
-    {
-      objective_id: objectiveId,
-      title: "Task Breakdown",
-      description: "Create structured engineering tasks",
-      status: "queued",
-      sequence: 3,
-    },
-    {
-      objective_id: objectiveId,
-      title: "Build",
-      description: "Frontend, backend and database implementation",
-      status: "queued",
-      sequence: 4,
-    },
-    {
-      objective_id: objectiveId,
-      title: "QA & Security",
-      description: "Test behavior, permissions and regressions",
-      status: "queued",
-      sequence: 5,
-    },
-    {
-      objective_id: objectiveId,
-      title: "Preview Deploy",
-      description: "Ship a Vercel preview for review",
-      status: "queued",
-      sequence: 6,
-    },
-  ];
+  const fallbackPlan = (requestText: string): OrchestrationPlan => ({
+    title: requestText.length > 72 ? `${requestText.slice(0, 69)}…` : requestText,
+    summary: requestText,
+    assistant_reply:
+      "I saved the objective, but the AI planner is not available yet. I created a safe fallback development plan so the work is still structured.",
+    tasks: [
+      {
+        title: "Product Spec",
+        description: "Define requirements and acceptance criteria",
+        agent_system_key: "product_manager",
+        acceptance_criteria: ["Requirements are explicit and testable."],
+        approval_level: 0,
+      },
+      {
+        title: "Architecture Review",
+        description: "Map dependencies and implementation path",
+        agent_system_key: "solutions_architect",
+        acceptance_criteria: ["Architecture and dependencies are documented."],
+        approval_level: 0,
+      },
+      {
+        title: "Build",
+        description: "Implement the requested change on a feature branch",
+        agent_system_key: "frontend_engineer",
+        acceptance_criteria: ["Requested behavior is implemented."],
+        approval_level: 1,
+      },
+      {
+        title: "QA & Security",
+        description: "Test behavior, permissions and regressions",
+        agent_system_key: "qa_engineer",
+        acceptance_criteria: ["Acceptance criteria pass without critical regressions."],
+        approval_level: 0,
+      },
+      {
+        title: "Preview Deploy",
+        description: "Ship a Vercel preview for owner review",
+        agent_system_key: "devops_engineer",
+        acceptance_criteria: ["A preview deployment is available for review."],
+        approval_level: 1,
+      },
+    ],
+  });
 
   const sendMessage = async () => {
     const text = input.trim();
     if (!text || !conversationId || !projectId) return;
 
     setInput("");
-    const userMessage: Message = { role: "user", text, inputMode };
+    setLoadingState("Korben is planning…");
+    const currentInputMode = inputMode;
+    const userMessage: Message = { role: "user", text, inputMode: currentInputMode };
     setMessages((current) => [...current, userMessage]);
 
     const { data: insertedMessage } = await supabase
@@ -308,33 +325,97 @@ export default function Home() {
         conversation_id: conversationId,
         role: "user",
         content: text,
-        input_mode: inputMode,
+        input_mode: currentInputMode,
       })
       .select("id")
       .single();
 
-    const objectiveTitle = text.length > 72 ? `${text.slice(0, 69)}…` : text;
+    let plan = fallbackPlan(text);
+
+    try {
+      const planResponse = await fetch("/api/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request: text,
+          projectName: "Cabinet Genies Portal",
+        }),
+      });
+
+      if (planResponse.ok) {
+        plan = (await planResponse.json()) as OrchestrationPlan;
+      }
+    } catch (error) {
+      console.error("Korben planning failed; using fallback plan.", error);
+    }
+
     const { data: objective } = await supabase
       .from("objectives")
       .insert({
         project_id: projectId,
         conversation_id: conversationId,
-        title: objectiveTitle,
-        description: text,
-        status: "planning",
+        title: plan.title,
+        description: plan.summary || text,
+        status: "planned",
         priority: "normal",
       })
       .select("id,title")
       .single();
 
+    let createdTasks: Task[] = [];
+
     if (objective) {
       setActiveObjective(objective.title);
-      const { data: createdTasks } = await supabase
+
+      const taskRows = plan.tasks.map((task, index) => ({
+        objective_id: objective.id,
+        assigned_agent_id:
+          agents.find((agent) => agent.system_key === task.agent_system_key)?.id || null,
+        title: task.title,
+        description: task.description,
+        status: "queued",
+        sequence: index + 1,
+        acceptance_criteria: task.acceptance_criteria,
+      }));
+
+      const { data } = await supabase
         .from("tasks")
-        .insert(buildDefaultTasks(objective.id))
+        .insert(taskRows)
         .select("id,title,description,status,sequence")
         .order("sequence");
-      setTasks(createdTasks || []);
+
+      createdTasks = data || [];
+      setTasks(createdTasks);
+
+      const approvals = plan.tasks
+        .map((task, index) => ({ task, createdTask: createdTasks[index] }))
+        .filter(({ task, createdTask }) => task.approval_level >= 2 && createdTask)
+        .map(({ task, createdTask }) => ({
+          objective_id: objective.id,
+          task_id: createdTask.id,
+          action_type: task.title,
+          risk_level: task.approval_level,
+          status: "pending",
+          request_payload: {
+            description: task.description,
+            agent_system_key: task.agent_system_key,
+          },
+        }));
+
+      if (approvals.length) {
+        await supabase.from("approvals").insert(approvals);
+      }
+
+      const orchestrator = agents.find((agent) => agent.system_key === "orchestrator");
+      await supabase.from("agent_runs").insert({
+        agent_id: orchestrator?.id || null,
+        status: "complete",
+        model: "gpt-5.6-sol",
+        input: { request: text, input_mode: currentInputMode },
+        output: plan,
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      });
     }
 
     await supabase
@@ -342,9 +423,7 @@ export default function Home() {
       .update({ updated_at: new Date().toISOString() })
       .eq("id", conversationId);
 
-    const reply =
-      "Understood. I saved this as a real objective and created the initial Web Development execution plan. Next, the orchestrator will replace this default plan with an AI-generated plan and assign specialist agents.";
-
+    const reply = plan.assistant_reply;
     const assistantMessage: Message = { role: "assistant", text: reply };
     setMessages((current) => [...current, assistantMessage]);
 
@@ -362,20 +441,23 @@ export default function Home() {
         event_type: "message_received",
         message: "New Command Center request received",
         metadata: {
-          input_mode: inputMode,
+          input_mode: currentInputMode,
           message_id: insertedMessage?.id || null,
         },
       },
       {
         project_id: projectId,
         objective_id: objective?.id || null,
-        event_type: "objective_created",
-        message: objective ? `Objective created: ${objective.title}` : "Objective creation attempted",
-        metadata: {},
+        event_type: "plan_generated",
+        message: objective ? `Execution plan generated: ${objective.title}` : "Planning attempted",
+        metadata: {
+          task_count: createdTasks.length,
+        },
       },
     ]);
 
     setInputMode("text");
+    setLoadingState("System online");
   };
 
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
