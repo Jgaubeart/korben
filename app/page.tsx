@@ -113,6 +113,7 @@ type PlannedTask = {
 type OrchestrationPlan = {
   intent: "conversation" | "question" | "work" | "action" | "approval";
   requires_execution: boolean;
+  target_project_slug: string;
   title: string;
   summary: string;
   assistant_reply: string;
@@ -630,6 +631,8 @@ export default function Home() {
   const fallbackPlan = (requestText: string): OrchestrationPlan => ({
     intent: "work",
     requires_execution: false,
+    target_project_slug:
+      selectedProjectSlug === "general-workspace" ? "" : selectedProjectSlug,
     title: requestText.length > 72 ? `${requestText.slice(0, 69)}…` : requestText,
     summary: requestText,
     assistant_reply:
@@ -1023,6 +1026,13 @@ export default function Home() {
         body: JSON.stringify({
           request: text,
           projectName: currentProjectName,
+          currentProjectSlug: selectedProjectSlug,
+          projects: projects.map((project) => ({
+            name: project.name,
+            slug: project.slug,
+            github_repo: project.github_repo,
+            vercel_project_id: project.vercel_project_id,
+          })),
         }),
       });
 
@@ -1033,21 +1043,34 @@ export default function Home() {
       console.error("Korben planning failed; using fallback plan.", error);
     }
 
-    const selectedProject = projects.find(
-      (project) => project.slug === selectedProjectSlug
+    const currentProject = projects.find(
+      (project) => project.id === resolvedProjectId
     );
 
-    if (
-      ["action", "approval"].includes(plan.intent) &&
-      selectedProjectSlug === "general-workspace"
-    ) {
+    const routedProject = plan.target_project_slug
+      ? projects.find((project) => project.slug === plan.target_project_slug)
+      : currentProject && currentProject.slug !== "general-workspace"
+        ? currentProject
+        : null;
+
+    const needsScopedProject = ["work", "action", "approval"].includes(plan.intent);
+
+    if (needsScopedProject && !routedProject) {
       plan = {
         ...plan,
         requires_execution: false,
         assistant_reply:
-          "This request needs an execution-scoped project. General Workspace is intentionally neutral, so I did not create or run tasks. Choose a project such as Korben OS and send the request again.",
+          plan.assistant_reply ||
+          "I can do that, but I need to know which project or business this work belongs to.",
         tasks: [],
       };
+    }
+
+    const executionProjectId = routedProject?.id || resolvedProjectId;
+    const executionProjectName = routedProject?.name || currentProjectName;
+
+    if (routedProject && routedProject.id !== resolvedProjectId && plan.tasks.length > 0) {
+      setLoadingState(`Routing to ${routedProject.name}…`);
     }
 
     let objective: { id: string; title: string } | null = null;
@@ -1057,8 +1080,9 @@ export default function Home() {
       const { data: createdObjective } = await supabase
         .from("objectives")
         .insert({
-          project_id: resolvedProjectId,
-          conversation_id: resolvedConversationId,
+          project_id: executionProjectId,
+          conversation_id:
+            executionProjectId === resolvedProjectId ? resolvedConversationId : null,
           title: plan.title,
           description: plan.summary || text,
           status: "planned",
@@ -1124,8 +1148,16 @@ export default function Home() {
         agent_id: orchestrator?.id || null,
         status: "complete",
         model: "gpt-5.6-sol",
-        input: { request: text, input_mode: currentInputMode },
-        output: plan,
+        input: {
+          request: text,
+          input_mode: currentInputMode,
+          command_center_project: currentProject?.slug || selectedProjectSlug,
+          target_project: routedProject?.slug || null,
+        },
+        output: {
+          ...plan,
+          resolved_project_name: executionProjectName,
+        },
         started_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
       });
@@ -1150,23 +1182,28 @@ export default function Home() {
     await supabase.from("activity_events").insert([
       {
         project_id: resolvedProjectId,
-        objective_id: objective?.id || null,
+        objective_id:
+          executionProjectId === resolvedProjectId ? objective?.id || null : null,
         event_type: "message_received",
         message: "New Command Center request received",
         metadata: {
           input_mode: currentInputMode,
           message_id: insertedMessage?.id || null,
+          target_project_slug: routedProject?.slug || null,
         },
       },
       {
-        project_id: resolvedProjectId,
+        project_id: executionProjectId,
         objective_id: objective?.id || null,
         event_type: "plan_generated",
-        message: objective ? `Execution plan generated: ${objective.title}` : "Planning attempted",
+        message: objective
+          ? `Execution plan generated for ${executionProjectName}: ${objective.title}`
+          : "Planning attempted",
         metadata: {
           task_count: createdTasks.length,
           intent: plan.intent,
           requires_execution: plan.requires_execution,
+          target_project_slug: routedProject?.slug || null,
         },
       },
     ]);
