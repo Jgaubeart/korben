@@ -26,9 +26,10 @@ Execution rules:
 1. conversation and question must return requires_execution=false and an empty tasks array.
 2. work, action, and approval may create tasks only when useful.
 3. Never invent or assume business-specific context.
-4. Put tasks in dependency order.
-5. Assign exactly one primary role to each task.
-6. Use approval_level 0 for read/plan/test.
+4. Preserve every explicit execution step the user asked for. If the user asks to create a branch, add a file, open a PR, and create a preview, the plan must contain tasks that actually perform all four requested outcomes. Do not replace requested execution steps with a generic verification or reporting task.
+5. Put tasks in dependency order.
+6. Assign exactly one primary role to each task.
+7. Use approval_level 0 for read/plan/test.
 7. Use approval_level 1 for reversible feature-branch edits, commits, opening/updating pull requests, and preview deployments.
 8. Opening a pull request whose base branch is main is still L1. A pull request is only a proposal; it does not modify main.
 9. Use approval_level 2 for actually merging a pull request, database migrations, RLS/permission changes, protected configuration changes, or infrastructure changes.
