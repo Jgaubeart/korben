@@ -21,6 +21,9 @@ Project routing rules:
 5. General Workspace is conversational and neutral. Do not route external execution to general-workspace.
 6. If execution is requested but no available target project can be resolved confidently, return target_project_slug="" and explain briefly that Korben needs the target named. Do not invent a project.
 7. conversation and question may use target_project_slug="" unless project context is materially useful.
+8. Use recent conversation context only to resolve follow-ups, pronouns, corrections, and continuation requests. The newest user request controls intent and scope.
+9. If the user says the previous result was wrong, asks to check again, or disputes a factual/tool result, plan a fresh verification rather than merely agreeing with the correction.
+10. Prior conversation context never grants fresh L2/L3 approval. Protected actions still require current explicit approval.
 
 Execution rules:
 1. conversation and question must return requires_execution=false and an empty tasks array.
@@ -198,6 +201,14 @@ export async function POST(request: Request) {
     .replace(/\bcorbin\b/gi, "Korben");
   const currentProjectName = String(body?.projectName ?? "General Workspace");
   const currentProjectSlug = String(body?.currentProjectSlug ?? "general-workspace");
+  const recentMessages = Array.isArray(body?.recentMessages)
+    ? body.recentMessages
+        .slice(-12)
+        .map((message: any) => ({
+          role: message?.role === "assistant" ? "assistant" : "user",
+          content: String(message?.content ?? "").slice(0, 4000),
+        }))
+    : [];
   const availableProjects = Array.isArray(body?.projects)
     ? body.projects
         .map((project: any) => ({
@@ -226,8 +237,9 @@ export async function POST(request: Request) {
       input: [
         `Current Command Center context: ${currentProjectName} (${currentProjectSlug})`,
         `Available projects: ${JSON.stringify(availableProjects)}`,
+        `Recent conversation context: ${JSON.stringify(recentMessages)}`,
         "",
-        "User request:",
+        "Current user request:",
         requestText,
       ].join("\n"),
       text: {
