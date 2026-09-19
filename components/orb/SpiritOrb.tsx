@@ -15,43 +15,44 @@ type Palette = {
   light: string;
   cream: string;
   core: string;
+  star: string;
 };
 
 const PALETTES: Record<AmbientSceneKey, Palette> = {
-  "pre-dawn": { deep: "#15394f", mid: "#548f9f", light: "#b9dcdf", cream: "#e8d8c7", core: "#fff6df" },
-  dawn: { deep: "#1d4558", mid: "#6aa4aa", light: "#c3e5df", cream: "#f2dac1", core: "#fff5db" },
-  sunrise: { deep: "#315651", mid: "#7ca28f", light: "#d4ead5", cream: "#f5d3a4", core: "#fff0c8" },
-  morning: { deep: "#124f4b", mid: "#3d9689", light: "#b9e8dc", cream: "#f7e7c7", core: "#fff6da" },
-  noon: { deep: "#0f514c", mid: "#369789", light: "#b7e9dc", cream: "#f8e7c4", core: "#fff7dc" },
-  afternoon: { deep: "#185650", mid: "#499487", light: "#bee5da", cream: "#f4e1c1", core: "#fff3d3" },
-  "golden-hour": { deep: "#3b5c55", mid: "#829d88", light: "#d7e4cd", cream: "#f4c98f", core: "#ffe9ba" },
-  sunset: { deep: "#3e5354", mid: "#858f89", light: "#d1d8cd", cream: "#edba99", core: "#ffddb9" },
-  "blue-hour": { deep: "#12364e", mid: "#34798c", light: "#98d3da", cream: "#dce5dc", core: "#f1f4e1" },
-  night: { deep: "#0a2a40", mid: "#246f84", light: "#8fd1d8", cream: "#dce7df", core: "#f5f7e8" },
+  "pre-dawn": { deep: "#14364b", mid: "#4a8c9a", light: "#b8dcdf", cream: "#e8d8c7", core: "#fff6df", star: "#f4eee1" },
+  dawn: { deep: "#1b4457", mid: "#69a0a6", light: "#c6e5df", cream: "#f2ddc4", core: "#fff5db", star: "#fff4e7" },
+  sunrise: { deep: "#2d554f", mid: "#79a08f", light: "#d5ebd8", cream: "#f6d4a7", core: "#fff1cb", star: "#fff3df" },
+  morning: { deep: "#0f4d49", mid: "#399184", light: "#bae8dd", cream: "#f7e8ca", core: "#fff6da", star: "#fff6ea" },
+  noon: { deep: "#0d504a", mid: "#359586", light: "#b8eadc", cream: "#f8e8c7", core: "#fff7dc", star: "#fff9ef" },
+  afternoon: { deep: "#175650", mid: "#4a9688", light: "#bde5d9", cream: "#f4e2c3", core: "#fff3d5", star: "#fff6e7" },
+  "golden-hour": { deep: "#395d55", mid: "#809c88", light: "#d7e4cd", cream: "#f4ca92", core: "#ffeabd", star: "#fff1d8" },
+  sunset: { deep: "#3d5455", mid: "#868f8a", light: "#d1d8cd", cream: "#edbc9d", core: "#ffdebc", star: "#fff0de" },
+  "blue-hour": { deep: "#12374d", mid: "#36798c", light: "#9ad4db", cream: "#dde6de", core: "#f2f5e4", star: "#f4f7ef" },
+  night: { deep: "#0a2a40", mid: "#236d82", light: "#8fd2da", cream: "#dde8df", core: "#f6f8e8", star: "#ffffff" },
 };
 
 function speedFor(state: SpiritOrbProps["state"]) {
-  if (state === "listening") return 1.30;
-  if (state === "thinking") return 1.75;
-  if (state === "responding") return 1.45;
-  if (state === "working") return 1.18;
-  return 0.62;
+  if (state === "listening") return 1.2;
+  if (state === "thinking") return 1.65;
+  if (state === "responding") return 1.38;
+  if (state === "working") return 1.1;
+  return 0.58;
 }
 
 function curlFor(state: SpiritOrbProps["state"]) {
-  if (state === "thinking") return 32;
-  if (state === "listening") return 26;
-  if (state === "responding") return 28;
-  if (state === "working") return 23;
-  return 18;
+  if (state === "thinking") return 30;
+  if (state === "responding") return 27;
+  if (state === "listening") return 24;
+  if (state === "working") return 21;
+  return 17;
 }
 
 function splatForceFor(state: SpiritOrbProps["state"]) {
-  if (state === "thinking") return 115;
-  if (state === "listening") return 92;
-  if (state === "responding") return 104;
-  if (state === "working") return 86;
-  return 66;
+  if (state === "thinking") return 110;
+  if (state === "responding") return 102;
+  if (state === "listening") return 88;
+  if (state === "working") return 82;
+  return 62;
 }
 
 const QUAD_VERTEX = `
@@ -117,7 +118,6 @@ const VORTICITY_FRAGMENT = `
 
     vec2 velocity = texture2D(uVelocity, vUv).xy;
     velocity += force * uDt;
-    velocity = clamp(velocity, vec2(-1000.0), vec2(1000.0));
     gl_FragColor = vec4(velocity, 0.0, 1.0);
   }
 `;
@@ -192,23 +192,29 @@ const SPLAT_FRAGMENT = `
   }
 `;
 
-const DISPLAY_VERTEX = `
+const FLUID_VERTEX = `
   varying vec2 vUv;
-  varying vec3 vNormalLocal;
+  varying vec3 vLocalNormal;
+  varying vec3 vLocalPos;
+
   void main() {
     vUv = uv;
-    vNormalLocal = normal;
+    vLocalNormal = normal;
+    vLocalPos = position;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
-const DISPLAY_FRAGMENT = `
+const FLUID_FRAGMENT = `
   precision highp float;
+
   varying vec2 vUv;
-  varying vec3 vNormalLocal;
+  varying vec3 vLocalNormal;
+  varying vec3 vLocalPos;
 
   uniform sampler2D uDye;
   uniform vec3 uDeep;
+  uniform vec3 uMid;
   uniform vec3 uLight;
   uniform vec3 uCream;
   uniform float uTime;
@@ -217,32 +223,58 @@ const DISPLAY_FRAGMENT = `
     return fract(uv);
   }
 
+  vec3 sampleFluid(vec2 uv, float scale, vec2 offset) {
+    return texture2D(uDye, wrapUv(uv * scale + offset)).rgb;
+  }
+
   void main() {
-    vec3 n = normalize(vNormalLocal);
-    vec2 flowUv = vUv;
-    flowUv.x += sin(vUv.y * 6.2831 + uTime * 0.08) * 0.012;
-    flowUv.y += sin(vUv.x * 7.0 - uTime * 0.065) * 0.009;
+    vec3 n = normalize(vLocalNormal);
+    vec3 p = normalize(vLocalPos);
 
-    vec3 a = texture2D(uDye, wrapUv(flowUv)).rgb;
-    vec3 b = texture2D(uDye, wrapUv(flowUv * vec2(1.03, .97) + vec2(.17, .11))).rgb;
-    vec3 c = texture2D(uDye, wrapUv(flowUv * vec2(.96, 1.04) + vec2(.41, .27))).rgb;
+    float depthBack = (p.z + 1.0) * 0.5;
+    float edge = pow(1.0 - abs(n.z), 1.45);
 
-    vec3 dye = a * 0.58 + b * 0.27 + c * 0.15;
-    float intensity = max(max(dye.r, dye.g), dye.b);
-    float alpha = smoothstep(0.025, 0.36, intensity);
+    vec2 flow0 = vUv;
+    flow0.x += sin(vUv.y * 6.2831 + uTime * 0.11) * 0.015;
+    flow0.y += cos(vUv.x * 7.1 - uTime * 0.08) * 0.012;
 
-    float edge = pow(1.0 - abs(n.z), 1.5);
-    vec3 color = mix(uDeep * 0.18, dye, 0.92);
-    color += uLight * edge * 0.06;
-    color += uCream * pow(intensity, 1.4) * 0.08;
+    vec2 flow1 = vUv + vec2(p.x, p.y) * 0.06;
+    flow1.x += sin(vUv.y * 9.0 - uTime * 0.07) * 0.025;
+    flow1.y += sin(vUv.x * 8.0 + uTime * 0.05) * 0.018;
 
-    gl_FragColor = vec4(color, alpha * 0.84);
+    vec2 flow2 = vUv - vec2(p.x, p.y) * 0.045;
+    flow2.x += cos(vUv.y * 5.0 + uTime * 0.05) * 0.012;
+    flow2.y += sin(vUv.x * 4.5 - uTime * 0.04) * 0.014;
+
+    vec3 backLayer = sampleFluid(flow0, 0.94, vec2(0.03, 0.07));
+    vec3 mainLayer = sampleFluid(flow1, 1.06, vec2(0.17, 0.11));
+    vec3 frontLayer = sampleFluid(flow2, 1.14, vec2(0.41, 0.27));
+
+    float backI = max(max(backLayer.r, backLayer.g), backLayer.b);
+    float mainI = max(max(mainLayer.r, mainLayer.g), mainLayer.b);
+    float frontI = max(max(frontLayer.r, frontLayer.g), frontLayer.b);
+
+    vec3 color = vec3(0.0);
+
+    color += mix(uDeep * 0.35, backLayer, 0.75) * (0.18 + backI * 0.55) * (0.7 + depthBack * 0.4);
+    color += mix(uMid * 0.55, mainLayer, 0.88) * (0.2 + mainI * 0.95);
+    color += mix(uLight * 0.7, frontLayer + uCream * 0.10, 0.92) * (0.12 + frontI * 0.75) * (0.55 + edge * 0.55);
+
+    float intensity = max(max(color.r, color.g), color.b);
+    float alpha = smoothstep(0.025, 0.34, intensity);
+    alpha *= 0.68 + edge * 0.18;
+
+    color += uLight * edge * 0.05;
+    color += uCream * pow(mainI, 1.6) * 0.10;
+
+    gl_FragColor = vec4(color, alpha);
   }
 `;
 
 const GLASS_VERTEX = `
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
+
   void main() {
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorldPos = worldPosition.xyz;
@@ -251,7 +283,7 @@ const GLASS_VERTEX = `
   }
 `;
 
-const GLASS_FRAGMENT = `
+const OUTER_GLASS_FRAGMENT = `
   precision highp float;
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
@@ -264,15 +296,43 @@ const GLASS_FRAGMENT = `
     vec3 n = normalize(vWorldNormal);
     vec3 v = normalize(cameraPosition - vWorldPos);
 
-    float fresnel = pow(1.0 - max(dot(n, v), 0.0), 2.35);
-    float glintA = pow(max(dot(n, normalize(vec3(-0.55, 0.78, 0.55))), 0.0), 14.0);
-    float glintB = pow(max(dot(n, normalize(vec3(0.82, 0.12, 0.56))), 0.0), 24.0);
+    float fresnel = pow(1.0 - max(dot(n, v), 0.0), 2.15);
+    float highlightA = pow(max(dot(n, normalize(vec3(-0.52, 0.78, 0.54))), 0.0), 22.0);
+    float highlightB = pow(max(dot(n, normalize(vec3(0.92, 0.20, 0.44))), 0.0), 32.0);
+    float highlightC = pow(max(dot(n, normalize(vec3(-0.18, -0.55, 0.92))), 0.0), 18.0);
 
-    vec3 color = mix(uLight, uCream, glintA * 0.75 + glintB * 0.35);
-    float alpha = 0.018 + fresnel * 0.24 + glintA * 0.12 + glintB * 0.14;
-    alpha *= 0.96 + uPulse * 0.04;
+    vec3 color = mix(uLight, uCream, highlightA * 0.72 + highlightB * 0.35 + highlightC * 0.18);
 
-    gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.34));
+    float alpha =
+      0.02 +
+      fresnel * 0.30 +
+      highlightA * 0.20 +
+      highlightB * 0.16 +
+      highlightC * 0.08;
+
+    alpha *= 0.95 + uPulse * 0.05;
+
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.5));
+  }
+`;
+
+const INNER_GLASS_FRAGMENT = `
+  precision highp float;
+  varying vec3 vWorldPos;
+  varying vec3 vWorldNormal;
+
+  uniform vec3 uLight;
+  uniform vec3 uCream;
+
+  void main() {
+    vec3 n = normalize(vWorldNormal);
+    vec3 v = normalize(cameraPosition - vWorldPos);
+
+    float fresnel = pow(1.0 - max(dot(n, v), 0.0), 1.8);
+    vec3 color = mix(uLight * 0.65, uCream * 0.85, fresnel * 0.6);
+    float alpha = 0.02 + fresnel * 0.09;
+
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.18));
   }
 `;
 
@@ -305,12 +365,14 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
 
     const palette = PALETTES[tone];
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
       powerPreference: "high-performance",
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(renderer.domElement);
@@ -330,9 +392,13 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     const simScene = new THREE.Scene();
     const simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const quadGeometry = new THREE.PlaneGeometry(2, 2);
+
     const quad = new THREE.Mesh(
       quadGeometry,
-      new THREE.ShaderMaterial({ vertexShader: QUAD_VERTEX, fragmentShader: ADVECT_FRAGMENT })
+      new THREE.ShaderMaterial({
+        vertexShader: QUAD_VERTEX,
+        fragmentShader: ADVECT_FRAGMENT,
+      })
     );
     simScene.add(quad);
 
@@ -419,7 +485,7 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
         uTarget: { value: null },
         uPoint: { value: new THREE.Vector2(0.5, 0.5) },
         uColor: { value: new THREE.Vector3() },
-        uRadius: { value: 0.0035 },
+        uRadius: { value: 0.004 },
         uAspect: { value: 1 },
       },
     });
@@ -440,21 +506,34 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
 
     const displayScene = new THREE.Scene();
     const displayCamera = new THREE.PerspectiveCamera(31, 1, 0.1, 20);
-    displayCamera.position.set(0, 0, 4.15);
+    displayCamera.position.set(0, 0, 4.2);
 
     const orbGroup = new THREE.Group();
     displayScene.add(orbGroup);
 
+    const innerBackGeometry = new THREE.SphereGeometry(0.88, 72, 72);
+    const innerBackMaterial = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(palette.deep),
+      transparent: true,
+      opacity: tone === "night" ? 0.12 : 0.08,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    const innerBack = new THREE.Mesh(innerBackGeometry, innerBackMaterial);
+    innerBack.renderOrder = 0;
+    orbGroup.add(innerBack);
+
     const fluidGeometry = new THREE.SphereGeometry(0.97, 96, 96);
     const fluidMaterial = new THREE.ShaderMaterial({
-      vertexShader: DISPLAY_VERTEX,
-      fragmentShader: DISPLAY_FRAGMENT,
+      vertexShader: FLUID_VERTEX,
+      fragmentShader: FLUID_FRAGMENT,
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide,
       uniforms: {
         uDye: { value: dyeA.texture },
         uDeep: { value: new THREE.Color(palette.deep) },
+        uMid: { value: new THREE.Color(palette.mid) },
         uLight: { value: new THREE.Color(palette.light) },
         uCream: { value: new THREE.Color(palette.cream) },
         uTime: { value: 0 },
@@ -464,22 +543,26 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     fluidSphere.renderOrder = 2;
     orbGroup.add(fluidSphere);
 
-    const innerGlowGeometry = new THREE.SphereGeometry(0.90, 64, 64);
-    const innerGlowMaterial = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(palette.deep),
-      transparent: true,
-      opacity: tone === "night" ? 0.10 : 0.075,
-      side: THREE.BackSide,
-      depthWrite: false,
-    });
-    const innerGlow = new THREE.Mesh(innerGlowGeometry, innerGlowMaterial);
-    innerGlow.renderOrder = 1;
-    orbGroup.add(innerGlow);
-
-    const glassGeometry = new THREE.SphereGeometry(1.065, 96, 96);
-    const glassMaterial = new THREE.ShaderMaterial({
+    const innerShellGeometry = new THREE.SphereGeometry(1.0, 96, 96);
+    const innerShellMaterial = new THREE.ShaderMaterial({
       vertexShader: GLASS_VERTEX,
-      fragmentShader: GLASS_FRAGMENT,
+      fragmentShader: INNER_GLASS_FRAGMENT,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.BackSide,
+      uniforms: {
+        uLight: { value: new THREE.Color(palette.light) },
+        uCream: { value: new THREE.Color(palette.cream) },
+      },
+    });
+    const innerShell = new THREE.Mesh(innerShellGeometry, innerShellMaterial);
+    innerShell.renderOrder = 4;
+    orbGroup.add(innerShell);
+
+    const outerGlassGeometry = new THREE.SphereGeometry(1.07, 120, 120);
+    const outerGlassMaterial = new THREE.ShaderMaterial({
+      vertexShader: GLASS_VERTEX,
+      fragmentShader: OUTER_GLASS_FRAGMENT,
       transparent: true,
       depthWrite: false,
       side: THREE.FrontSide,
@@ -489,11 +572,11 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
         uPulse: { value: 0 },
       },
     });
-    const glass = new THREE.Mesh(glassGeometry, glassMaterial);
-    glass.renderOrder = 6;
-    orbGroup.add(glass);
+    const outerGlass = new THREE.Mesh(outerGlassGeometry, outerGlassMaterial);
+    outerGlass.renderOrder = 8;
+    orbGroup.add(outerGlass);
 
-    const coreGeometry = new THREE.SphereGeometry(0.065, 36, 36);
+    const coreGeometry = new THREE.SphereGeometry(0.064, 36, 36);
     const coreMaterial = new THREE.MeshBasicMaterial({
       color: new THREE.Color(palette.core),
       transparent: true,
@@ -502,22 +585,99 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       depthWrite: false,
     });
     const core = new THREE.Mesh(coreGeometry, coreMaterial);
-    core.renderOrder = 8;
+    core.renderOrder = 10;
     orbGroup.add(core);
 
-    const coreGlowGeometry = new THREE.SphereGeometry(0.17, 32, 32);
+    const coreGlowGeometry = new THREE.SphereGeometry(0.18, 32, 32);
     const coreGlowMaterial = new THREE.MeshBasicMaterial({
       color: new THREE.Color(palette.light),
       transparent: true,
-      opacity: 0.08,
+      opacity: tone === "night" ? 0.13 : 0.09,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     const coreGlow = new THREE.Mesh(coreGlowGeometry, coreGlowMaterial);
-    coreGlow.renderOrder = 7;
+    coreGlow.renderOrder = 9;
     orbGroup.add(coreGlow);
 
-    const colors = [
+    const starCount = 95;
+    const starPositions = new Float32Array(starCount * 3);
+    const starSizes = new Float32Array(starCount);
+    for (let i = 0; i < starCount; i += 1) {
+      const r = 0.75 * Math.cbrt(Math.random());
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+
+      starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      starPositions[i * 3 + 1] = r * Math.cos(phi);
+      starPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+      starSizes[i] = 0.4 + Math.random() * 1.1;
+    }
+
+    const starGeometry = new THREE.BufferGeometry();
+    starGeometry.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+    starGeometry.setAttribute("aSize", new THREE.BufferAttribute(starSizes, 1));
+
+    const starMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uColor: { value: new THREE.Color(palette.star) },
+        uOpacity: { value: tone === "night" ? 0.72 : 0.42 },
+      },
+      vertexShader: `
+        attribute float aSize;
+        varying float vSize;
+        void main() {
+          vSize = aSize;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = aSize * 2.6;
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        varying float vSize;
+        void main() {
+          vec2 p = gl_PointCoord - vec2(0.5);
+          float d = length(p);
+          float alpha = smoothstep(0.5, 0.0, d);
+          alpha *= uOpacity;
+          gl_FragColor = vec4(uColor, alpha);
+        }
+      `,
+    });
+
+    const stars = new THREE.Points(starGeometry, starMaterial);
+    stars.renderOrder = 6;
+    orbGroup.add(stars);
+
+    const shimmerGeometry = new THREE.TorusGeometry(0.73, 0.01, 16, 120, Math.PI * 0.9);
+    const shimmerMaterial = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(palette.cream),
+      transparent: true,
+      opacity: 0.12,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const shimmerArcA = new THREE.Mesh(shimmerGeometry, shimmerMaterial);
+    shimmerArcA.position.set(0.04, 0.06, 0.46);
+    shimmerArcA.rotation.set(0.45, 0.22, -0.22);
+    shimmerArcA.renderOrder = 7;
+    orbGroup.add(shimmerArcA);
+
+    const shimmerArcB = shimmerArcA.clone();
+    shimmerArcB.scale.setScalar(0.84);
+    shimmerArcB.position.set(-0.08, 0.28, 0.36);
+    shimmerArcB.rotation.set(0.2, -0.4, 0.8);
+    shimmerArcB.material = shimmerMaterial.clone();
+    (shimmerArcB.material as THREE.MeshBasicMaterial).opacity = 0.08;
+    orbGroup.add(shimmerArcB);
+
+    const fluidColors = [
       new THREE.Color(palette.cream),
       new THREE.Color(palette.light),
       new THREE.Color(palette.mid),
@@ -537,26 +697,6 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       renderPass(splatMaterial, targetB);
     };
 
-    const resize = () => {
-      const rect = host.getBoundingClientRect();
-      const width = Math.max(1, rect.width);
-      const height = Math.max(1, rect.height);
-      renderer.setSize(width, height, false);
-      displayCamera.aspect = width / height;
-      displayCamera.updateProjectionMatrix();
-      splatMaterial.uniforms.uAspect.value = width / height;
-    };
-
-    const observer = new ResizeObserver(resize);
-    observer.observe(host);
-    resize();
-
-    let frame = 0;
-    let lastSimTime = 0;
-    const clock = new THREE.Clock();
-    const speed = speedFor(state);
-    const force = splatForceFor(state);
-
     const swapVelocity = () => {
       const temp = velocityA;
       velocityA = velocityB;
@@ -575,35 +715,81 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       pressureB = temp;
     };
 
-    const injectOrbitingSpirit = (time: number) => {
-      const baseRadius = state === "listening" ? 0.16 : 0.23;
-      const radius = state === "thinking" ? 0.0048 : 0.0064;
+    const resize = () => {
+      const rect = host.getBoundingClientRect();
+      const width = Math.max(1, rect.width);
+      const height = Math.max(1, rect.height);
 
-      for (let i = 0; i < 3; i += 1) {
-        const angle = time * (0.52 + i * 0.045) * speed + i * (Math.PI * 2 / 3);
-        const wobble = Math.sin(time * 0.37 + i * 1.7) * 0.055;
-        const r = baseRadius + wobble;
+      renderer.setSize(width, height, false);
+      displayCamera.aspect = width / height;
+      displayCamera.updateProjectionMatrix();
+      splatMaterial.uniforms.uAspect.value = width / height;
+    };
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(host);
+    resize();
+
+    const speed = speedFor(state);
+    const baseForce = splatForceFor(state);
+    const clock = new THREE.Clock();
+    let frame = 0;
+    let lastStep = 0;
+
+    const injectStructuredSpirit = (time: number) => {
+      const ringRadius = state === "listening" ? 0.16 : 0.22;
+      const radius = state === "thinking" ? 0.0046 : 0.0062;
+
+      for (let i = 0; i < 4; i += 1) {
+        const angle = time * (0.48 + i * 0.03) * speed + i * (Math.PI * 0.5);
+        const wobble = Math.sin(time * 0.28 + i * 1.2) * 0.045;
+        const r = ringRadius + wobble;
         const px = 0.5 + Math.cos(angle) * r;
         const py = 0.5 + Math.sin(angle) * r * 0.78;
         const point = new THREE.Vector2(px, py);
 
         const tangent = new THREE.Vector2(-Math.sin(angle), Math.cos(angle));
         const inward = new THREE.Vector2(0.5 - px, 0.5 - py).normalize();
-        const stateBias =
-          state === "listening"
-            ? inward.multiplyScalar(0.7).add(tangent.multiplyScalar(0.55))
-            : state === "responding"
-              ? inward.multiplyScalar(-0.22).add(tangent)
-              : tangent;
 
-        const velColor = new THREE.Vector3(stateBias.x * force, stateBias.y * force, 0);
+        let velocityVec = tangent.clone();
+        if (state === "listening") {
+          velocityVec = tangent.multiplyScalar(0.55).add(inward.multiplyScalar(0.8));
+        } else if (state === "responding") {
+          velocityVec = tangent.multiplyScalar(1.05).add(inward.multiplyScalar(-0.18));
+        } else if (state === "thinking") {
+          velocityVec = tangent.multiplyScalar(1.15).add(inward.multiplyScalar(0.12));
+        }
+
+        const velColor = new THREE.Vector3(
+          velocityVec.x * baseForce,
+          velocityVec.y * baseForce,
+          0
+        );
+
         doSplat(velocityA, velocityB, point, velColor, radius);
         swapVelocity();
 
-        const dyeColor = colors[i].clone().multiplyScalar(i === 0 ? 0.052 : 0.038);
-        doSplat(dyeA, dyeB, point, new THREE.Vector3(dyeColor.r, dyeColor.g, dyeColor.b), radius * 1.45);
+        const color = fluidColors[i % fluidColors.length].clone();
+        const amt = i === 0 ? 0.053 : i === 1 ? 0.04 : 0.032;
+
+        doSplat(
+          dyeA,
+          dyeB,
+          point,
+          new THREE.Vector3(color.r * amt, color.g * amt, color.b * amt),
+          radius * 1.7
+        );
         swapDye();
       }
+
+      doSplat(
+        dyeA,
+        dyeB,
+        new THREE.Vector2(0.5, 0.5),
+        new THREE.Vector3(0.010, 0.011, 0.012),
+        0.02
+      );
+      swapDye();
     };
 
     const stepFluid = (time: number) => {
@@ -612,7 +798,7 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       advectMaterial.uniforms.uSource.value = velocityA.texture;
       advectMaterial.uniforms.uVelocity.value = velocityA.texture;
       advectMaterial.uniforms.uDt.value = dt;
-      advectMaterial.uniforms.uDissipation.value = 0.991;
+      advectMaterial.uniforms.uDissipation.value = 0.992;
       renderPass(advectMaterial, velocityB);
       swapVelocity();
 
@@ -646,38 +832,44 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       advectMaterial.uniforms.uSource.value = dyeA.texture;
       advectMaterial.uniforms.uVelocity.value = velocityA.texture;
       advectMaterial.uniforms.uDt.value = dt;
-      advectMaterial.uniforms.uDissipation.value = state === "responding" ? 0.997 : 0.994;
+      advectMaterial.uniforms.uDissipation.value =
+        state === "responding" ? 0.997 : 0.995;
       renderPass(advectMaterial, dyeB);
       swapDye();
 
-      injectOrbitingSpirit(time);
+      injectStructuredSpirit(time);
       fluidMaterial.uniforms.uDye.value = dyeA.texture;
     };
 
-    for (let i = 0; i < 24; i += 1) {
-      injectOrbitingSpirit(i * 0.16);
-      stepFluid(i * 0.16);
+    for (let i = 0; i < 28; i += 1) {
+      injectStructuredSpirit(i * 0.14);
+      stepFluid(i * 0.14);
     }
 
     const render = () => {
       const elapsed = clock.getElapsedTime();
 
-      if (!reducedMotion && elapsed - lastSimTime >= 1 / 30) {
+      if (!reducedMotion && elapsed - lastStep >= 1 / 30) {
         stepFluid(elapsed);
-        lastSimTime = elapsed;
+        lastStep = elapsed;
       }
 
       if (!reducedMotion) {
-        orbGroup.rotation.y = Math.sin(elapsed * 0.10) * 0.045;
-        orbGroup.rotation.x = Math.sin(elapsed * 0.075) * 0.022;
+        orbGroup.rotation.y = Math.sin(elapsed * 0.09) * 0.045;
+        orbGroup.rotation.x = Math.sin(elapsed * 0.07) * 0.022;
+        stars.rotation.y = elapsed * 0.04;
+        stars.rotation.x = Math.sin(elapsed * 0.11) * 0.08;
+        shimmerArcA.rotation.z += 0.0017;
+        shimmerArcB.rotation.z -= 0.0011;
       }
 
-      const pulse = reducedMotion ? 0.4 : (Math.sin(elapsed * 1.35 * speed) + 1) * 0.5;
+      const pulse = reducedMotion ? 0.4 : (Math.sin(elapsed * 1.28 * speed) + 1) * 0.5;
       fluidMaterial.uniforms.uTime.value = reducedMotion ? 0 : elapsed * speed;
-      glassMaterial.uniforms.uPulse.value = pulse;
-      core.scale.setScalar(0.94 + pulse * 0.11);
-      coreGlow.scale.setScalar(0.92 + pulse * 0.18);
-      coreGlowMaterial.opacity = 0.055 + pulse * 0.055;
+      outerGlassMaterial.uniforms.uPulse.value = pulse;
+
+      core.scale.setScalar(0.94 + pulse * 0.10);
+      coreGlow.scale.setScalar(0.92 + pulse * 0.22);
+      coreGlowMaterial.opacity = (tone === "night" ? 0.09 : 0.06) + pulse * 0.05;
 
       renderer.setRenderTarget(null);
       renderer.setClearColor(0x000000, 0);
@@ -686,6 +878,7 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
 
       frame = requestAnimationFrame(render);
     };
+
     render();
 
     return () => {
@@ -710,16 +903,23 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       gradientMaterial.dispose();
       splatMaterial.dispose();
 
+      innerBackGeometry.dispose();
+      innerBackMaterial.dispose();
       fluidGeometry.dispose();
       fluidMaterial.dispose();
-      innerGlowGeometry.dispose();
-      innerGlowMaterial.dispose();
-      glassGeometry.dispose();
-      glassMaterial.dispose();
+      innerShellGeometry.dispose();
+      innerShellMaterial.dispose();
+      outerGlassGeometry.dispose();
+      outerGlassMaterial.dispose();
       coreGeometry.dispose();
       coreMaterial.dispose();
       coreGlowGeometry.dispose();
       coreGlowMaterial.dispose();
+      starGeometry.dispose();
+      starMaterial.dispose();
+      shimmerGeometry.dispose();
+      shimmerMaterial.dispose();
+      (shimmerArcB.material as THREE.Material).dispose();
 
       renderer.dispose();
       renderer.domElement.remove();
