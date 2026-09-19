@@ -1548,38 +1548,46 @@ export default function Home() {
 
   if (!authReady) {
     return (
-      <main className="auth-shell">
-        <div className="auth-card">
-          <div className="brand auth-brand">
-            <div className="brand-mark">K</div>
-            <div>
-              <strong>KORBEN</strong>
-              <span>Multi-Agent OS</span>
-            </div>
+      <main className="auth-shell zen-auth-shell">
+        <div className="zen-auth-wordmark">KORBEN</div>
+        <div className="auth-card zen-auth-card zen-auth-loading">
+          <div className="zen-auth-presence" aria-hidden="true">
+            <span className="zen-auth-ring zen-auth-ring-outer">
+              <i className="zen-auth-node zen-auth-node-left" />
+              <i className="zen-auth-node zen-auth-node-right" />
+            </span>
+            <span className="zen-auth-ring zen-auth-ring-inner" />
+            <span className="zen-auth-pearl" />
           </div>
-          <p className="auth-status">Connecting to your workspace…</p>
+          <p className="auth-status">Connecting to Korben…</p>
         </div>
+        <div className="zen-auth-footer">A CALMER, BRIGHTER YOU.</div>
       </main>
     );
   }
 
   if (!signedIn) {
     return (
-      <main className="auth-shell">
-        <div className="auth-card">
-          <div className="brand auth-brand">
-            <div className="brand-mark">K</div>
-            <div>
-              <strong>KORBEN</strong>
-              <span>Multi-Agent OS</span>
-            </div>
+      <main className="auth-shell zen-auth-shell">
+        <div className="zen-auth-wordmark">KORBEN</div>
+
+        <div className="auth-card zen-auth-card">
+          <div className="zen-auth-presence" aria-hidden="true">
+            <span className="zen-auth-ring zen-auth-ring-outer">
+              <i className="zen-auth-node zen-auth-node-left" />
+              <i className="zen-auth-node zen-auth-node-right" />
+            </span>
+            <span className="zen-auth-ring zen-auth-ring-inner" />
+            <span className="zen-auth-pearl" />
           </div>
-          <div className="auth-copy">
-            <span className="kicker">OWNER ACCESS</span>
-            <h1>Sign in to Korben</h1>
-            <p>Your Command Center, agents, projects and run history are protected by your Korben account.</p>
+
+          <div className="auth-copy zen-auth-copy">
+            <span className="kicker">WELCOME BACK</span>
+            <h1>Sign in to Korben.</h1>
+            <p>Your private space to think, plan, and get things done.</p>
           </div>
-          <div className="auth-form">
+
+          <div className="auth-form zen-auth-form">
             <label>
               Email
               <input
@@ -1606,11 +1614,13 @@ export default function Home() {
               />
             </label>
             {loginError && <div className="auth-error">{loginError}</div>}
-            <button className="auth-submit" onClick={signIn} disabled={loginBusy}>
-              {loginBusy ? "Signing in…" : "Sign in"}
+            <button className="auth-submit zen-auth-submit" onClick={signIn} disabled={loginBusy}>
+              {loginBusy ? "Signing in…" : "Enter Korben"}
             </button>
           </div>
         </div>
+
+        <div className="zen-auth-footer">A CALMER, BRIGHTER YOU.</div>
       </main>
     );
   }
