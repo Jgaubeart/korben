@@ -289,13 +289,100 @@ body {
   background: radial-gradient(circle, rgba(244, 210, 148, .20), transparent 68%);
 }
 
-.zen-listener.active .zen-core,
-.zen-listener.listening .zen-core {
-  animation: korbenBreathe 1.8s ease-in-out infinite;
+/* The HUD is always alive, but deliberately slow while idle. */
+.zen-ring-outer {
+  animation: korbenOrbitOuter 34s linear infinite;
+  transform-origin: center;
 }
 
+.zen-ring-inner {
+  animation: korbenOrbitInner 46s linear infinite;
+  transform-origin: center;
+}
+
+.zen-core {
+  animation: korbenIdleCore 6.5s ease-in-out infinite;
+}
+
+.zen-node {
+  animation: korbenIdleNode 5.6s ease-in-out infinite;
+}
+
+.zen-node-right {
+  animation-delay: -2.8s;
+}
+
+/* Listening: open, receptive, gently breathing with the user. */
+.zen-listener.active .zen-ring-outer,
+.zen-listener.listening .zen-ring-outer {
+  animation: korbenListenOuter 4.8s ease-in-out infinite;
+}
+
+.zen-listener.active .zen-ring-inner,
+.zen-listener.listening .zen-ring-inner {
+  animation: korbenListenInner 3.8s ease-in-out infinite;
+}
+
+.zen-listener.active .zen-core,
+.zen-listener.listening .zen-core {
+  animation: korbenListenCore 1.75s ease-in-out infinite;
+  box-shadow:
+    inset -11px -12px 24px rgba(80, 55, 35, .12),
+    inset 10px 9px 24px rgba(255,255,255,.38),
+    0 0 34px rgba(225, 187, 122, .34),
+    0 0 70px rgba(225, 187, 122, .10);
+}
+
+.zen-listener.active .zen-node,
+.zen-listener.listening .zen-node {
+  animation: korbenListenNode 1.4s ease-in-out infinite;
+}
+
+/* Thinking: more deliberate orbital motion, still quiet rather than frantic. */
 .zen-listener.thinking .zen-ring-outer {
-  animation: korbenTurn 8s linear infinite;
+  animation: korbenThinkOuter 6.5s linear infinite;
+}
+
+.zen-listener.thinking .zen-ring-inner {
+  animation: korbenThinkInner 4.8s linear infinite;
+}
+
+.zen-listener.thinking .zen-core {
+  animation: korbenThinkCore 2.4s ease-in-out infinite;
+}
+
+.zen-listener.thinking .zen-node-left {
+  animation: korbenThinkNodeLeft 2.8s ease-in-out infinite;
+}
+
+.zen-listener.thinking .zen-node-right {
+  animation: korbenThinkNodeRight 2.8s ease-in-out infinite;
+}
+
+/* Responding: the center becomes the voice and sends a restrained outward signal. */
+.zen-listener.responding .zen-ring-outer {
+  animation: korbenRespondOuter 2.8s ease-out infinite;
+}
+
+.zen-listener.responding .zen-ring-inner {
+  animation: korbenRespondInner 2.8s ease-out infinite .35s;
+}
+
+.zen-listener.responding .zen-core {
+  animation: korbenRespondCore 1.15s ease-in-out infinite;
+  box-shadow:
+    inset -11px -12px 24px rgba(80, 55, 35, .10),
+    inset 10px 9px 24px rgba(255,255,255,.42),
+    0 0 42px rgba(225, 187, 122, .42),
+    0 0 90px rgba(225, 187, 122, .12);
+}
+
+.zen-listener.responding .zen-core-glow {
+  animation: korbenVoiceGlow 1.15s ease-in-out infinite;
+}
+
+.zen-listener.responding .zen-node {
+  animation: korbenRespondNode 1.15s ease-in-out infinite;
 }
 
 .korben-home-listening strong,
@@ -396,14 +483,104 @@ body {
   background: var(--korben-line);
 }
 
-@keyframes korbenBreathe {
-  0%, 100% { transform: translate(-50%, -50%) scale(.98); filter: brightness(1); }
-  50% { transform: translate(-50%, -50%) scale(1.05); filter: brightness(1.08); }
-}
-
-@keyframes korbenTurn {
+@keyframes korbenOrbitOuter {
   from { transform: translate(-50%, -50%) rotate(0deg); }
   to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes korbenOrbitInner {
+  from { transform: translate(-50%, -50%) rotate(180deg); }
+  to { transform: translate(-50%, -50%) rotate(-180deg); }
+}
+
+@keyframes korbenIdleCore {
+  0%, 100% { transform: translate(-50%, -50%) scale(.985); filter: brightness(.98); }
+  50% { transform: translate(-50%, -50%) scale(1.025); filter: brightness(1.04); }
+}
+
+@keyframes korbenIdleNode {
+  0%, 100% { opacity: .62; filter: brightness(.95); }
+  50% { opacity: .92; filter: brightness(1.08); }
+}
+
+@keyframes korbenListenOuter {
+  0%, 100% { transform: translate(-50%, -50%) rotate(0deg) scale(.985); opacity: .66; }
+  50% { transform: translate(-50%, -50%) rotate(8deg) scale(1.025); opacity: .92; }
+}
+
+@keyframes korbenListenInner {
+  0%, 100% { transform: translate(-50%, -50%) rotate(180deg) scale(.97); opacity: .64; }
+  50% { transform: translate(-50%, -50%) rotate(166deg) scale(1.04); opacity: 1; }
+}
+
+@keyframes korbenListenCore {
+  0%, 100% { transform: translate(-50%, -50%) scale(.96); filter: brightness(1); }
+  50% { transform: translate(-50%, -50%) scale(1.075); filter: brightness(1.11); }
+}
+
+@keyframes korbenListenNode {
+  0%, 100% { transform: translate(-50%, -50%) scale(.82); opacity: .58; }
+  50% { transform: translate(-50%, -50%) scale(1.22); opacity: 1; }
+}
+
+@keyframes korbenThinkOuter {
+  from { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+  to { transform: translate(-50%, -50%) rotate(360deg) scale(1); }
+}
+
+@keyframes korbenThinkInner {
+  from { transform: translate(-50%, -50%) rotate(180deg) scale(.98); }
+  50% { transform: translate(-50%, -50%) rotate(0deg) scale(1.025); }
+  to { transform: translate(-50%, -50%) rotate(-180deg) scale(.98); }
+}
+
+@keyframes korbenThinkCore {
+  0%, 100% { transform: translate(-50%, -50%) scale(.96); filter: brightness(.98) saturate(.96); }
+  50% { transform: translate(-50%, -50%) scale(1.035); filter: brightness(1.12) saturate(1.08); }
+}
+
+@keyframes korbenThinkNodeLeft {
+  0%, 100% { transform: translate(-50%, -50%) translateY(-4px) scale(.82); opacity: .55; }
+  50% { transform: translate(-50%, -50%) translateY(5px) scale(1.18); opacity: 1; }
+}
+
+@keyframes korbenThinkNodeRight {
+  0%, 100% { transform: translate(-50%, -50%) translateY(5px) scale(1.18); opacity: 1; }
+  50% { transform: translate(-50%, -50%) translateY(-4px) scale(.82); opacity: .55; }
+}
+
+@keyframes korbenRespondOuter {
+  0% { transform: translate(-50%, -50%) rotate(0deg) scale(.96); opacity: .9; }
+  70% { transform: translate(-50%, -50%) rotate(14deg) scale(1.045); opacity: .48; }
+  100% { transform: translate(-50%, -50%) rotate(18deg) scale(1.07); opacity: .2; }
+}
+
+@keyframes korbenRespondInner {
+  0% { transform: translate(-50%, -50%) rotate(180deg) scale(.94); opacity: .92; }
+  70% { transform: translate(-50%, -50%) rotate(162deg) scale(1.055); opacity: .45; }
+  100% { transform: translate(-50%, -50%) rotate(158deg) scale(1.085); opacity: .18; }
+}
+
+@keyframes korbenRespondCore {
+  0%, 100% { transform: translate(-50%, -50%) scale(.97); filter: brightness(1.02); }
+  48% { transform: translate(-50%, -50%) scale(1.09); filter: brightness(1.16); }
+}
+
+@keyframes korbenVoiceGlow {
+  0%, 100% { transform: scale(.86); opacity: .16; }
+  50% { transform: scale(1.28); opacity: .34; }
+}
+
+@keyframes korbenRespondNode {
+  0%, 100% { transform: translate(-50%, -50%) scale(.85); opacity: .62; }
+  50% { transform: translate(-50%, -50%) scale(1.28); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zen-listener *,
+  .auth-presence * {
+    animation: none !important;
+  }
 }
 
 @media (max-width: 1100px) {
