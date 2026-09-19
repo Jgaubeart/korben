@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { approvalAuthorizes, approvalBinding, classifyApproval } from "./approval-policy";
+import { approvalAuthorizes, approvalBinding, classifyApproval } from "./approval-policy.ts";
 
 const merge = { tool: "github.merge", action: "merge", params: { repo: "Jgaubeart/korben", number: 12 } };
 const productionEffects = { repository: "Jgaubeart/korben", baseBranch: "main", pullRequestNumber: 12, pullRequestHeadSha: "abc123", vercelProjectId: "prj_WBhAWe7N7VazzaNdUumb87vdvZdr", productionDeploymentTriggered: true };
