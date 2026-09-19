@@ -1764,6 +1764,8 @@ export default function Home() {
             <p>Focus today. A bigger tomorrow.</p>
           </div>
 
+          <div className="command-v2-quote">“A clearer mind<br />builds a brighter future.”<small>— KORBEN</small></div>
+
           <div className="command-v2-meta">
             <span className="system-online"><i />System online</span>
             <span>{ambientClock.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
@@ -1773,9 +1775,13 @@ export default function Home() {
         </div>
 
         <div className="command-v2-hero">
-          <div className="command-v2-orb">
-            {renderOrb()}
-          </div>
+          <button className={`command-v2-orb korben-presence ${orbState}`} onClick={toggleVoiceMode} aria-label="Talk to Korben">
+            <span className="korben-mark" aria-hidden="true">
+              <i className="korben-mark-bar bar-left" />
+              <i className="korben-mark-bar bar-center" />
+              <i className="korben-mark-bar bar-right" />
+            </span>
+          </button>
           <div className="command-v2-flow">IDEAS <span>→</span> PLANS <span>→</span> ACTION <span>→</span> RESULTS</div>
 
           <div className="command-v2-input-wrap">
@@ -2427,8 +2433,13 @@ export default function Home() {
       {activeView === "command" && <AmbientScene />}
       <aside className="calm-sidebar">
         <button className="calm-sidebar-brand" onClick={() => setActiveView("command")}>
+          <span className="sidebar-korben-mark" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
           <strong>KORBEN</strong>
-          <span>THINK AHEAD</span>
+          <span>YOUR AI OPERATING SYSTEM</span>
         </button>
 
         <nav className="calm-nav">
