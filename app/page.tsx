@@ -1775,11 +1775,18 @@ export default function Home() {
         </div>
 
         <div className="command-v2-hero">
-          <button className={`command-v2-orb korben-presence ${orbState}`} onClick={toggleVoiceMode} aria-label="Talk to Korben">
-            <span className="korben-mark" aria-hidden="true">
-              <i className="korben-mark-bar bar-left" />
-              <i className="korben-mark-bar bar-center" />
-              <i className="korben-mark-bar bar-right" />
+          <button
+            className={`command-v2-orb zen-listener ${orbState} ${voiceMode ? "active" : ""}`}
+            onClick={toggleVoiceMode}
+            aria-label="Talk to Korben"
+          >
+            <span className="zen-ring zen-ring-outer" aria-hidden="true">
+              <span className="zen-node zen-node-left" />
+              <span className="zen-node zen-node-right" />
+            </span>
+            <span className="zen-ring zen-ring-inner" aria-hidden="true" />
+            <span className="zen-core" aria-hidden="true">
+              <span className="zen-core-glow" />
             </span>
           </button>
           <div className="command-v2-flow">IDEAS <span>→</span> PLANS <span>→</span> ACTION <span>→</span> RESULTS</div>
