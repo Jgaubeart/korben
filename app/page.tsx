@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserSupabaseClient } from "../lib/supabase/client";
+import { AmbientScene } from "../components/ambient/AmbientScene";
 
 type Message = {
   id?: string;
@@ -1707,16 +1708,19 @@ export default function Home() {
       aria-label="Talk to Korben"
     >
       <span className="orb-glow" />
-      <span className="orb-ring ring-one" />
-      <span className="orb-ring ring-two" />
-      <span className="orb-ring ring-three" />
-      <span className="orb-strand strand-one" />
-      <span className="orb-strand strand-two" />
-      <span className="orb-strand strand-three" />
+      <span className="orb-aura aura-one" />
+      <span className="orb-aura aura-two" />
+      <span className="orb-membrane membrane-one" />
+      <span className="orb-membrane membrane-two" />
+      <span className="orb-membrane membrane-three" />
+      <span className="orb-wisp wisp-one" />
+      <span className="orb-wisp wisp-two" />
+      <span className="orb-wisp wisp-three" />
       <span className="orb-core-dot" />
       <span className="orb-particle particle-one" />
       <span className="orb-particle particle-two" />
       <span className="orb-particle particle-three" />
+      <span className="orb-particle particle-four" />
     </button>
   );
 
@@ -1878,6 +1882,62 @@ export default function Home() {
         </div>
       </div>
 
+      <div className="dashboard-lower-grid">
+        <article className="soft-card ambient-mini-card agent-pulse-card">
+          <div className="soft-card-heading">
+            <div><h2>Agent Activity</h2><span>{Math.max(workingAgentCount, currentTask ? 1 : 0)} active now</span></div>
+            <button onClick={() => setActiveView("network")}>View →</button>
+          </div>
+          <div className="mini-agent-list">
+            {(agents.length ? agents : [
+              { id: "research", name: "Research Agent", role: "Research", status: "active", system_key: "research" },
+              { id: "content", name: "Content Agent", role: "Content", status: "active", system_key: "content" },
+              { id: "ops", name: "Ops Agent", role: "Operations", status: "active", system_key: "ops" },
+            ]).slice(0, 3).map((agent) => (
+              <div className="mini-agent-row" key={agent.id}>
+                <span className="mini-agent-dot" />
+                <div><strong>{agent.name}</strong><small>{agent.id === currentAgent?.id ? currentTask?.title || "Working" : agent.role || "Standing by"}</small></div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="soft-card ambient-mini-card focus-pulse-card">
+          <div className="soft-card-heading">
+            <div><h2>Focus</h2><span>Deep work</span></div>
+            <button onClick={() => setActiveView("focus")}>{focusRunning ? "Open →" : "Start →"}</button>
+          </div>
+          <div className="focus-pulse-copy">
+            <strong>{focusRunning ? `${Math.floor(focusRemaining / 60)}:${String(focusRemaining % 60).padStart(2, "0")}` : "2:00:00"}</strong>
+            <span>{focusRunning ? focusGoal || "Focus session" : "Protect the next block of attention."}</span>
+          </div>
+          <div className="focus-pills"><span>No notifications</span><span>AI support on</span></div>
+        </article>
+
+        <article className="soft-card ambient-mini-card brief-pulse-card">
+          <div className="soft-card-heading">
+            <div><h2>Daily Brief</h2><span>What matters now</span></div>
+            <button onClick={() => setActiveView("work")}>View →</button>
+          </div>
+          <div className="brief-lines">
+            <span>✦ <strong>{Math.max(1, dashboardTasks.length - dashboardCompleted)} priorities moving forward</strong></span>
+            <span>▣ <strong>{approvals.filter((approval) => approval.status === "pending").length} approvals waiting</strong></span>
+            <span>○ <strong>{Math.max(workingAgentCount, currentTask ? 1 : 0)} agents in motion</strong></span>
+          </div>
+        </article>
+
+        <article className="soft-card ambient-mini-card personal-pulse-card">
+          <div className="soft-card-heading">
+            <div><h2>Personal Pulse</h2><span>Something beyond work</span></div>
+            <button>View →</button>
+          </div>
+          <div className="personal-pulse-copy">
+            <span className="personal-pulse-moon">◌</span>
+            <div><strong>Dinner with Melissa</strong><small>Today · 7:00 PM</small><p>A calm evening is already on the calendar.</p></div>
+          </div>
+        </article>
+      </div>
+
       <div className="bottom-command-bar">
         <button
           className={`voice-command ${voiceMode ? "active" : ""}`}
@@ -1910,15 +1970,7 @@ export default function Home() {
 
   const renderCalmMode = () => (
     <section className="ambient-calm-mode">
-      <div className="calm-landscape" aria-hidden="true">
-        <span className="calm-sun" />
-        <span className="calm-mountain cm-a" />
-        <span className="calm-mountain cm-b" />
-        <span className="calm-mountain cm-c" />
-        <span className="calm-water" />
-        <span className="calm-mist mist-one" />
-        <span className="calm-mist mist-two" />
-      </div>
+      <AmbientScene className="ambient-scene-calm" />
 
       <div className="calm-brand">
         <strong>KORBEN</strong>
@@ -2444,6 +2496,7 @@ export default function Home() {
 
   return (
     <main className="calm-os-shell">
+      {activeView === "command" && <AmbientScene />}
       <aside className="calm-sidebar">
         <button className="calm-sidebar-brand" onClick={() => setActiveView("command")}>
           <strong>KORBEN</strong>
