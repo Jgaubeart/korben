@@ -49,6 +49,12 @@ const fallbackGreeting: Message = {
 export default function Home() {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [input, setInput] = useState("");
+  const [authReady, setAuthReady] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -68,9 +74,14 @@ export default function Home() {
     const bootstrap = async () => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
+        setSignedIn(false);
+        setAuthReady(true);
         setLoadingState("Sign in required");
         return;
       }
+
+      setSignedIn(true);
+      setAuthReady(true);
 
       const { data: project } = await supabase
         .from("projects")
@@ -239,6 +250,46 @@ export default function Home() {
       } catch {}
     };
   }, [voiceMode]);
+
+  const signIn = async () => {
+    const email = loginEmail.trim();
+
+    if (!email || !loginPassword) {
+      setLoginError("Enter your email and password.");
+      return;
+    }
+
+    setLoginBusy(true);
+    setLoginError("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: loginPassword,
+    });
+
+    if (error) {
+      setLoginError(error.message);
+      setLoginBusy(false);
+      return;
+    }
+
+    setSignedIn(true);
+    setLoginPassword("");
+    setLoadingState("Connecting…");
+    setLoginBusy(false);
+    window.location.reload();
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setSignedIn(false);
+    setMessages([fallbackGreeting]);
+    setTasks([]);
+    setProjectId(null);
+    setConversationId(null);
+    setActiveObjective("No active objective");
+    setLoadingState("Sign in required");
+  };
 
   const toggleMic = () => {
     if (!speechSupported || !recognitionRef.current) return;
@@ -565,6 +616,75 @@ export default function Home() {
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
 
+  if (!authReady) {
+    return (
+      <main className="auth-shell">
+        <div className="auth-card">
+          <div className="brand auth-brand">
+            <div className="brand-mark">K</div>
+            <div>
+              <strong>KORBEN</strong>
+              <span>Multi-Agent OS</span>
+            </div>
+          </div>
+          <p className="auth-status">Connecting to your workspace…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!signedIn) {
+    return (
+      <main className="auth-shell">
+        <div className="auth-card">
+          <div className="brand auth-brand">
+            <div className="brand-mark">K</div>
+            <div>
+              <strong>KORBEN</strong>
+              <span>Multi-Agent OS</span>
+            </div>
+          </div>
+          <div className="auth-copy">
+            <span className="kicker">OWNER ACCESS</span>
+            <h1>Sign in to Korben</h1>
+            <p>Your Command Center, agents, projects and run history are protected by your Korben account.</p>
+          </div>
+          <div className="auth-form">
+            <label>
+              Email
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(event) => setLoginEmail(event.target.value)}
+                autoComplete="email"
+                placeholder="you@example.com"
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    signIn();
+                  }
+                }}
+                autoComplete="current-password"
+                placeholder="••••••••"
+              />
+            </label>
+            {loginError && <div className="auth-error">{loginError}</div>}
+            <button className="auth-submit" onClick={signIn} disabled={loginBusy}>
+              {loginBusy ? "Signing in…" : "Sign in"}
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -612,7 +732,7 @@ export default function Home() {
               </div>
               <span>⌄</span>
             </div>
-            <button className="avatar">JG</button>
+            <button className="avatar" onClick={signOut} title="Sign out">JG</button>
           </div>
         </header>
 
