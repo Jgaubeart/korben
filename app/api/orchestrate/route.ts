@@ -28,13 +28,17 @@ Execution rules:
 3. Never invent or assume business-specific context.
 4. Put tasks in dependency order.
 5. Assign exactly one primary role to each task.
-6. Use approval_level 0 for read/plan/test, 1 for reversible branch work and previews,
-   2 for migrations/permissions/config/merge-ready changes, and 3 for production,
-   destructive data changes, billing, or external communications.
-7. If the user's requested action is approval level 2 or 3, classify intent as approval.
+6. Use approval_level 0 for read/plan/test.
+7. Use approval_level 1 for reversible feature-branch edits, commits, opening/updating pull requests, and preview deployments.
+8. Opening a pull request whose base branch is main is still L1. A pull request is only a proposal; it does not modify main.
+9. Use approval_level 2 for actually merging a pull request, database migrations, RLS/permission changes, protected configuration changes, or infrastructure changes.
+10. Use approval_level 3 for production deployment, destructive data changes, billing changes, or external/customer communications.
+11. If the user explicitly says not to merge or not to deploy production, do not create merge or production-deploy tasks.
+12. Classify the overall intent as approval only when at least one requested task truly requires L2 or L3 approval.
+13. Never reinterpret "open a PR to main" as "merge to main".
 8. Never assume production deployment is approved.
-9. Keep assistant_reply natural, concise, and useful.
-10. The output must match the requested JSON schema exactly.
+14. Keep assistant_reply natural, concise, and useful.
+15. The output must match the requested JSON schema exactly.
 
 Available roles:
 - product_manager
@@ -113,6 +117,69 @@ const PLAN_SCHEMA = {
     "tasks"
   ]
 };
+
+
+function normalizePlan(plan: any, requestText: string) {
+  const explicitNoMerge = /\b(do not|don't|never)\s+merge\b/i.test(requestText);
+  const explicitNoProduction =
+    /\b(do not|don't|never)\s+(deploy|ship|release).*(production|prod)\b/i.test(requestText) ||
+    /\b(do not|don't|never)\s+deploy\s+to\s+production\b/i.test(requestText);
+
+  const tasks = Array.isArray(plan?.tasks)
+    ? plan.tasks
+        .filter((task: any) => {
+          const text = `${task?.title || ""} ${task?.description || ""}`.toLowerCase();
+
+          if (explicitNoMerge && /\bmerge\b/.test(text)) return false;
+          if (explicitNoProduction && /\b(production|prod)\b/.test(text) && /\bdeploy|release|ship\b/.test(text)) {
+            return false;
+          }
+
+          return true;
+        })
+        .map((task: any) => {
+          const text = `${task?.title || ""} ${task?.description || ""}`.toLowerCase();
+
+          const isPullRequestCreation =
+            /\b(open|create|update|prepare)\b.*\b(pull request|pr)\b/.test(text) &&
+            !/\bmerge\b/.test(text);
+
+          const isPreview =
+            /\bpreview\b/.test(text) &&
+            /\b(deploy|deployment|create|publish)\b/.test(text) &&
+            !/\bproduction|prod\b/.test(text);
+
+          if (isPullRequestCreation || isPreview) {
+            return {
+              ...task,
+              approval_level: Math.min(Number(task.approval_level ?? 1), 1),
+            };
+          }
+
+          return task;
+        })
+    : [];
+
+  const maxApproval = tasks.reduce(
+    (max: number, task: any) => Math.max(max, Number(task?.approval_level ?? 0)),
+    0
+  );
+
+  return {
+    ...plan,
+    tasks,
+    intent:
+      plan?.intent === "approval" && maxApproval < 2
+        ? "action"
+        : plan?.intent,
+    requires_execution:
+      ["work", "action", "approval"].includes(
+        plan?.intent === "approval" && maxApproval < 2 ? "action" : plan?.intent
+      )
+        ? Boolean(plan?.requires_execution ?? true)
+        : false,
+  };
+}
 
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -198,7 +265,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    return NextResponse.json(JSON.parse(outputText));
+    const parsed = JSON.parse(outputText);
+    return NextResponse.json(normalizePlan(parsed, requestText));
   } catch {
     return NextResponse.json(
       { error: "Korben returned invalid structured output." },
