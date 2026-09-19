@@ -213,6 +213,34 @@ async function executeGitHub(tool: string, action: string, params: Record<string
       );
     }
 
+    if (action === "sync_branch") {
+      const branch = String(params.branch || "").trim();
+      const source = String(params.source || "main").trim();
+
+      if (!branch) {
+        throw new Error("branch is required.");
+      }
+
+      if (["main", "master"].includes(branch.toLowerCase())) {
+        throw new Error("sync_branch cannot target main or master.");
+      }
+
+      if (!["main", "master"].includes(source.toLowerCase())) {
+        throw new Error("sync_branch only permits syncing from main/master into a feature branch.");
+      }
+
+      return githubRequest(`/repos/${owner}/${name}/merges`, {
+        method: "POST",
+        body: JSON.stringify({
+          base: branch,
+          head: source,
+          commit_message: String(
+            params.message || `Sync ${branch} with ${source} via Korben`
+          ),
+        }),
+      });
+    }
+
     throw new Error("Unsupported GitHub write action.");
   }
 
