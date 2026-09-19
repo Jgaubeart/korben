@@ -131,6 +131,12 @@ function normalizePlan(plan: any, requestText: string) {
     /\b(do not|don't|never)\s+(deploy|ship|release).*(production|prod)\b/i.test(requestText) ||
     /\b(do not|don't|never)\s+deploy\s+to\s+production\b/i.test(requestText);
 
+  const explicitBranchMatch = requestText.match(/\b(?:branch\s+)?[\`'"]?((?:feature|fix|chore|bugfix|hotfix|korben)\/[A-Za-z0-9._\/-]+)[\`'"]?/i);
+  const explicitFeatureBranch = explicitBranchMatch?.[1] || "";
+  const explicitSyncFromMain =
+    /\b(sync|synchronize|update|bring|merge|rebase)\b[\s\S]{0,100}\b(main|master)\b[\s\S]{0,140}\b(feature branch|existing branch|branch|feature\/|fix\/|chore\/|bugfix\/|hotfix\/|korben\/)/i.test(requestText) ||
+    /\b(main|master)\b[\s\S]{0,100}\b(into|onto|with)\b[\s\S]{0,100}\b(feature branch|existing branch|feature\/|fix\/|chore\/|bugfix\/|hotfix\/|korben\/)/i.test(requestText);
+
   const tasks = Array.isArray(plan?.tasks)
     ? plan.tasks
         .filter((task: any) => {
@@ -178,6 +184,40 @@ function normalizePlan(plan: any, requestText: string) {
           };
         })
     : [];
+
+  if (explicitSyncFromMain) {
+    const hasSyncTask = tasks.some((task: any) => {
+      const text = `${task?.title || ""} ${task?.description || ""}`.toLowerCase();
+      return /\b(sync|synchronize|merge|rebase|bring .* up to date|update .* branch)\b/.test(text) &&
+        /\b(main|master)\b/.test(text);
+    });
+
+    if (!hasSyncTask) {
+      tasks.unshift({
+        title: "Synchronize the existing feature branch with current main",
+        description: explicitFeatureBranch
+          ? `Use github.write:sync_branch to merge current main into existing branch ${explicitFeatureBranch}. Preserve history, do not recreate/reset the branch, and do not modify main.`
+          : "Use github.write:sync_branch to merge current main into the existing feature branch identified from project context. Preserve history, do not recreate/reset the branch, and do not modify main.",
+        agent_system_key: "backend_engineer",
+        approval_level: 1,
+        acceptance_criteria: [
+          "sync_branch completes against the existing feature branch",
+          "main is unchanged",
+          "a follow-up compare shows the feature branch is not behind main"
+        ]
+      });
+    } else {
+      const syncIndex = tasks.findIndex((task: any) => {
+        const text = `${task?.title || ""} ${task?.description || ""}`.toLowerCase();
+        return /\b(sync|synchronize|merge|rebase|bring .* up to date|update .* branch)\b/.test(text) &&
+          /\b(main|master)\b/.test(text);
+      });
+      if (syncIndex > 0) {
+        const [syncTask] = tasks.splice(syncIndex, 1);
+        tasks.unshift(syncTask);
+      }
+    }
+  }
 
   const maxApproval = tasks.reduce(
     (max: number, task: any) => Math.max(max, Number(task?.approval_level ?? 0)),
