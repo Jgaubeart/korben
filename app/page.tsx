@@ -25,6 +25,14 @@ type Department = {
   slug: string;
 };
 
+type ProjectRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  github_repo: string | null;
+  vercel_project_id: string | null;
+};
+
 type ToolRecord = {
   id: string;
   system_key: string;
@@ -89,6 +97,9 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
   const [activeView, setActiveView] = useState<"command" | "network" | "work" | "brain" | "sops" | "tools" | "integrations">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [selectedProjectSlug, setSelectedProjectSlug] = useState("general-workspace");
+  const [currentProjectName, setCurrentProjectName] = useState("General Workspace");
   const [tools, setTools] = useState<ToolRecord[]>([]);
   const [agentToolPermissions, setAgentToolPermissions] = useState<AgentToolPermission[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -129,10 +140,18 @@ export default function Home() {
       setSignedIn(true);
       setAuthReady(true);
 
+      const { data: projectRows } = await supabase
+        .from("projects")
+        .select("id,name,slug,github_repo,vercel_project_id")
+        .eq("status", "active")
+        .order("name");
+
+      setProjects(projectRows || []);
+
       const { data: project } = await supabase
         .from("projects")
-        .select("id,name")
-        .eq("slug", "general-workspace")
+        .select("id,name,slug,github_repo,vercel_project_id")
+        .eq("slug", selectedProjectSlug)
         .single();
 
       if (!project) {
@@ -141,6 +160,7 @@ export default function Home() {
       }
 
       setProjectId(project.id);
+      setCurrentProjectName(project.name);
 
       const { data: departmentRows } = await supabase
         .from("departments")
@@ -237,7 +257,7 @@ export default function Home() {
     };
 
     bootstrap();
-  }, [supabase]);
+  }, [supabase, selectedProjectSlug]);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -600,6 +620,89 @@ export default function Home() {
     };
   };
 
+  const switchProject = (slug: string) => {
+    if (!slug || slug === selectedProjectSlug) return;
+    setSelectedProjectSlug(slug);
+    setProjectId(null);
+    setConversationId(null);
+    setTasks([]);
+    setActiveObjective("No active objective");
+    setMessages([fallbackGreeting]);
+    setLoadingState("Switching workspace…");
+  };
+
+  const executeTaskQueue = async (
+    createdTasks: Task[],
+    plannedTasks: PlannedTask[]
+  ) => {
+    if (!createdTasks.length) return;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+
+    if (!token) return;
+
+    setLoadingState("Agents working…");
+
+    for (let index = 0; index < createdTasks.length; index += 1) {
+      const task = createdTasks[index];
+      const planned = plannedTasks[index];
+
+      if (!planned) continue;
+
+      if (planned.approval_level >= 2) {
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === task.id ? { ...item, status: "awaiting_approval" } : item
+          )
+        );
+        break;
+      }
+
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === task.id ? { ...item, status: "in_progress" } : item
+        )
+      );
+
+      try {
+        const response = await fetch("/api/runs/start", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ task_id: task.id }),
+        });
+
+        const result = await response.json().catch(() => ({}));
+        const nextStatus =
+          response.ok && result.status === "complete"
+            ? "complete"
+            : result.status === "waiting_approval"
+              ? "awaiting_approval"
+              : "failed";
+
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === task.id ? { ...item, status: nextStatus } : item
+          )
+        );
+
+        if (nextStatus !== "complete") break;
+      } catch {
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === task.id ? { ...item, status: "failed" } : item
+          )
+        );
+        break;
+      }
+    }
+
+    setLoadingState("System online");
+  };
+
   const sendMessage = async (
     messageText?: string,
     mode?: "text" | "voice"
@@ -655,7 +758,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           request: text,
-          projectName: "General Workspace",
+          projectName: currentProjectName,
         }),
       });
 
@@ -791,6 +894,14 @@ export default function Home() {
     setLoadingState("System online");
     sendingRef.current = false;
     setSending(false);
+
+    if (
+      objective &&
+      createdTasks.length > 0 &&
+      ["work", "action"].includes(plan.intent)
+    ) {
+      void executeTaskQueue(createdTasks, plan.tasks);
+    }
 
     if (voiceModeRef.current && "speechSynthesis" in window) {
       setVoiceState("speaking");
@@ -1282,7 +1393,7 @@ export default function Home() {
 
         <div className="sidebar-system">
           <span className="system-pulse" />
-          <div><strong>{loadingState}</strong><small>General Workspace</small></div>
+          <div><strong>{loadingState}</strong><small>{currentProjectName}</small></div>
         </div>
       </aside>
 
@@ -1293,7 +1404,18 @@ export default function Home() {
             <strong className="topbar-title">{viewTitle}</strong>
           </div>
           <div className="korben-top-actions">
-            <span className="workspace-chip">General Workspace</span>
+            <select
+              className="workspace-select"
+              value={selectedProjectSlug}
+              onChange={(event) => switchProject(event.target.value)}
+              aria-label="Current project"
+            >
+              {projects.map((project) => (
+                <option key={project.id} value={project.slug}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
             <button className="avatar" onClick={signOut} title="Sign out">JG</button>
           </div>
         </header>
