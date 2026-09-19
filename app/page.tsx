@@ -1822,7 +1822,7 @@ export default function Home() {
             >
               {projects.map((project) => (
                 <option key={project.id} value={project.slug}>
-                  {project.name}{project.slug === "general-workspace" ? " (no external execution)" : ""}
+                  {project.name}
                 </option>
               ))}
             </select>
