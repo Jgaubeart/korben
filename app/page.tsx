@@ -56,6 +56,7 @@ export default function Home() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingState, setLoadingState] = useState("Connecting…");
+  const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
@@ -208,7 +209,7 @@ export default function Home() {
     recognitionRef.current = recognition;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.altKey && event.code === "Space" && !event.repeat) {
+      if (event.ctrlKey && event.shiftKey && event.code === "Space" && !event.repeat) {
         event.preventDefault();
         heldShortcutRef.current = true;
         try {
@@ -309,20 +310,103 @@ export default function Home() {
     ],
   });
 
+  const ensureWorkspace = async () => {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !userData.user) {
+      throw new Error("You are not signed in to Korben. Sign in first, then try again.");
+    }
+
+    let resolvedProjectId = projectId;
+
+    if (!resolvedProjectId) {
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("id")
+        .eq("slug", "cabinet-genies-portal")
+        .single();
+
+      if (projectError || !project) {
+        throw new Error("Korben could not load the current project.");
+      }
+
+      resolvedProjectId = project.id;
+      setProjectId(project.id);
+    }
+
+    let resolvedConversationId = conversationId;
+
+    if (!resolvedConversationId) {
+      const { data: existingConversation } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("project_id", resolvedProjectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingConversation) {
+        resolvedConversationId = existingConversation.id;
+      } else {
+        const { data: createdConversation, error: conversationError } = await supabase
+          .from("conversations")
+          .insert({
+            project_id: resolvedProjectId,
+            title: "Command Center",
+          })
+          .select("id")
+          .single();
+
+        if (conversationError || !createdConversation) {
+          throw new Error("Korben could not start a conversation.");
+        }
+
+        resolvedConversationId = createdConversation.id;
+      }
+
+      setConversationId(resolvedConversationId);
+    }
+
+    return {
+      projectId: resolvedProjectId,
+      conversationId: resolvedConversationId,
+    };
+  };
+
   const sendMessage = async () => {
     const text = input.trim();
-    if (!text || !conversationId || !projectId) return;
+    if (!text || sending) return;
 
+    setSending(true);
     setInput("");
     setLoadingState("Korben is planning…");
     const currentInputMode = inputMode;
     const userMessage: Message = { role: "user", text, inputMode: currentInputMode };
     setMessages((current) => [...current, userMessage]);
 
+    let resolvedProjectId: string;
+    let resolvedConversationId: string;
+
+    try {
+      const workspace = await ensureWorkspace();
+      resolvedProjectId = workspace.projectId;
+      resolvedConversationId = workspace.conversationId;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Korben could not connect to the workspace.";
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", text: message },
+      ]);
+      setLoadingState("Connection required");
+      setSending(false);
+      return;
+    }
+
     const { data: insertedMessage } = await supabase
       .from("messages")
       .insert({
-        conversation_id: conversationId,
+        conversation_id: resolvedConversationId,
         role: "user",
         content: text,
         input_mode: currentInputMode,
@@ -352,8 +436,8 @@ export default function Home() {
     const { data: objective } = await supabase
       .from("objectives")
       .insert({
-        project_id: projectId,
-        conversation_id: conversationId,
+        project_id: resolvedProjectId,
+        conversation_id: resolvedConversationId,
         title: plan.title,
         description: plan.summary || text,
         status: "planned",
@@ -428,14 +512,14 @@ export default function Home() {
     await supabase
       .from("conversations")
       .update({ updated_at: new Date().toISOString() })
-      .eq("id", conversationId);
+      .eq("id", resolvedConversationId);
 
     const reply = plan.assistant_reply;
     const assistantMessage: Message = { role: "assistant", text: reply };
     setMessages((current) => [...current, assistantMessage]);
 
     await supabase.from("messages").insert({
-      conversation_id: conversationId,
+      conversation_id: resolvedConversationId,
       role: "assistant",
       content: reply,
       input_mode: "system",
@@ -443,7 +527,7 @@ export default function Home() {
 
     await supabase.from("activity_events").insert([
       {
-        project_id: projectId,
+        project_id: resolvedProjectId,
         objective_id: objective?.id || null,
         event_type: "message_received",
         message: "New Command Center request received",
@@ -453,7 +537,7 @@ export default function Home() {
         },
       },
       {
-        project_id: projectId,
+        project_id: resolvedProjectId,
         objective_id: objective?.id || null,
         event_type: "plan_generated",
         message: objective ? `Execution plan generated: ${objective.title}` : "Planning attempted",
@@ -465,6 +549,7 @@ export default function Home() {
 
     setInputMode("text");
     setLoadingState("System online");
+    setSending(false);
   };
 
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
@@ -582,9 +667,9 @@ export default function Home() {
                   >
                     ◉
                   </button>
-                  <span className="shortcut">Hold <kbd>Alt</kbd> + <kbd>Space</kbd> to talk</span>
+                  <span className="shortcut">Hold <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> to talk</span>
                 </div>
-                <button className="send-button" onClick={sendMessage}>Send <span>↗</span></button>
+                <button className="send-button" onClick={sendMessage} disabled={!input.trim() || sending}>{sending ? "Planning…" : "Send"} <span>↗</span></button>
               </div>
             </div>
             {!speechSupported && (
