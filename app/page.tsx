@@ -151,7 +151,10 @@ export default function Home() {
   const [activeView, setActiveView] = useState<"command" | "network" | "work" | "runs" | "brain" | "sops" | "tools" | "integrations">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
-  const [selectedProjectSlug, setSelectedProjectSlug] = useState("general-workspace");
+  const [selectedProjectSlug, setSelectedProjectSlug] = useState(() => {
+    if (typeof window === "undefined") return "general-workspace";
+    return window.localStorage.getItem("korben:selected-project") || "general-workspace";
+  });
   const [currentProjectName, setCurrentProjectName] = useState("General Workspace");
   const [tools, setTools] = useState<ToolRecord[]>([]);
   const [agentToolPermissions, setAgentToolPermissions] = useState<AgentToolPermission[]>([]);
@@ -745,6 +748,7 @@ export default function Home() {
 
   const switchProject = (slug: string) => {
     if (!slug || slug === selectedProjectSlug) return;
+    window.localStorage.setItem("korben:selected-project", slug);
     setSelectedProjectSlug(slug);
     setProjectId(null);
     setConversationId(null);
@@ -1027,6 +1031,23 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Korben planning failed; using fallback plan.", error);
+    }
+
+    const selectedProject = projects.find(
+      (project) => project.slug === selectedProjectSlug
+    );
+
+    if (
+      ["action", "approval"].includes(plan.intent) &&
+      selectedProjectSlug === "general-workspace"
+    ) {
+      plan = {
+        ...plan,
+        requires_execution: false,
+        assistant_reply:
+          "This request needs an execution-scoped project. General Workspace is intentionally neutral, so I did not create or run tasks. Choose a project such as Korben OS and send the request again.",
+        tasks: [],
+      };
     }
 
     let objective: { id: string; title: string } | null = null;
@@ -1764,7 +1785,7 @@ export default function Home() {
             >
               {projects.map((project) => (
                 <option key={project.id} value={project.slug}>
-                  {project.name}
+                  {project.name}{project.slug === "general-workspace" ? " (no external execution)" : ""}
                 </option>
               ))}
             </select>
