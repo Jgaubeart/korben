@@ -5137,3 +5137,149 @@ html[data-ambient-tone="night"] .spirit-orb {
     animation: none !important;
   }
 }
+
+
+/* Spirit vortex refinement — continuous curved ribbons inside glass */
+.spirit-orb {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(var(--orb-deep), .78) 0 25%, rgba(var(--orb-mid), .52) 46%, rgba(var(--orb-light), .18) 67%, rgba(255,255,255,.05) 77%, transparent 81%);
+}
+
+.spirit-orb .orb-inner-field {
+  inset: 5.5%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(4,43,47,.34), rgba(var(--orb-deep), .18) 43%, transparent 73%),
+    radial-gradient(ellipse at 36% 31%, rgba(var(--orb-cream), .12), transparent 38%),
+    radial-gradient(ellipse at 67% 69%, rgba(var(--orb-light), .14), transparent 42%);
+}
+
+.spirit-wave-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  z-index: 2;
+}
+
+.spirit-vortex {
+  transform-origin: 160px 160px;
+  animation: spirit-vortex-drift 18s linear infinite;
+}
+
+.spirit-ribbon {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: .96;
+}
+
+.ribbon-a {
+  animation: spirit-ribbon-a 11s ease-in-out infinite;
+}
+.ribbon-b {
+  animation: spirit-ribbon-b 14s ease-in-out infinite;
+}
+.ribbon-c {
+  animation: spirit-ribbon-c 17s ease-in-out infinite;
+}
+.ribbon-d {
+  animation: spirit-ribbon-d 20s ease-in-out infinite;
+}
+
+.spirit-mist-svg {
+  transform-origin: 160px 160px;
+  animation: spirit-mist-orbit 15s ease-in-out infinite alternate;
+}
+
+.mist-blob {
+  fill: rgba(var(--orb-light), .16);
+}
+.blob-b {
+  fill: rgba(var(--orb-mid), .18);
+}
+.blob-c {
+  fill: rgba(var(--orb-cream), .12);
+}
+
+.spirit-orb .orb-core-dot {
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  background: radial-gradient(circle at 42% 38%, #fff, #fff9de 48%, rgba(var(--orb-light), .88) 100%);
+  box-shadow:
+    0 0 15px rgba(255,255,255,1),
+    0 0 34px rgba(var(--orb-cream), .94),
+    0 0 70px rgba(var(--orb-light), .98),
+    0 0 120px rgba(var(--orb-mid), .62);
+}
+
+.spirit-orb .orb-glass-shell {
+  background:
+    radial-gradient(circle at 30% 17%, rgba(255,255,255,.36), transparent 17%),
+    radial-gradient(ellipse at 17% 46%, rgba(255,255,255,.10), transparent 24%),
+    radial-gradient(ellipse at 73% 77%, rgba(255,255,255,.08), transparent 22%),
+    linear-gradient(118deg, transparent 13%, rgba(255,255,255,.10) 28%, transparent 42%);
+  box-shadow:
+    inset 0 0 38px rgba(255,255,255,.20),
+    inset 0 0 4px rgba(255,255,255,1),
+    inset 14px 10px 26px rgba(255,255,255,.07);
+}
+
+.spirit-orb.listening .spirit-vortex {
+  animation-duration: 10s;
+}
+.spirit-orb.listening .ribbon-a { animation-duration: 6.5s; }
+.spirit-orb.listening .ribbon-b { animation-duration: 7.5s; }
+.spirit-orb.listening .ribbon-c { animation-duration: 9s; }
+
+.spirit-orb.thinking .spirit-vortex {
+  animation-duration: 7.5s;
+}
+.spirit-orb.thinking .ribbon-a { animation-duration: 4.8s; }
+.spirit-orb.thinking .ribbon-b { animation-duration: 5.6s; }
+.spirit-orb.thinking .ribbon-c { animation-duration: 6.4s; }
+.spirit-orb.thinking .ribbon-d { animation-duration: 7.2s; }
+
+.spirit-orb.responding .spirit-ribbon {
+  filter: brightness(1.16);
+}
+.spirit-orb.responding .spirit-vortex {
+  animation-duration: 9s;
+}
+
+.spirit-orb.working .spirit-vortex {
+  animation-duration: 11s;
+}
+
+@keyframes spirit-vortex-drift {
+  from { transform: rotate(0deg) scale(.985); }
+  to { transform: rotate(360deg) scale(.985); }
+}
+@keyframes spirit-ribbon-a {
+  0%,100% { transform: rotate(-8deg) scale(.96, .92) translate(0, 1px); opacity: .82; }
+  50% { transform: rotate(12deg) scale(1.04, 1.07) translate(2px, -2px); opacity: 1; }
+}
+@keyframes spirit-ribbon-b {
+  0%,100% { transform: rotate(11deg) scale(1.02, .94) translate(-1px, 1px); opacity: .70; }
+  50% { transform: rotate(-13deg) scale(.95, 1.08) translate(2px, 0); opacity: .94; }
+}
+@keyframes spirit-ribbon-c {
+  0%,100% { transform: rotate(-16deg) scale(.94, 1.04); opacity: .48; }
+  50% { transform: rotate(15deg) scale(1.08, .94); opacity: .78; }
+}
+@keyframes spirit-ribbon-d {
+  0%,100% { transform: rotate(18deg) scale(1.05, .91); opacity: .34; }
+  50% { transform: rotate(-17deg) scale(.93, 1.06); opacity: .58; }
+}
+@keyframes spirit-mist-orbit {
+  0% { transform: rotate(-12deg) scale(.96) translate(-3px, 2px); opacity: .55; }
+  100% { transform: rotate(18deg) scale(1.05) translate(4px, -3px); opacity: .82; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spirit-vortex,
+  .spirit-ribbon,
+  .spirit-mist-svg {
+    animation: none !important;
+  }
+}
