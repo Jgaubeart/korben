@@ -45,6 +45,28 @@ function serverSupabase(token: string) {
   });
 }
 
+
+function normalizeRepoTarget(value: string) {
+  return value
+    .trim()
+    .replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/\.git$/i, "")
+    .replace(/^\/+|\/+$/g, "")
+    .toLowerCase();
+}
+
+function repoMatchesProject(requested: string, configured: string) {
+  const requestedNormalized = normalizeRepoTarget(requested);
+  const configuredNormalized = normalizeRepoTarget(configured);
+  const configuredName = configuredNormalized.split("/").pop() || "";
+
+  return (
+    requestedNormalized === configuredNormalized ||
+    requestedNormalized === configuredName
+  );
+}
+
 function bearerToken(request: Request) {
   const header = request.headers.get("authorization") || "";
   return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
@@ -680,7 +702,7 @@ export async function POST(request: Request) {
 
       const requestedRepo = params.repo ? String(params.repo) : project.github_repo;
 
-      if (requestedRepo.toLowerCase() !== project.github_repo.toLowerCase()) {
+      if (!repoMatchesProject(requestedRepo, project.github_repo)) {
         throw new Error("This agent cannot access a repository outside the selected project.");
       }
 
