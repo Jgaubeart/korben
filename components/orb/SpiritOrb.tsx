@@ -9,16 +9,6 @@ type SpiritOrbProps = {
   tone: AmbientSceneKey;
 };
 
-type RibbonConfig = {
-  phase: number;
-  width: number;
-  radius: number;
-  speed: number;
-  opacity: number;
-  color: keyof Palette;
-  wobble: number;
-};
-
 type Palette = {
   deep: string;
   mid: string;
@@ -28,132 +18,253 @@ type Palette = {
 };
 
 const PALETTES: Record<AmbientSceneKey, Palette> = {
-  "pre-dawn": { deep: "#163d54", mid: "#5c9ca8", light: "#b8dedf", cream: "#eadbc9", core: "#fff7dc" },
-  dawn: { deep: "#235061", mid: "#70aeb0", light: "#c5e7df", cream: "#f3dcc2", core: "#fff5da" },
-  sunrise: { deep: "#365b57", mid: "#83ad98", light: "#d3edd8", cream: "#ffdda8", core: "#fff0c6" },
-  morning: { deep: "#145b54", mid: "#3ca18f", light: "#afeede", cream: "#fff1cf", core: "#fff8dc" },
-  noon: { deep: "#125b54", mid: "#36a291", light: "#abeedd", cream: "#fff1cf", core: "#fff8dc" },
-  afternoon: { deep: "#185f58", mid: "#4a9f8f", light: "#b6e7d8", cream: "#f9e7c5", core: "#fff4d5" },
-  "golden-hour": { deep: "#3e6158", mid: "#83a88d", light: "#d7ead0", cream: "#ffd7a1", core: "#ffedc5" },
-  sunset: { deep: "#435a59", mid: "#8b9d8f", light: "#d8dfcf", cream: "#f7c7a0", core: "#ffe5bd" },
-  "blue-hour": { deep: "#123b55", mid: "#357f91", light: "#91d6dc", cream: "#dfe7d8", core: "#f4f5df" },
-  night: { deep: "#0c3046", mid: "#287f8f", light: "#8ddbdd", cream: "#dfeadf", core: "#f7f8e6" },
+  "pre-dawn": { deep: "#15394f", mid: "#548f9f", light: "#b9dcdf", cream: "#e8d8c7", core: "#fff6df" },
+  dawn: { deep: "#1d4558", mid: "#6aa4aa", light: "#c3e5df", cream: "#f2dac1", core: "#fff5db" },
+  sunrise: { deep: "#315651", mid: "#7ca28f", light: "#d4ead5", cream: "#f5d3a4", core: "#fff0c8" },
+  morning: { deep: "#124f4b", mid: "#3d9689", light: "#b9e8dc", cream: "#f7e7c7", core: "#fff6da" },
+  noon: { deep: "#0f514c", mid: "#369789", light: "#b7e9dc", cream: "#f8e7c4", core: "#fff7dc" },
+  afternoon: { deep: "#185650", mid: "#499487", light: "#bee5da", cream: "#f4e1c1", core: "#fff3d3" },
+  "golden-hour": { deep: "#3b5c55", mid: "#829d88", light: "#d7e4cd", cream: "#f4c98f", core: "#ffe9ba" },
+  sunset: { deep: "#3e5354", mid: "#858f89", light: "#d1d8cd", cream: "#edba99", core: "#ffddb9" },
+  "blue-hour": { deep: "#12364e", mid: "#34798c", light: "#98d3da", cream: "#dce5dc", core: "#f1f4e1" },
+  night: { deep: "#0a2a40", mid: "#246f84", light: "#8fd1d8", cream: "#dce7df", core: "#f5f7e8" },
 };
 
-const RIBBONS: RibbonConfig[] = [
-  { phase: 0.15, width: 0.16, radius: 0.73, speed: 0.20, opacity: 0.54, color: "cream", wobble: 0.17 },
-  { phase: 1.85, width: 0.12, radius: 0.70, speed: -0.16, opacity: 0.46, color: "light", wobble: 0.21 },
-  { phase: 3.50, width: 0.10, radius: 0.67, speed: 0.12, opacity: 0.36, color: "mid", wobble: 0.24 },
-  { phase: 5.00, width: 0.075, radius: 0.75, speed: -0.10, opacity: 0.28, color: "cream", wobble: 0.14 },
-];
-
-function stateSpeed(state: SpiritOrbProps["state"]) {
-  if (state === "listening") return 1.55;
-  if (state === "thinking") return 2.15;
-  if (state === "responding") return 1.75;
-  if (state === "working") return 1.35;
-  return 0.72;
+function speedFor(state: SpiritOrbProps["state"]) {
+  if (state === "listening") return 1.25;
+  if (state === "thinking") return 1.75;
+  if (state === "responding") return 1.42;
+  if (state === "working") return 1.15;
+  return 0.58;
 }
 
-function makeRibbonGeometry(config: RibbonConfig, elapsed = 0) {
-  const segments = 170;
-  const positions = new Float32Array((segments + 1) * 2 * 3);
-  const uvs = new Float32Array((segments + 1) * 2 * 2);
-  const indices: number[] = [];
-  const points: THREE.Vector3[] = [];
+function energyFor(state: SpiritOrbProps["state"]) {
+  if (state === "listening") return 1.10;
+  if (state === "thinking") return 1.22;
+  if (state === "responding") return 1.28;
+  if (state === "working") return 1.12;
+  return 0.92;
+}
 
-  for (let i = 0; i <= segments; i += 1) {
-    const t = i / segments;
-    const u = t * Math.PI * 2;
-    const a = u * 1.08 + config.phase + elapsed * config.speed;
-    const b =
-      0.62 * Math.sin(u * 0.82 + config.phase * 0.9 + elapsed * config.speed * 0.62) +
-      config.wobble * Math.sin(u * 2.6 - elapsed * config.speed * 0.45);
-    const radial =
-      config.radius +
-      0.055 * Math.sin(u * 3.1 + config.phase) +
-      0.035 * Math.sin(u * 5.2 - elapsed * config.speed * 0.4);
+const VOLUME_VERTEX = `
+  varying vec3 vLocalPos;
 
-    points.push(
-      new THREE.Vector3(
-        radial * Math.cos(a) * Math.cos(b),
-        radial * Math.sin(b),
-        radial * Math.sin(a) * Math.cos(b)
-      )
+  void main() {
+    vLocalPos = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const VOLUME_FRAGMENT = `
+  precision highp float;
+
+  varying vec3 vLocalPos;
+
+  uniform float uTime;
+  uniform float uEnergy;
+  uniform vec3 uCameraLocal;
+  uniform vec3 uDeep;
+  uniform vec3 uMid;
+  uniform vec3 uLight;
+  uniform vec3 uCream;
+
+  #define STEPS 56
+
+  mat2 rot(float a) {
+    float s = sin(a);
+    float c = cos(a);
+    return mat2(c, -s, s, c);
+  }
+
+  float hash31(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+  }
+
+  float noise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float n000 = hash31(i + vec3(0.0,0.0,0.0));
+    float n100 = hash31(i + vec3(1.0,0.0,0.0));
+    float n010 = hash31(i + vec3(0.0,1.0,0.0));
+    float n110 = hash31(i + vec3(1.0,1.0,0.0));
+    float n001 = hash31(i + vec3(0.0,0.0,1.0));
+    float n101 = hash31(i + vec3(1.0,0.0,1.0));
+    float n011 = hash31(i + vec3(0.0,1.0,1.0));
+    float n111 = hash31(i + vec3(1.0,1.0,1.0));
+
+    float nx00 = mix(n000, n100, f.x);
+    float nx10 = mix(n010, n110, f.x);
+    float nx01 = mix(n001, n101, f.x);
+    float nx11 = mix(n011, n111, f.x);
+    float nxy0 = mix(nx00, nx10, f.y);
+    float nxy1 = mix(nx01, nx11, f.y);
+    return mix(nxy0, nxy1, f.z);
+  }
+
+  float fbm(vec3 p) {
+    float value = 0.0;
+    float amp = 0.52;
+    for (int i = 0; i < 4; i++) {
+      value += noise3(p) * amp;
+      p = p * 2.03 + vec3(13.2, 7.7, 4.1);
+      amp *= 0.50;
+    }
+    return value;
+  }
+
+  vec3 swirl(vec3 p) {
+    float a = uTime * 0.16 + p.y * 1.45;
+    p.xz = rot(a) * p.xz;
+
+    float b = sin(p.z * 2.2 + uTime * 0.13) * 0.32;
+    p.xy = rot(b) * p.xy;
+
+    p += vec3(
+      sin(p.y * 3.0 + uTime * 0.18),
+      sin(p.z * 2.7 - uTime * 0.14),
+      sin(p.x * 2.9 + uTime * 0.11)
+    ) * 0.055;
+
+    return p;
+  }
+
+  vec4 field(vec3 p) {
+    vec3 q = swirl(p);
+    float n = fbm(q * 3.15 + vec3(0.0, uTime * 0.055, -uTime * 0.04));
+    float fine = fbm(q * 6.0 - vec3(uTime * 0.035, 0.0, uTime * 0.025));
+
+    float waveA = abs(
+      q.y
+      - 0.26 * sin(q.x * 2.35 + q.z * 1.45 + uTime * 0.32 + n * 2.1)
+      - 0.10 * sin(q.z * 4.0 - uTime * 0.21)
     );
+
+    float waveB = abs(
+      q.x
+      - 0.30 * sin(q.z * 2.05 - q.y * 1.55 - uTime * 0.25 + n * 1.9)
+      + 0.08 * cos(q.y * 4.1 + uTime * 0.15)
+    );
+
+    float waveC = abs(
+      q.z
+      - 0.23 * sin(q.x * 1.8 + q.y * 2.15 + uTime * 0.19 + n * 1.6)
+    );
+
+    float sA = exp(-waveA * 13.0);
+    float sB = exp(-waveB * 12.0);
+    float sC = exp(-waveC * 14.0);
+
+    float breakup = smoothstep(0.22, 0.88, n * 0.72 + fine * 0.46);
+    float radius = length(p);
+    float shell = 1.0 - smoothstep(0.68, 0.91, radius);
+    float hollow = smoothstep(0.08, 0.24, radius);
+
+    float dA = sA * (0.45 + 0.82 * breakup);
+    float dB = sB * (0.36 + 0.70 * breakup);
+    float dC = sC * (0.26 + 0.54 * breakup);
+
+    float density = (dA + dB + dC) * shell * hollow;
+    density *= 0.72 + 0.28 * sin(n * 6.2831 + uTime * 0.2);
+
+    vec3 color = vec3(0.0);
+    float total = max(dA + dB + dC, 0.0001);
+    color += uCream * dA;
+    color += uLight * dB;
+    color += uMid * dC;
+    color /= total;
+
+    color = mix(uDeep, color, 0.76 + breakup * 0.18);
+    return vec4(color, max(density, 0.0));
   }
 
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  const fallback = new THREE.Vector3(1, 0, 0);
-
-  for (let i = 0; i <= segments; i += 1) {
-    const prev = points[Math.max(0, i - 1)];
-    const next = points[Math.min(segments, i + 1)];
-    const tangent = next.clone().sub(prev).normalize();
-    const radialNormal = points[i].clone().normalize();
-    let side = new THREE.Vector3().crossVectors(tangent, radialNormal).normalize();
-    if (side.lengthSq() < 0.01) {
-      side = new THREE.Vector3().crossVectors(tangent, worldUp).normalize();
-      if (side.lengthSq() < 0.01) side.crossVectors(tangent, fallback).normalize();
-    }
-
-    const t = i / segments;
-    const taper = Math.pow(Math.sin(Math.PI * t), 0.38);
-    const pulse = 0.78 + 0.22 * Math.sin(t * Math.PI * 6 + config.phase + elapsed * 0.7);
-    const width = config.width * taper * pulse;
-    const twist = Math.sin(t * Math.PI * 4 + config.phase + elapsed * 0.35) * 0.34;
-    side.applyAxisAngle(tangent, twist);
-
-    const left = points[i].clone().addScaledVector(side, width);
-    const right = points[i].clone().addScaledVector(side, -width);
-    const pIndex = i * 6;
-    positions[pIndex] = left.x;
-    positions[pIndex + 1] = left.y;
-    positions[pIndex + 2] = left.z;
-    positions[pIndex + 3] = right.x;
-    positions[pIndex + 4] = right.y;
-    positions[pIndex + 5] = right.z;
-
-    const uvIndex = i * 4;
-    uvs[uvIndex] = t;
-    uvs[uvIndex + 1] = 0;
-    uvs[uvIndex + 2] = t;
-    uvs[uvIndex + 3] = 1;
-
-    if (i < segments) {
-      const a0 = i * 2;
-      const b0 = a0 + 1;
-      const c0 = a0 + 2;
-      const d0 = a0 + 3;
-      indices.push(a0, b0, c0, b0, d0, c0);
-    }
+  vec2 sphereHit(vec3 ro, vec3 rd, float radius) {
+    float b = dot(ro, rd);
+    float c = dot(ro, ro) - radius * radius;
+    float h = b * b - c;
+    if (h < 0.0) return vec2(-1.0);
+    h = sqrt(h);
+    return vec2(-b - h, -b + h);
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
+  void main() {
+    vec3 ro = uCameraLocal;
+    vec3 rd = normalize(vLocalPos - ro);
+    vec2 hit = sphereHit(ro, rd, 0.96);
+    if (hit.y <= 0.0) discard;
 
-function makeMistTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const context = canvas.getContext("2d");
-  if (!context) return new THREE.Texture();
-  const gradient = context.createRadialGradient(64, 64, 4, 64, 64, 62);
-  gradient.addColorStop(0, "rgba(255,255,255,.42)");
-  gradient.addColorStop(0.28, "rgba(255,255,255,.20)");
-  gradient.addColorStop(0.62, "rgba(255,255,255,.07)");
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 128, 128);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
-}
+    float t0 = max(hit.x, 0.0);
+    float t1 = hit.y;
+    float span = max(t1 - t0, 0.001);
+    float stepSize = span / float(STEPS);
+
+    vec4 acc = vec4(0.0);
+    float jitter = hash31(vLocalPos * 31.7);
+    float t = t0 + jitter * stepSize;
+
+    for (int i = 0; i < STEPS; i++) {
+      if (t > t1 || acc.a > 0.93) break;
+
+      vec3 p = ro + rd * t;
+      vec4 sampleField = field(p);
+      float alpha = clamp(sampleField.a * stepSize * 2.25 * uEnergy, 0.0, 0.24);
+
+      float centerGlow = exp(-length(p) * 4.2) * 0.075;
+      vec3 sampleColor = sampleField.rgb + uCream * centerGlow;
+
+      acc.rgb += (1.0 - acc.a) * sampleColor * alpha;
+      acc.a += (1.0 - acc.a) * alpha;
+      t += stepSize;
+    }
+
+    acc.rgb *= 1.18;
+    acc.a *= 0.92;
+
+    if (acc.a < 0.01) discard;
+    gl_FragColor = acc;
+  }
+`;
+
+const GLASS_VERTEX = `
+  varying vec3 vWorldPos;
+  varying vec3 vWorldNormal;
+
+  void main() {
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vWorldPos = worldPosition.xyz;
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+const GLASS_FRAGMENT = `
+  precision highp float;
+
+  varying vec3 vWorldPos;
+  varying vec3 vWorldNormal;
+
+  uniform vec3 uLight;
+  uniform vec3 uCream;
+  uniform float uPulse;
+
+  void main() {
+    vec3 n = normalize(vWorldNormal);
+    vec3 v = normalize(cameraPosition - vWorldPos);
+
+    float fresnel = pow(1.0 - max(dot(n, v), 0.0), 2.6);
+    float upperGlint = pow(max(dot(n, normalize(vec3(-0.55, 0.78, 0.55))), 0.0), 12.0);
+    float sideGlint = pow(max(dot(n, normalize(vec3(0.82, 0.12, 0.56))), 0.0), 20.0);
+
+    vec3 color = mix(uLight, uCream, upperGlint * 0.72 + sideGlint * 0.38);
+    float alpha = 0.025 + fresnel * 0.26 + upperGlint * 0.14 + sideGlint * 0.16;
+    alpha *= 0.94 + uPulse * 0.06;
+
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.42));
+  }
+`;
 
 export function SpiritOrb({ state, tone }: SpiritOrbProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -165,7 +276,7 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     const palette = PALETTES[tone];
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 20);
+    const camera = new THREE.PerspectiveCamera(31, 1, 0.1, 20);
     camera.position.set(0, 0, 4.15);
 
     const renderer = new THREE.WebGLRenderer({
@@ -173,7 +284,7 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       alpha: true,
       powerPreference: "high-performance",
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(renderer.domElement);
@@ -181,108 +292,74 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     const orbGroup = new THREE.Group();
     scene.add(orbGroup);
 
-    const glassGeometry = new THREE.SphereGeometry(1.08, 96, 96);
-    const glassMaterial = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color("#d9fff6"),
-      roughness: 0.08,
-      metalness: 0,
-      transmission: 0.94,
-      thickness: 0.48,
-      ior: 1.22,
+    const volumeGeometry = new THREE.SphereGeometry(0.96, 72, 72);
+    const volumeMaterial = new THREE.ShaderMaterial({
+      vertexShader: VOLUME_VERTEX,
+      fragmentShader: VOLUME_FRAGMENT,
       transparent: true,
-      opacity: 0.34,
-      clearcoat: 1,
-      clearcoatRoughness: 0.04,
-      attenuationColor: new THREE.Color(palette.mid),
-      attenuationDistance: 2.5,
-      side: THREE.FrontSide,
       depthWrite: false,
+      side: THREE.FrontSide,
+      blending: THREE.NormalBlending,
+      uniforms: {
+        uTime: { value: 0 },
+        uEnergy: { value: energyFor(state) },
+        uCameraLocal: { value: new THREE.Vector3() },
+        uDeep: { value: new THREE.Color(palette.deep) },
+        uMid: { value: new THREE.Color(palette.mid) },
+        uLight: { value: new THREE.Color(palette.light) },
+        uCream: { value: new THREE.Color(palette.cream) },
+      },
+    });
+    const volume = new THREE.Mesh(volumeGeometry, volumeMaterial);
+    volume.renderOrder = 2;
+    orbGroup.add(volume);
+
+    const glassGeometry = new THREE.SphereGeometry(1.065, 96, 96);
+    const glassMaterial = new THREE.ShaderMaterial({
+      vertexShader: GLASS_VERTEX,
+      fragmentShader: GLASS_FRAGMENT,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.FrontSide,
+      blending: THREE.NormalBlending,
+      uniforms: {
+        uLight: { value: new THREE.Color(palette.light) },
+        uCream: { value: new THREE.Color(palette.cream) },
+        uPulse: { value: 0 },
+      },
     });
     const glass = new THREE.Mesh(glassGeometry, glassMaterial);
     glass.renderOrder = 6;
     orbGroup.add(glass);
 
-    const innerGeometry = new THREE.SphereGeometry(0.99, 72, 72);
-    const innerMaterial = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(palette.deep),
+    const coreGeometry = new THREE.SphereGeometry(0.068, 32, 32);
+    const coreMaterial = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(palette.core),
       transparent: true,
-      opacity: tone === "night" ? 0.28 : 0.20,
-      side: THREE.BackSide,
+      opacity: 0.98,
+      blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const inner = new THREE.Mesh(innerGeometry, innerMaterial);
-    inner.renderOrder = 0;
-    orbGroup.add(inner);
-
-    const ribbonMeshes = RIBBONS.map((config, index) => {
-      const material = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(palette[config.color]),
-        transparent: true,
-        opacity: config.opacity,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: index < 2 ? THREE.AdditiveBlending : THREE.NormalBlending,
-      });
-      const mesh = new THREE.Mesh(makeRibbonGeometry(config), material);
-      mesh.renderOrder = 2 + index;
-      orbGroup.add(mesh);
-      return { mesh, config, material };
-    });
-
-    const coreGeometry = new THREE.SphereGeometry(0.075, 36, 36);
-    const coreMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(palette.core) });
     const core = new THREE.Mesh(coreGeometry, coreMaterial);
     core.renderOrder = 7;
     orbGroup.add(core);
 
-    const coreGlowGeometry = new THREE.SphereGeometry(0.17, 32, 32);
-    const coreGlowMaterial = new THREE.MeshBasicMaterial({
+    const glowGeometry = new THREE.SphereGeometry(0.19, 28, 28);
+    const glowMaterial = new THREE.MeshBasicMaterial({
       color: new THREE.Color(palette.light),
       transparent: true,
-      opacity: 0.16,
-      depthWrite: false,
+      opacity: 0.09,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
-    const coreGlow = new THREE.Mesh(coreGlowGeometry, coreGlowMaterial);
-    coreGlow.renderOrder = 5;
-    orbGroup.add(coreGlow);
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    glow.renderOrder = 5;
+    orbGroup.add(glow);
 
-    const pointLight = new THREE.PointLight(new THREE.Color(palette.cream), 3.2, 5, 2);
-    pointLight.position.set(0, 0, 0.2);
-    orbGroup.add(pointLight);
-
-    scene.add(new THREE.HemisphereLight(0xffffff, new THREE.Color(palette.deep), 2.1));
-    const key = new THREE.DirectionalLight(0xffffff, 2.5);
-    key.position.set(-2.4, 3.0, 4.0);
-    scene.add(key);
-    const rim = new THREE.DirectionalLight(new THREE.Color(palette.light), 1.8);
-    rim.position.set(3, -1.5, 2);
-    scene.add(rim);
-
-    const mistTexture = makeMistTexture();
-    const mistSprites: THREE.Sprite[] = [];
-    for (let i = 0; i < 7; i += 1) {
-      const material = new THREE.SpriteMaterial({
-        map: mistTexture,
-        color: new THREE.Color(i % 2 ? palette.light : palette.mid),
-        transparent: true,
-        opacity: 0.07 + (i % 3) * 0.018,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const sprite = new THREE.Sprite(material);
-      const angle = (i / 7) * Math.PI * 2;
-      sprite.position.set(Math.cos(angle) * 0.42, Math.sin(angle * 1.3) * 0.35, Math.sin(angle) * 0.36);
-      sprite.scale.setScalar(0.62 + (i % 3) * 0.12);
-      sprite.renderOrder = 1;
-      orbGroup.add(sprite);
-      mistSprites.push(sprite);
-    }
-
-    const particleCount = 54;
+    const particleCount = 42;
     const particlePositions = new Float32Array(particleCount * 3);
     for (let i = 0; i < particleCount; i += 1) {
-      const r = 0.72 * Math.cbrt(Math.random());
+      const r = 0.74 * Math.cbrt(Math.random());
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       particlePositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
@@ -293,12 +370,12 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
     const particleMaterial = new THREE.PointsMaterial({
       color: new THREE.Color(palette.cream),
-      size: 0.018,
+      size: 0.014,
       transparent: true,
-      opacity: 0.72,
-      sizeAttenuation: true,
-      depthWrite: false,
+      opacity: 0.48,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
     });
     const particles = new THREE.Points(particleGeometry, particleMaterial);
     particles.renderOrder = 4;
@@ -318,34 +395,35 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     resize();
 
     const clock = new THREE.Clock();
+    const cameraLocal = new THREE.Vector3();
     let frame = 0;
-    const speed = stateSpeed(state);
+    const speed = speedFor(state);
+    const energy = energyFor(state);
 
     const render = () => {
       const elapsed = clock.getElapsedTime();
       const motionTime = reducedMotion ? 0 : elapsed * speed;
 
-      ribbonMeshes.forEach(({ mesh, config }, index) => {
-        const oldGeometry = mesh.geometry;
-        mesh.geometry = makeRibbonGeometry(config, motionTime + index * 0.35);
-        oldGeometry.dispose();
-      });
-
       if (!reducedMotion) {
-        orbGroup.rotation.y = Math.sin(elapsed * 0.18) * 0.12;
-        orbGroup.rotation.x = Math.sin(elapsed * 0.13) * 0.045;
-        core.scale.setScalar(0.92 + Math.sin(elapsed * 2.0 * speed) * 0.10);
-        coreGlow.scale.setScalar(0.94 + Math.sin(elapsed * 1.45 * speed) * 0.16);
-        coreGlowMaterial.opacity = 0.13 + (Math.sin(elapsed * 1.7 * speed) + 1) * 0.035;
-        particles.rotation.y = elapsed * 0.055 * speed;
-        particles.rotation.x = Math.sin(elapsed * 0.11) * 0.16;
-        mistSprites.forEach((sprite, i) => {
-          const phase = elapsed * (0.10 + i * 0.007) * speed + i;
-          sprite.position.x += Math.sin(phase) * 0.0007;
-          sprite.position.y += Math.cos(phase * 1.3) * 0.00055;
-          sprite.material.rotation = Math.sin(phase * 0.5) * 0.35;
-        });
+        orbGroup.rotation.y = Math.sin(elapsed * 0.10) * 0.055;
+        orbGroup.rotation.x = Math.sin(elapsed * 0.075) * 0.026;
+        particles.rotation.y = elapsed * 0.035 * speed;
+        particles.rotation.x = Math.sin(elapsed * 0.09) * 0.09;
       }
+
+      orbGroup.updateMatrixWorld(true);
+      cameraLocal.copy(camera.position);
+      orbGroup.worldToLocal(cameraLocal);
+
+      volumeMaterial.uniforms.uTime.value = motionTime;
+      volumeMaterial.uniforms.uEnergy.value = energy;
+      volumeMaterial.uniforms.uCameraLocal.value.copy(cameraLocal);
+
+      const pulse = reducedMotion ? 0 : (Math.sin(elapsed * 1.45 * speed) + 1) * 0.5;
+      glassMaterial.uniforms.uPulse.value = pulse;
+      core.scale.setScalar(reducedMotion ? 1 : 0.93 + pulse * 0.13);
+      glow.scale.setScalar(reducedMotion ? 1 : 0.90 + pulse * 0.22);
+      glowMaterial.opacity = 0.065 + pulse * 0.055;
 
       renderer.render(scene, camera);
       frame = requestAnimationFrame(render);
@@ -355,22 +433,16 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
-      ribbonMeshes.forEach(({ mesh, material }) => {
-        mesh.geometry.dispose();
-        material.dispose();
-      });
+      volumeGeometry.dispose();
+      volumeMaterial.dispose();
       glassGeometry.dispose();
       glassMaterial.dispose();
-      innerGeometry.dispose();
-      innerMaterial.dispose();
       coreGeometry.dispose();
       coreMaterial.dispose();
-      coreGlowGeometry.dispose();
-      coreGlowMaterial.dispose();
+      glowGeometry.dispose();
+      glowMaterial.dispose();
       particleGeometry.dispose();
       particleMaterial.dispose();
-      mistSprites.forEach((sprite) => sprite.material.dispose());
-      mistTexture.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
