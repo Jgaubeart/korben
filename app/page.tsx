@@ -1732,171 +1732,85 @@ export default function Home() {
 
   const renderCommandCenter = () => {
     const pendingApprovalCount = approvals.filter((approval) => approval.status === "pending").length;
-    const visiblePriorities = priorityItems.slice(0, 4);
-    const visibleEvents = todayEvents.slice(0, 4);
-    const visibleCommunications = communicationItems.slice(0, 5);
-    const visibleProjects = (projects.length
-      ? projects.slice(0, 3).map((project, index) => ({
-          id: project.id,
-          name: project.name,
-          subtitle: project.slug.replaceAll("-", " "),
-          progress: [75, 60, 40][index] || 45,
-          status: ["On track", "In progress", "At risk"][index] || "Active",
-        }))
-      : [
-          { id: "kitchen", name: "Kitchen campaign", subtitle: "Launch a high-performing spring campaign", progress: 75, status: "On track" },
-          { id: "client", name: "Client portal", subtitle: "A more delightful client experience", progress: 60, status: "In progress" },
-          { id: "website", name: "Website refresh", subtitle: "Modernize our brand and content", progress: 40, status: "At risk" },
-        ]);
+    const homeStatus = pendingApprovalCount
+      ? `${pendingApprovalCount} approval${pendingApprovalCount === 1 ? "" : "s"} waiting`
+      : currentTask?.status === "in_progress"
+        ? `${currentAgent?.name || "Korben"} is working quietly`
+        : "Everything is quiet";
+
+    const toggleTheme = () => {
+      const root = document.documentElement;
+      const current = root.dataset.theme;
+      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const next = current === "dark" ? "light" : current === "light" ? "dark" : systemDark ? "light" : "dark";
+      root.dataset.theme = next;
+      window.localStorage.setItem("korben:theme", next);
+    };
 
     return (
-      <section className="calm-dashboard command-v2">
-        <div className="command-v2-header">
-          <div className="command-v2-greeting">
-            <span className="dashboard-date">
-              {new Intl.DateTimeFormat("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              }).format(ambientClock)}
-            </span>
+      <section className="korben-home">
+        <header className="korben-home-nav">
+          <button className="korben-home-wordmark" onClick={() => setActiveView("command")}>KORBEN</button>
+
+          <nav className="korben-home-links" aria-label="Primary navigation">
+            <button className="active" onClick={() => setActiveView("command")}>Home</button>
+            <button onClick={() => setActiveView("work")}>Tasks</button>
+            <button onClick={() => setActiveView("command")}>Calendar</button>
+            <button onClick={() => setActiveView("command")}>Communications</button>
+            <button onClick={() => setActiveView("focus")}>Focus</button>
+            <button onClick={() => setActiveView("brain")}>Library</button>
+          </nav>
+
+          <div className="korben-home-account">
+            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+            <span className="presence-dot" />
+            <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
+          </div>
+        </header>
+
+        <main className="korben-home-stage">
+          <div className="korben-home-copy">
             <h1>{getGreetingForHour(ambientClock.getHours())}, Jordan.</h1>
-            <p>Focus today. A bigger tomorrow.</p>
+            <p>A CALMER, BRIGHTER YOU.</p>
           </div>
 
-          <div className="command-v2-quote">“A clearer mind<br />builds a brighter future.”<small>— KORBEN</small></div>
-
-          <div className="command-v2-meta">
-            <span className="system-online"><i />System online</span>
-            <span>{ambientClock.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-            <button className="quiet-icon" onClick={() => setCalmMode(true)} aria-label="Open focus mode">☼</button>
-            <button className="command-avatar" onClick={signOut} title="Sign out">J</button>
-          </div>
-        </div>
-
-        <div className="command-v2-hero">
-          <button className={`command-v2-orb korben-presence ${orbState}`} onClick={toggleVoiceMode} aria-label="Talk to Korben">
-            <span className="korben-mark" aria-hidden="true">
-              <i className="korben-mark-bar bar-left" />
-              <i className="korben-mark-bar bar-center" />
-              <i className="korben-mark-bar bar-right" />
+          <button
+            className={`zen-listener ${orbState} ${voiceMode ? "active" : ""}`}
+            onClick={toggleVoiceMode}
+            aria-label="Talk to Korben"
+          >
+            <span className="zen-ring zen-ring-outer" />
+            <span className="zen-ring zen-ring-inner" />
+            <span className="zen-node zen-node-left" />
+            <span className="zen-node zen-node-right" />
+            <span className="zen-core">
+              <span className="zen-core-glow" />
             </span>
           </button>
-          <div className="command-v2-flow">IDEAS <span>→</span> PLANS <span>→</span> ACTION <span>→</span> RESULTS</div>
 
-          <div className="command-v2-input-wrap">
-            <button
-              className={`command-v2-voice ${voiceMode ? "active" : ""}`}
-              onClick={toggleVoiceMode}
-              disabled={!speechSupported}
-              aria-label="Voice input"
-            >
-              ◉
-            </button>
-            <input
-              value={input}
-              onChange={(event) => {
-                setInput(event.target.value);
-                setInputMode("text");
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void sendMessage();
-              }}
-              placeholder="Ask, plan, or delegate anything..."
-            />
-            <button
-              className="command-v2-send"
-              onClick={() => void sendMessage()}
-              disabled={!input.trim() || sending}
-              aria-label="Send"
-            >
-              {sending ? "…" : "↗"}
-            </button>
+          <div className="korben-home-listening">
+            <strong>{voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "speaking" ? "Speaking" : "Listening"}</strong>
+            <span>{voiceMode ? "Just speak to Korben." : "Tap Korben and speak."}</span>
           </div>
 
-          <div className="command-v2-system-strip">
-            <button onClick={() => setActiveView("runs")}><span>⚙</span><strong>{Math.max(runEvents.length, 14)}</strong> automations <i /></button>
-            <button onClick={() => setActiveView("work")}><span>✓</span><strong>{pendingApprovalCount}</strong> approvals</button>
-            <button onClick={() => setActiveView("network")}><span>⌘</span><strong>{Math.max(workingAgentCount, currentTask ? 1 : 0)}</strong> agents active</button>
-            <button onClick={() => setActiveView("brain")}><span>▱</span>Knowledge synced <i /></button>
-            <button onClick={() => setActiveView("runs")}><span>⌁</span>System working quietly <b>›</b></button>
+          <button className="quiet-status" onClick={() => setActiveView(pendingApprovalCount ? "work" : "runs")}>
+            <i className={pendingApprovalCount ? "attention" : ""} />
+            {homeStatus}
+          </button>
+        </main>
+
+        <div className="korben-home-corner corner-left">
+          <span className="corner-sun">☼</span>
+          <div>
+            <strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(ambientClock)}</strong>
+            <small>A BRIGHTER DAY AHEAD</small>
           </div>
         </div>
 
-        <div className="command-v2-primary-grid">
-          <article className="command-v2-card priorities-panel">
-            <div className="command-v2-card-head">
-              <h2>Today’s priorities</h2>
-              <button onClick={() => setActiveView("work")}>View all&nbsp; →</button>
-            </div>
-            <div className="command-priority-list">
-              {visiblePriorities.map(([title, meta], index) => (
-                <button className="command-priority-row" key={title} onClick={() => setActiveView("work")}>
-                  <span className="priority-radio" />
-                  <div><strong>{title}</strong><small>{meta}</small></div>
-                  <span className={`priority-chip priority-chip-${index}`}>{index === 0 ? "High" : index === 3 ? "Low" : "Medium"}</span>
-                  <b>›</b>
-                </button>
-              ))}
-              <button className="command-add-row" onClick={() => setActiveView("work")}><span>＋</span>Add a task</button>
-            </div>
-          </article>
-
-          <article className="command-v2-card schedule-panel">
-            <div className="command-v2-card-head">
-              <h2>Today’s schedule</h2>
-              <button>View all&nbsp; →</button>
-            </div>
-            <div className="command-schedule-list">
-              {visibleEvents.map(([time, label, kind], index) => (
-                <div className={`command-schedule-row ${index === 1 ? "active" : ""}`} key={`${time}-${label}`}>
-                  <span className="schedule-node" />
-                  <time>{time}</time>
-                  <div><strong>{label}</strong><small>{kind === "focus" ? "Focus time · 2 hr" : "KORBEN · 30 min"}</small></div>
-                  {index === 1 && <b>›</b>}
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="command-v2-card communications-panel">
-            <div className="command-v2-card-head">
-              <h2>Communications</h2>
-              <button>View all&nbsp; →</button>
-            </div>
-            <div className="command-comms-list">
-              {visibleCommunications.map(([name, subject, time, kind], index) => (
-                <button className="command-comms-row" key={`${name}-${subject}`}>
-                  <span className="command-comms-avatar">{name.slice(0, 1)}</span>
-                  <span className={`command-comms-dot ${index < 2 ? "unread" : ""}`} />
-                  <div><strong>{name}</strong><small>{subject}</small></div>
-                  <time>{time}</time>
-                </button>
-              ))}
-            </div>
-          </article>
-        </div>
-
-        <div className="command-projects-section">
-          <div className="command-projects-head">
-            <h2>Active projects</h2>
-            <button onClick={() => setActiveView("work")}>View all&nbsp; →</button>
-          </div>
-          <div className="command-projects-row">
-            {visibleProjects.map((project, index) => (
-              <button className="command-project-tile" key={project.id} onClick={() => setActiveView("work")}>
-                <span className={`project-thumb project-thumb-${index + 1}`} />
-                <div className="project-tile-copy">
-                  <strong>{project.name}</strong>
-                  <small>{project.subtitle}</small>
-                  <div className="project-progress-line"><span style={{ width: `${project.progress}%` }} /></div>
-                </div>
-                <b>{project.progress}%</b>
-                <span className={`project-status ${project.status.toLowerCase().replaceAll(" ", "-")}`}>{project.status}</span>
-              </button>
-            ))}
-            <button className="command-new-project" onClick={() => setActiveView("work")}><span>＋</span><small>New project</small></button>
-          </div>
+        <div className="korben-home-corner corner-right">
+          <span>Cape Coral</span>
+          <i />
+          <span>{ambientClock.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
         </div>
       </section>
     );
@@ -2429,8 +2343,7 @@ export default function Home() {
   }
 
   return (
-    <main className="calm-os-shell">
-      {activeView === "command" && <AmbientScene />}
+    <main className={`calm-os-shell ${activeView === "command" ? "command-home-shell" : ""}`}>
       <aside className="calm-sidebar">
         <button className="calm-sidebar-brand" onClick={() => setActiveView("command")}>
           <span className="sidebar-korben-mark" aria-hidden="true">
