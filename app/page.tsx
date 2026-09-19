@@ -1718,24 +1718,27 @@ export default function Home() {
 
   const renderOrb = (large = false) => (
     <button
-      className={`calm-orb ${orbState} ${large ? "large" : ""}`}
+      className={`calm-orb spirit-orb ${orbState} ${large ? "large" : ""}`}
       onClick={toggleVoiceMode}
       aria-label="Talk to Korben"
     >
       <span className="orb-glow" />
-      <span className="orb-aura aura-one" />
-      <span className="orb-aura aura-two" />
-      <span className="orb-membrane membrane-one" />
-      <span className="orb-membrane membrane-two" />
-      <span className="orb-membrane membrane-three" />
-      <span className="orb-wisp wisp-one" />
-      <span className="orb-wisp wisp-two" />
-      <span className="orb-wisp wisp-three" />
-      <span className="orb-core-dot" />
-      <span className="orb-particle particle-one" />
-      <span className="orb-particle particle-two" />
-      <span className="orb-particle particle-three" />
-      <span className="orb-particle particle-four" />
+      <span className="orb-glass-shell" />
+      <span className="orb-inner-field">
+        <span className="spirit-wave wave-one" />
+        <span className="spirit-wave wave-two" />
+        <span className="spirit-wave wave-three" />
+        <span className="spirit-wave wave-four" />
+        <span className="spirit-mist mist-one" />
+        <span className="spirit-mist mist-two" />
+        <span className="orb-core-dot" />
+        <span className="orb-particle particle-one" />
+        <span className="orb-particle particle-two" />
+        <span className="orb-particle particle-three" />
+        <span className="orb-particle particle-four" />
+      </span>
+      <span className="orb-glass-highlight highlight-one" />
+      <span className="orb-glass-highlight highlight-two" />
     </button>
   );
 
