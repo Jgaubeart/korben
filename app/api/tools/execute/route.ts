@@ -147,6 +147,10 @@ async function executeGitHub(tool: string, action: string, params: Record<string
         throw new Error("path and branch are required.");
       }
 
+      if (["main", "master"].includes(branch.toLowerCase())) {
+        throw new Error("L1 GitHub writes cannot target main or master. Use a feature branch.");
+      }
+
       return githubRequest(
         `/repos/${owner}/${name}/contents/${path.split("/").map(encodeURIComponent).join("/")}`,
         {
