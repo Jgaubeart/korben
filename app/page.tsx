@@ -1727,44 +1727,48 @@ export default function Home() {
       <span className="orb-inner-field">
         <svg className="spirit-wave-svg" viewBox="0 0 320 320" aria-hidden="true">
           <defs>
-            <linearGradient id="spiritFillA" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="rgba(255,245,214,0)" />
-              <stop offset="18%" stopColor="rgba(255,245,214,.78)" />
-              <stop offset="48%" stopColor="rgba(255,255,255,.96)" />
-              <stop offset="74%" stopColor="rgba(176,242,226,.78)" />
+            <linearGradient id="silkA" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,244,214,0)" />
+              <stop offset="18%" stopColor="rgba(255,244,214,.34)" />
+              <stop offset="48%" stopColor="rgba(255,255,255,.66)" />
+              <stop offset="72%" stopColor="rgba(176,242,226,.42)" />
               <stop offset="100%" stopColor="rgba(57,150,137,0)" />
             </linearGradient>
-            <linearGradient id="spiritFillB" x1="100%" y1="0%" x2="0%" y2="100%">
+            <linearGradient id="silkB" x1="100%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor="rgba(176,242,226,0)" />
-              <stop offset="24%" stopColor="rgba(176,242,226,.68)" />
-              <stop offset="52%" stopColor="rgba(245,255,252,.90)" />
-              <stop offset="78%" stopColor="rgba(255,230,188,.64)" />
-              <stop offset="100%" stopColor="rgba(255,230,188,0)" />
+              <stop offset="22%" stopColor="rgba(176,242,226,.34)" />
+              <stop offset="50%" stopColor="rgba(246,255,252,.58)" />
+              <stop offset="78%" stopColor="rgba(255,232,194,.36)" />
+              <stop offset="100%" stopColor="rgba(255,232,194,0)" />
             </linearGradient>
-            <linearGradient id="spiritFillC" x1="15%" y1="100%" x2="85%" y2="0%">
-              <stop offset="0%" stopColor="rgba(83,193,176,0)" />
-              <stop offset="28%" stopColor="rgba(111,220,201,.55)" />
-              <stop offset="55%" stopColor="rgba(240,255,250,.78)" />
-              <stop offset="80%" stopColor="rgba(255,237,199,.54)" />
-              <stop offset="100%" stopColor="rgba(255,237,199,0)" />
+            <linearGradient id="filamentA" x1="0%" y1="50%" x2="100%" y2="50%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0)" />
+              <stop offset="24%" stopColor="rgba(255,248,223,.78)" />
+              <stop offset="52%" stopColor="rgba(255,255,255,.92)" />
+              <stop offset="78%" stopColor="rgba(176,242,226,.76)" />
+              <stop offset="100%" stopColor="rgba(176,242,226,0)" />
             </linearGradient>
 
-            <filter id="spiritSheetWarp" x="-80%" y="-80%" width="260%" height="260%">
-              <feTurbulence type="fractalNoise" baseFrequency=".009 .015" numOctaves="2" seed="11" result="noise" />
-              <feDisplacementMap in="SourceGraphic" in2="noise" scale="10" xChannelSelector="R" yChannelSelector="B" result="warp" />
-              <feGaussianBlur in="warp" stdDeviation="1.15" result="softWarp" />
+            <filter id="silkWarp" x="-90%" y="-90%" width="280%" height="280%">
+              <feTurbulence type="fractalNoise" baseFrequency=".007 .012" numOctaves="3" seed="19" result="noise" />
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="14" xChannelSelector="R" yChannelSelector="B" result="warp" />
+              <feGaussianBlur in="warp" stdDeviation="2.2" result="softWarp" />
               <feMerge>
                 <feMergeNode in="softWarp" />
                 <feMergeNode in="warp" />
               </feMerge>
             </filter>
 
-            <filter id="spiritSheetSoft" x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur stdDeviation="2.6" />
+            <filter id="filamentGlow" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="2.2" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
             </filter>
 
-            <filter id="spiritMistBlur" x="-80%" y="-80%" width="260%" height="260%">
-              <feGaussianBlur stdDeviation="18" />
+            <filter id="mistBlur" x="-90%" y="-90%" width="280%" height="280%">
+              <feGaussianBlur stdDeviation="20" />
             </filter>
 
             <clipPath id="spiritSphereClip">
@@ -1773,82 +1777,66 @@ export default function Home() {
           </defs>
 
           <g clipPath="url(#spiritSphereClip)" className="spirit-vortex">
-            <g className="spirit-sheet sheet-a" filter="url(#spiritSheetWarp)">
+            <g className="silk-sheet silk-one" filter="url(#silkWarp)">
               <path
-                d="M24 215
-                   C66 164 94 116 133 108
-                   C172 100 194 123 216 146
-                   C241 172 264 182 301 165
-                   C276 206 249 231 214 236
-                   C177 241 153 219 131 195
-                   C105 167 79 168 48 189
-                   C36 197 29 206 24 215 Z"
-                fill="url(#spiritFillA)"
+                d="M18 206
+                   C58 161 96 118 136 109
+                   C178 100 205 122 227 151
+                   C249 180 269 196 304 182
+                   C282 220 248 246 210 247
+                   C169 248 145 221 124 194
+                   C103 167 80 164 53 181
+                   C39 190 27 199 18 206 Z"
+                fill="url(#silkA)"
               />
             </g>
 
-            <g className="spirit-sheet sheet-b" filter="url(#spiritSheetWarp)">
+            <g className="silk-sheet silk-two" filter="url(#silkWarp)">
               <path
-                d="M58 79
-                   C104 83 132 100 149 132
-                   C168 167 177 210 214 237
-                   C241 257 268 259 294 242
-                   C279 273 248 290 216 286
-                   C174 281 153 250 138 216
-                   C119 173 102 148 70 129
-                   C47 116 38 99 58 79 Z"
-                fill="url(#spiritFillB)"
+                d="M73 54
+                   C112 77 132 104 145 138
+                   C160 178 173 214 207 242
+                   C233 263 263 270 294 255
+                   C274 282 242 295 210 287
+                   C170 278 148 246 133 210
+                   C117 170 100 145 73 126
+                   C52 111 43 79 73 54 Z"
+                fill="url(#silkB)"
               />
             </g>
 
-            <g className="spirit-sheet sheet-c" filter="url(#spiritSheetSoft)">
+            <g className="silk-sheet silk-three" filter="url(#silkWarp)">
               <path
-                d="M95 298
-                   C101 247 118 210 153 180
-                   C184 153 218 132 244 103
-                   C263 82 278 53 281 23
-                   C301 62 299 99 283 127
-                   C263 161 227 184 196 207
-                   C163 232 145 262 139 299 Z"
-                fill="url(#spiritFillC)"
-                opacity=".74"
+                d="M118 303
+                   C115 254 128 217 158 186
+                   C190 153 224 136 252 105
+                   C270 85 284 56 286 24
+                   C304 58 305 91 292 121
+                   C276 157 244 181 213 205
+                   C179 231 161 259 153 302 Z"
+                fill="url(#silkA)"
+                opacity=".62"
               />
             </g>
 
-            <g className="spirit-sheet sheet-d" filter="url(#spiritSheetSoft)">
-              <path
-                d="M28 246
-                   C76 228 106 197 127 157
-                   C148 117 175 94 217 84
-                   C250 76 279 80 302 96
-                   C279 91 257 94 236 105
-                   C204 121 188 145 171 177
-                   C149 219 113 247 67 259
-                   C50 263 37 259 28 246 Z"
-                fill="url(#spiritFillA)"
-                opacity=".60"
-              />
+            <g className="silk-filament filament-one" filter="url(#filamentGlow)">
+              <path d="M31 217 C72 179 109 137 144 132 C182 126 202 155 226 177 C250 198 277 201 305 182"
+                fill="none" stroke="url(#filamentA)" strokeWidth="5.5" strokeLinecap="round" />
+            </g>
+            <g className="silk-filament filament-two" filter="url(#filamentGlow)">
+              <path d="M87 61 C121 92 132 125 149 163 C169 209 198 244 247 262"
+                fill="none" stroke="url(#filamentA)" strokeWidth="4" strokeLinecap="round" opacity=".74" />
+            </g>
+            <g className="silk-filament filament-three" filter="url(#filamentGlow)">
+              <path d="M121 297 C128 251 144 222 176 195 C207 169 242 144 270 99"
+                fill="none" stroke="url(#filamentA)" strokeWidth="3" strokeLinecap="round" opacity=".54" />
             </g>
 
-            <g className="spirit-sheet sheet-e" filter="url(#spiritSheetWarp)">
-              <path
-                d="M124 20
-                   C137 69 156 101 191 123
-                   C225 145 252 171 269 207
-                   C282 235 287 269 279 300
-                   C263 265 247 241 221 221
-                   C184 193 166 167 153 132
-                   C141 98 132 62 124 20 Z"
-                fill="url(#spiritFillB)"
-                opacity=".50"
-              />
-            </g>
-
-            <g className="spirit-mist-svg" filter="url(#spiritMistBlur)">
-              <ellipse cx="90" cy="112" rx="86" ry="48" className="mist-blob blob-a" />
-              <ellipse cx="224" cy="204" rx="90" ry="54" className="mist-blob blob-b" />
-              <ellipse cx="174" cy="82" rx="64" ry="34" className="mist-blob blob-c" />
-              <ellipse cx="153" cy="225" rx="76" ry="40" className="mist-blob blob-d" />
+            <g className="spirit-mist-svg" filter="url(#mistBlur)">
+              <ellipse cx="90" cy="112" rx="90" ry="50" className="mist-blob blob-a" />
+              <ellipse cx="228" cy="204" rx="94" ry="56" className="mist-blob blob-b" />
+              <ellipse cx="177" cy="82" rx="66" ry="36" className="mist-blob blob-c" />
+              <ellipse cx="154" cy="226" rx="80" ry="42" className="mist-blob blob-d" />
             </g>
           </g>
         </svg>
