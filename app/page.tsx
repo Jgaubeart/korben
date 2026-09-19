@@ -936,8 +936,10 @@ export default function Home() {
                 : voiceState === "speaking"
                   ? "Korben is responding."
                   : voiceMode
-                    ? "Wake me by saying “Korben”."
-                    : "Activate voice mode or type below."}
+                    ? conversationActive
+                      ? "Conversation is open. Speak naturally."
+                      : "Wake me by saying “Korben”."
+                    : "Activate voice or type below."}
           </p>
         </div>
 
