@@ -16,6 +16,13 @@ type Agent = {
   role: string;
   status: string;
   system_key: string;
+  department_id?: string | null;
+};
+
+type Department = {
+  id: string;
+  name: string;
+  slug: string;
 };
 
 type PlannedTask = {
@@ -39,6 +46,7 @@ type Task = {
   description: string | null;
   status: string;
   sequence: number;
+  assigned_agent_id?: string | null;
 };
 
 const normalizeKorbenName = (value: string) =>
@@ -61,6 +69,8 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
+  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "brain" | "sops" | "tools" | "integrations">("command");
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
@@ -109,20 +119,19 @@ export default function Home() {
 
       setProjectId(project.id);
 
-      const { data: dept } = await supabase
+      const { data: departmentRows } = await supabase
         .from("departments")
-        .select("id")
-        .eq("slug", "web-development")
-        .single();
+        .select("id,name,slug")
+        .order("name");
 
-      if (dept) {
-        const { data: agentRows } = await supabase
-          .from("agents")
-          .select("id,name,role,status,system_key")
-          .eq("department_id", dept.id)
-          .order("name");
-        setAgents(agentRows || []);
-      }
+      setDepartments(departmentRows || []);
+
+      const { data: agentRows } = await supabase
+        .from("agents")
+        .select("id,name,role,status,system_key,department_id")
+        .order("name");
+
+      setAgents(agentRows || []);
 
       let currentConversationId: string | null = null;
       const { data: existingConversation } = await supabase
@@ -181,7 +190,7 @@ export default function Home() {
         setActiveObjective(objective.title);
         const { data: taskRows } = await supabase
           .from("tasks")
-          .select("id,title,description,status,sequence")
+          .select("id,title,description,status,sequence,assigned_agent_id")
           .eq("objective_id", objective.id)
           .order("sequence");
         setTasks(taskRows || []);
@@ -621,7 +630,7 @@ export default function Home() {
       const { data } = await supabase
         .from("tasks")
         .insert(taskRows)
-        .select("id,title,description,status,sequence")
+        .select("id,title,description,status,sequence,assigned_agent_id")
         .order("sequence");
 
       createdTasks = data || [];
@@ -834,145 +843,376 @@ export default function Home() {
             ? "Say “Korben”"
             : "Voice standby";
 
-  return (
-    <main className="korben-shell">
-      <header className="korben-topbar">
-        <div className="korben-wordmark">
-          <span className="mini-core">K</span>
-          <div>
-            <strong>KORBEN</strong>
-            <small>Multi-Agent Operating System</small>
-          </div>
+  const agentById = (id?: string | null) =>
+    id ? agents.find((agent) => agent.id === id) : undefined;
+
+  const viewTitle =
+    activeView === "command" ? "Command Center" :
+    activeView === "network" ? "Agent Network" :
+    activeView === "work" ? "Work Routing" :
+    activeView === "brain" ? "Brain & Memory" :
+    activeView === "sops" ? "SOP Library" :
+    activeView === "tools" ? "Tool Registry" :
+    "Integrations";
+
+  const renderCommandCenter = () => (
+    <section className="korben-stage">
+      <div className="ambient-grid" />
+
+      <div className="core-column">
+        <div
+          className={`korben-core ${voiceState} ${voiceMode ? "armed" : ""}`}
+          onClick={voiceMode ? toggleMic : toggleVoiceMode}
+          role="button"
+          tabIndex={0}
+          aria-label="Korben voice core"
+        >
+          <div className="core-orbit orbit-one" />
+          <div className="core-orbit orbit-two" />
+          <div className="core-orbit orbit-three" />
+          <div className="core-energy" />
+          <div className="core-center"><span>K</span></div>
+          <div className="voice-ripple ripple-one" />
+          <div className="voice-ripple ripple-two" />
+          <div className="voice-ripple ripple-three" />
         </div>
 
-        <div className="korben-top-actions">
-          <span className="workspace-chip">General Workspace</span>
-          <button className="avatar" onClick={signOut} title="Sign out">JG</button>
+        <div className="core-status">
+          <span className={`status-light ${voiceState}`} />
+          <strong>{statusCopy}</strong>
+          <p>
+            {voiceState === "listening"
+              ? input || "I’m listening."
+              : voiceState === "thinking"
+                ? "Processing your request."
+                : voiceState === "speaking"
+                  ? "Korben is responding."
+                  : voiceMode
+                    ? "Wake me by saying “Korben”."
+                    : "Activate voice mode or type below."}
+          </p>
         </div>
-      </header>
 
-      <section className="korben-stage">
-        <div className="ambient-grid" />
-
-        <div className="core-column">
-          <div
-            className={`korben-core ${voiceState} ${voiceMode ? "armed" : ""}`}
-            onClick={voiceMode ? toggleMic : toggleVoiceMode}
-            role="button"
-            tabIndex={0}
-            aria-label="Korben voice core"
+        <div className="voice-actions">
+          <button
+            className={`voice-primary ${voiceMode ? "active" : ""}`}
+            onClick={toggleVoiceMode}
+            disabled={!speechSupported}
           >
-            <div className="core-orbit orbit-one" />
-            <div className="core-orbit orbit-two" />
-            <div className="core-orbit orbit-three" />
-            <div className="core-energy" />
-            <div className="core-center"><span>K</span></div>
-            <div className="voice-ripple ripple-one" />
-            <div className="voice-ripple ripple-two" />
-            <div className="voice-ripple ripple-three" />
-          </div>
+            <span className="voice-primary-dot" />
+            {voiceMode ? "Voice online" : "Activate voice"}
+          </button>
+          <button className="voice-secondary" onClick={beginListening} disabled={!speechSupported || sending}>
+            Talk now
+          </button>
+        </div>
 
-          <div className="core-status">
-            <span className={`status-light ${voiceState}`} />
-            <strong>{statusCopy}</strong>
-            <p>
-              {voiceState === "listening"
-                ? input || "I’m listening."
-                : voiceState === "thinking"
-                  ? "Processing your request."
-                  : voiceState === "speaking"
-                    ? "Korben is responding."
-                    : voiceMode
-                      ? "Wake me by saying “Korben”."
-                      : "Activate voice mode or type below."}
-            </p>
-          </div>
+        <div className="command-input">
+          <input
+            value={input}
+            onChange={(event) => {
+              setInput(event.target.value);
+              setInputMode("text");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void sendMessage();
+              }
+            }}
+            placeholder="Type a message to Korben…"
+          />
+          <button onClick={() => void sendMessage()} disabled={!input.trim() || sending}>
+            {sending ? "…" : "↗"}
+          </button>
+        </div>
 
-          <div className="voice-actions">
-            <button
-              className={`voice-primary ${voiceMode ? "active" : ""}`}
-              onClick={toggleVoiceMode}
-              disabled={!speechSupported}
-            >
-              <span className="voice-primary-dot" />
-              {voiceMode ? "Voice online" : "Activate voice"}
-            </button>
-            <button className="voice-secondary" onClick={beginListening} disabled={!speechSupported || sending}>
-              Talk now
-            </button>
-          </div>
+        {!speechSupported && (
+          <div className="voice-warning">Voice recognition is unavailable in this browser.</div>
+        )}
+      </div>
 
-          <div className="command-input">
-            <input
-              value={input}
-              onChange={(event) => {
-                setInput(event.target.value);
-                setInputMode("text");
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  void sendMessage();
-                }
-              }}
-              placeholder="Type a message to Korben…"
-            />
-            <button onClick={() => void sendMessage()} disabled={!input.trim() || sending}>
-              {sending ? "…" : "↗"}
-            </button>
+      <aside className="conversation-rail">
+        <div className="rail-header">
+          <div>
+            <span>CONVERSATION</span>
+            <strong>Command log</strong>
           </div>
+          <span className="rail-live">● LIVE</span>
+        </div>
 
-          {!speechSupported && (
-            <div className="voice-warning">Voice recognition is unavailable in this browser.</div>
+        <div className="rail-messages">
+          {messages.map((message, index) => (
+            <div key={message.id || index} className={`rail-message ${message.role}`}>
+              <div className="rail-message-meta">
+                <span>{message.role === "user" ? "YOU" : "KORBEN"}</span>
+                <small>{message.inputMode === "voice" ? "VOICE" : "TEXT"}</small>
+              </div>
+              <p>{message.text}</p>
+            </div>
+          ))}
+
+          {sending && (
+            <div className="rail-message assistant pending">
+              <div className="rail-message-meta">
+                <span>KORBEN</span>
+                <small>PROCESSING</small>
+              </div>
+              <p>Thinking…</p>
+            </div>
           )}
         </div>
 
-        <aside className="conversation-rail">
-          <div className="rail-header">
-            <div>
-              <span>CONVERSATION</span>
-              <strong>Command log</strong>
-            </div>
-            <span className="rail-live">● LIVE</span>
+        <div className="rail-footer">
+          <div>
+            <span className="footer-label">SYSTEM</span>
+            <strong>{loadingState}</strong>
           </div>
+          <div>
+            <span className="footer-label">ACTIVE OBJECTIVE</span>
+            <strong>{activeObjective}</strong>
+          </div>
+          <div>
+            <span className="footer-label">TASKS</span>
+            <strong>{tasks.length}</strong>
+          </div>
+        </div>
+      </aside>
+    </section>
+  );
 
-          <div className="rail-messages">
-            {messages.map((message, index) => (
-              <div key={message.id || index} className={`rail-message ${message.role}`}>
-                <div className="rail-message-meta">
-                  <span>{message.role === "user" ? "YOU" : "KORBEN"}</span>
-                  <small>{message.inputMode === "voice" ? "VOICE" : "TEXT"}</small>
+  const renderNetwork = () => (
+    <section className="os-view">
+      <div className="view-heading">
+        <div>
+          <span className="eyebrow">LIVE TOPOLOGY</span>
+          <h1>Agent Network</h1>
+          <p>Departments, agents, status and current routing from the live Korben workspace.</p>
+        </div>
+        <div className="metric-strip">
+          <div><strong>{departments.length}</strong><span>Departments</span></div>
+          <div><strong>{agents.length}</strong><span>Agents</span></div>
+          <div><strong>{tasks.filter((task) => task.status === "in_progress").length}</strong><span>Working</span></div>
+        </div>
+      </div>
+
+      <div className="network-orchestrator">
+        <div className="network-core">K</div>
+        <div>
+          <span>ORCHESTRATOR</span>
+          <strong>Korben</strong>
+          <p>Receives intent, selects departments, routes tasks and coordinates approvals.</p>
+        </div>
+      </div>
+
+      <div className="department-grid">
+        {departments.map((department) => {
+          const departmentAgents = agents.filter((agent) => agent.department_id === department.id);
+          return (
+            <article className="department-card" key={department.id}>
+              <div className="department-header">
+                <div>
+                  <span>DEPARTMENT</span>
+                  <h2>{department.name}</h2>
                 </div>
-                <p>{message.text}</p>
+                <b>{departmentAgents.length} agents</b>
               </div>
-            ))}
-
-            {sending && (
-              <div className="rail-message assistant pending">
-                <div className="rail-message-meta">
-                  <span>KORBEN</span>
-                  <small>PROCESSING</small>
-                </div>
-                <p>Thinking…</p>
+              <div className="network-agent-list">
+                {departmentAgents.map((agent) => {
+                  const assignedTask = tasks.find((task) => task.assigned_agent_id === agent.id);
+                  return (
+                    <div className="network-agent" key={agent.id}>
+                      <div className="agent-node">{agent.name.slice(0, 2).toUpperCase()}</div>
+                      <div className="agent-detail">
+                        <div><strong>{agent.name}</strong><span>{agent.role}</span></div>
+                        <small>{assignedTask ? assignedTask.title : "No routed task"}</small>
+                      </div>
+                      <span className={`agent-state ${agent.status}`}>{agent.status}</span>
+                    </div>
+                  );
+                })}
+                {!departmentAgents.length && <div className="empty-state">No agents in this department yet.</div>}
               </div>
-            )}
-          </div>
+            </article>
+          );
+        })}
+        {!departments.length && <div className="empty-state large">No department records are available yet.</div>}
+      </div>
+    </section>
+  );
 
-          <div className="rail-footer">
-            <div>
-              <span className="footer-label">SYSTEM</span>
-              <strong>{loadingState}</strong>
+  const renderWork = () => (
+    <section className="os-view">
+      <div className="view-heading">
+        <div>
+          <span className="eyebrow">ROUTING LEDGER</span>
+          <h1>Work Routing</h1>
+          <p>See what Korben has routed, who owns it, and where each task sits in the workflow.</p>
+        </div>
+        <div className="metric-strip">
+          <div><strong>{tasks.length}</strong><span>Current tasks</span></div>
+          <div><strong>{tasks.filter((task) => task.status === "queued").length}</strong><span>Queued</span></div>
+          <div><strong>{tasks.filter((task) => task.status === "complete").length}</strong><span>Complete</span></div>
+        </div>
+      </div>
+
+      <div className="work-board">
+        {["queued", "in_progress", "complete"].map((status) => (
+          <div className="work-lane" key={status}>
+            <div className="work-lane-header">
+              <span>{status === "in_progress" ? "IN PROGRESS" : status.toUpperCase()}</span>
+              <b>{tasks.filter((task) => task.status === status).length}</b>
             </div>
-            <div>
-              <span className="footer-label">ACTIVE OBJECTIVE</span>
-              <strong>{activeObjective}</strong>
-            </div>
-            <div>
-              <span className="footer-label">TASKS</span>
-              <strong>{tasks.length}</strong>
+            <div className="work-lane-body">
+              {tasks.filter((task) => task.status === status).map((task) => {
+                const owner = agentById(task.assigned_agent_id);
+                return (
+                  <article className="task-card" key={task.id}>
+                    <span className="task-sequence">#{task.sequence}</span>
+                    <strong>{task.title}</strong>
+                    <p>{task.description || "No description"}</p>
+                    <div className="task-owner">
+                      <span>{owner ? owner.name.slice(0, 2).toUpperCase() : "—"}</span>
+                      <div>
+                        <small>ROUTED TO</small>
+                        <b>{owner ? owner.name : "Unassigned"}</b>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+              {!tasks.some((task) => task.status === status) && (
+                <div className="lane-empty">Nothing here.</div>
+              )}
             </div>
           </div>
-        </aside>
+        ))}
+      </div>
+    </section>
+  );
+
+  const renderKnowledgeView = () => {
+    const content = {
+      brain: {
+        eyebrow: "KNOWLEDGE LAYER",
+        title: "Brain & Memory",
+        description: "Korben’s long-term knowledge layer. G-Brain and Obsidian will feed the same governed memory surface.",
+        cards: [
+          ["G-Brain", "Not configured", "Semantic search and durable Markdown knowledge store."],
+          ["Obsidian Vault", "Not configured", "Human-editable notes, SOPs, decisions and source documents."],
+          ["Conversation Memory", "Live", "Supabase-backed Korben conversation history."],
+          ["Workspace Context", "Live", "Organization, project, objective and task context."]
+        ]
+      },
+      sops: {
+        eyebrow: "OPERATING KNOWLEDGE",
+        title: "SOP Library",
+        description: "Procedures Korben and its agents can retrieve before acting.",
+        cards: [
+          ["Global SOPs", "Structure ready", "Cross-business operating procedures."],
+          ["Department SOPs", "Structure ready", "Procedures scoped to each agent department."],
+          ["Project Playbooks", "Structure ready", "Project-specific standards and constraints."],
+          ["Approval Policies", "Live foundation", "Risk levels already exist in Korben’s work model."]
+        ]
+      },
+      tools: {
+        eyebrow: "CAPABILITY REGISTRY",
+        title: "Tool Registry",
+        description: "An honest inventory of what Korben can use now and what still needs a connector.",
+        cards: [
+          ["OpenAI Orchestrator", "Configured", "Conversation and structured planning."],
+          ["Supabase", "Connected", "Auth, persistence, objectives, tasks, runs and approvals."],
+          ["Browser Voice", "Connected", "Wake listening, transcription and spoken replies."],
+          ["GitHub Execution", "Next", "Branch, code, commit, pull request and review actions."],
+          ["Vercel Execution", "Next", "Preview inspection and controlled deployment actions."],
+          ["G-Brain Retrieval", "Not configured", "Shared semantic knowledge retrieval."],
+          ["Obsidian Vault", "Not configured", "Local/source Markdown knowledge access."]
+        ]
+      },
+      integrations: {
+        eyebrow: "SYSTEM CONNECTIONS",
+        title: "Integrations",
+        description: "Connection health and external systems available to the Korben runtime.",
+        cards: [
+          ["Supabase", "Connected", "Primary application data and authentication."],
+          ["OpenAI", "Configured", "Korben orchestration endpoint."],
+          ["GitHub", "Not wired into runtime", "Connector exists outside the app; runtime execution is next."],
+          ["Vercel", "Not wired into runtime", "Production host is active; agent deployment control is next."],
+          ["G-Brain", "Not configured", "Requires a companion service or accessible G-Brain endpoint."],
+          ["Obsidian", "Not configured", "Requires vault access through a local bridge or synced source."]
+        ]
+      }
+    }[activeView as "brain" | "sops" | "tools" | "integrations"];
+
+    return (
+      <section className="os-view">
+        <div className="view-heading">
+          <div>
+            <span className="eyebrow">{content.eyebrow}</span>
+            <h1>{content.title}</h1>
+            <p>{content.description}</p>
+          </div>
+        </div>
+        <div className="registry-grid">
+          {content.cards.map(([name, status, description]) => (
+            <article className="registry-card" key={name}>
+              <div className="registry-card-top">
+                <strong>{name}</strong>
+                <span className={`registry-status ${status.toLowerCase().replaceAll(" ", "-")}`}>{status}</span>
+              </div>
+              <p>{description}</p>
+            </article>
+          ))}
+        </div>
       </section>
+    );
+  };
+
+  return (
+    <main className="os-shell">
+      <aside className="os-sidebar">
+        <button className="sidebar-brand" onClick={() => setActiveView("command")}>
+          <span className="mini-core">K</span>
+          <div><strong>KORBEN</strong><small>OPERATING SYSTEM</small></div>
+        </button>
+
+        <nav className="os-nav">
+          <span className="nav-section">CORE</span>
+          <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>◉</i><span>Command</span></button>
+          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}><i>⌘</i><span>Agent Network</span><b>{agents.length}</b></button>
+          <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}><i>↗</i><span>Work Routing</span><b>{tasks.length}</b></button>
+
+          <span className="nav-section">KNOWLEDGE</span>
+          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>◇</i><span>Brain</span></button>
+          <button className={activeView === "sops" ? "active" : ""} onClick={() => setActiveView("sops")}><i>▤</i><span>SOPs</span></button>
+
+          <span className="nav-section">SYSTEM</span>
+          <button className={activeView === "tools" ? "active" : ""} onClick={() => setActiveView("tools")}><i>⌁</i><span>Tools</span></button>
+          <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>⬡</i><span>Integrations</span></button>
+        </nav>
+
+        <div className="sidebar-system">
+          <span className="system-pulse" />
+          <div><strong>{loadingState}</strong><small>General Workspace</small></div>
+        </div>
+      </aside>
+
+      <div className="os-main">
+        <header className="korben-topbar">
+          <div>
+            <span className="topbar-kicker">KORBEN / {viewTitle.toUpperCase()}</span>
+            <strong className="topbar-title">{viewTitle}</strong>
+          </div>
+          <div className="korben-top-actions">
+            <span className="workspace-chip">General Workspace</span>
+            <button className="avatar" onClick={signOut} title="Sign out">JG</button>
+          </div>
+        </header>
+
+        {activeView === "command" && renderCommandCenter()}
+        {activeView === "network" && renderNetwork()}
+        {activeView === "work" && renderWork()}
+        {["brain", "sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
+      </div>
     </main>
   );
 }
