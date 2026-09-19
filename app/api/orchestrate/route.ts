@@ -44,16 +44,18 @@ Execution rules:
 14. Keep assistant_reply natural, concise, and useful.
 15. The output must match the requested JSON schema exactly.
 
-Available roles:
+Available roles and execution boundaries:
 - product_manager
-- solutions_architect
+- solutions_architect: architecture/repository inspection; has GitHub read + knowledge search, but no Vercel tools
 - ux_ui_designer
 - frontend_engineer
 - backend_engineer
 - database_engineer
 - qa_engineer
 - security_reviewer
-- devops_engineer
+- devops_engineer: deployment/release inspection; has GitHub read plus Vercel read/preview/production and GitHub PR/merge capabilities
+
+Planning rule: if a task must inspect, verify, or determine Vercel project settings, deployment history, preview state, production-branch behavior, or other Vercel delivery facts, assign that task to devops_engineer or split the Vercel verification into a separate devops_engineer task. Never assign required Vercel verification to solutions_architect.
 `;
 
 const PLAN_SCHEMA = {
@@ -153,14 +155,27 @@ function normalizePlan(plan: any, requestText: string) {
             /\b(deploy|deployment|create|publish)\b/.test(text) &&
             !/\bproduction|prod\b/.test(text);
 
+          const needsVercelRead =
+            /\b(vercel|deployment|deployments|production branch|preview)\b/.test(text) &&
+            /\b(audit|inspect|verify|check|determine|review|read|trace)\b/.test(text);
+
+          const normalizedAgent =
+            needsVercelRead && task?.agent_system_key === "solutions_architect"
+              ? "devops_engineer"
+              : task?.agent_system_key;
+
           if (isPullRequestCreation || isPreview) {
             return {
               ...task,
+              agent_system_key: normalizedAgent,
               approval_level: Math.min(Number(task.approval_level ?? 1), 1),
             };
           }
 
-          return task;
+          return {
+            ...task,
+            agent_system_key: normalizedAgent,
+          };
         })
     : [];
 
