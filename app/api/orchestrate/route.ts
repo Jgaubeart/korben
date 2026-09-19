@@ -4,7 +4,7 @@ const SYSTEM_PROMPT = `
 You are Korben, the general-purpose orchestrator for a multi-agent operating system.
 
 You can have ordinary conversation, answer questions, help think through ideas, coordinate work, and identify when an external action is being requested.
-Do not assume the user is talking about any company, client, project, or prior business unless that context is explicitly present in the current request or supplied workspace context.
+You operate from one Command Center. The user should not have to manually switch projects before asking for work.
 
 Classify every request into exactly one intent:
 - conversation: casual conversation, social interaction, brainstorming with no factual research or execution needed
@@ -13,7 +13,16 @@ Classify every request into exactly one intent:
 - action: a request to use external systems or tools to do something
 - approval: a requested action that is L2/L3 and therefore requires explicit approval before execution
 
-Rules:
+Project routing rules:
+1. Return target_project_slug for work/action/approval when the target can be resolved from the request or current context.
+2. If the user explicitly names a project, business, app, repository, or workspace that matches an available project, route to that project automatically.
+3. Examples: "Korben OS", "KorbenOS", "Korben" when clearly referring to building the product -> korben-os. "Cabinet Genies Portal" -> cabinet-genies-portal.
+4. The current project can be used when it is already execution-scoped and the request clearly continues that work.
+5. General Workspace is conversational and neutral. Do not route external execution to general-workspace.
+6. If execution is requested but no available target project can be resolved confidently, return target_project_slug="" and explain briefly that Korben needs the target named. Do not invent a project.
+7. conversation and question may use target_project_slug="" unless project context is materially useful.
+
+Execution rules:
 1. conversation and question must return requires_execution=false and an empty tasks array.
 2. work, action, and approval may create tasks only when useful.
 3. Never invent or assume business-specific context.
@@ -48,6 +57,7 @@ const PLAN_SCHEMA = {
       enum: ["conversation", "question", "work", "action", "approval"]
     },
     requires_execution: { type: "boolean" },
+    target_project_slug: { type: "string" },
     title: { type: "string" },
     summary: { type: "string" },
     assistant_reply: { type: "string" },
@@ -96,6 +106,7 @@ const PLAN_SCHEMA = {
   required: [
     "intent",
     "requires_execution",
+    "target_project_slug",
     "title",
     "summary",
     "assistant_reply",
@@ -117,7 +128,18 @@ export async function POST(request: Request) {
   const requestText = String(body?.request ?? "")
     .trim()
     .replace(/\bcorbin\b/gi, "Korben");
-  const workspaceName = String(body?.projectName ?? "General Workspace");
+  const currentProjectName = String(body?.projectName ?? "General Workspace");
+  const currentProjectSlug = String(body?.currentProjectSlug ?? "general-workspace");
+  const availableProjects = Array.isArray(body?.projects)
+    ? body.projects
+        .map((project: any) => ({
+          name: String(project?.name ?? ""),
+          slug: String(project?.slug ?? ""),
+          has_github: Boolean(project?.github_repo),
+          has_vercel: Boolean(project?.vercel_project_id),
+        }))
+        .filter((project: any) => project.name && project.slug)
+    : [];
 
   if (!requestText) {
     return NextResponse.json({ error: "Request is required." }, { status: 400 });
@@ -133,7 +155,13 @@ export async function POST(request: Request) {
       model: process.env.OPENAI_ORCHESTRATOR_MODEL || "gpt-5.6-sol",
       reasoning: { effort: "medium" },
       instructions: SYSTEM_PROMPT,
-      input: `Workspace: ${workspaceName}\n\nUser request:\n${requestText}`,
+      input: [
+        `Current Command Center context: ${currentProjectName} (${currentProjectSlug})`,
+        `Available projects: ${JSON.stringify(availableProjects)}`,
+        "",
+        "User request:",
+        requestText,
+      ].join("\n"),
       text: {
         format: {
           type: "json_schema",
@@ -150,7 +178,7 @@ export async function POST(request: Request) {
   if (!response.ok) {
     console.error("OpenAI orchestration error", payload);
     return NextResponse.json(
-      { error: "Korben could not classify or plan the request." },
+      { error: "Korben could not classify, route, or plan the request." },
       { status: 502 }
     );
   }
