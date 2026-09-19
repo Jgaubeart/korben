@@ -68,6 +68,18 @@ type IntegrationStatus = {
   obsidian: boolean;
 };
 
+type RunEvent = {
+  id: string;
+  run_id: string | null;
+  task_id: string | null;
+  agent_id: string | null;
+  event_type: string;
+  tool_system_key: string | null;
+  status: string;
+  message: string | null;
+  created_at: string;
+};
+
 type PlannedTask = {
   title: string;
   description: string;
@@ -114,7 +126,7 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
-  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "brain" | "sops" | "tools" | "integrations">("command");
+  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "runs" | "brain" | "sops" | "tools" | "integrations">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [selectedProjectSlug, setSelectedProjectSlug] = useState("general-workspace");
@@ -123,6 +135,7 @@ export default function Home() {
   const [agentToolPermissions, setAgentToolPermissions] = useState<AgentToolPermission[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
+  const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
@@ -309,6 +322,15 @@ export default function Home() {
       } else {
         setApprovals([]);
       }
+
+      const { data: eventRows } = await supabase
+        .from("run_events")
+        .select("id,run_id,task_id,agent_id,event_type,tool_system_key,status,message,created_at")
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      setRunEvents(eventRows || []);
 
       setLoadingState("System online");
     };
@@ -1246,6 +1268,7 @@ export default function Home() {
     activeView === "command" ? "Command Center" :
     activeView === "network" ? "Agent Network" :
     activeView === "work" ? "Work Routing" :
+    activeView === "runs" ? "Runs & Activity" :
     activeView === "brain" ? "Brain & Memory" :
     activeView === "sops" ? "SOP Library" :
     activeView === "tools" ? "Tool Registry" :
@@ -1532,6 +1555,46 @@ export default function Home() {
     </section>
   );
 
+  const renderRuns = () => (
+    <section className="os-view">
+      <div className="view-heading">
+        <div>
+          <span className="eyebrow">EXECUTION TRACE</span>
+          <h1>Runs & Activity</h1>
+          <p>Auditable agent and tool activity for the selected project.</p>
+        </div>
+        <div className="metric-strip">
+          <div><strong>{runEvents.length}</strong><span>Recent events</span></div>
+          <div><strong>{runEvents.filter((event) => event.status === "error").length}</strong><span>Errors</span></div>
+          <div><strong>{runEvents.filter((event) => event.status === "waiting_approval").length}</strong><span>Approvals</span></div>
+        </div>
+      </div>
+
+      <div className="run-event-list">
+        {runEvents.map((event) => {
+          const agent = agentById(event.agent_id);
+          return (
+            <article className="run-event-card" key={event.id}>
+              <span className={`run-event-dot ${event.status}`} />
+              <div className="run-event-main">
+                <div>
+                  <strong>{agent?.name || "Korben system"}</strong>
+                  <span>{event.event_type.replaceAll("_", " ")}</span>
+                  {event.tool_system_key && <b>{event.tool_system_key}</b>}
+                </div>
+                <p>{event.message || "No event detail"}</p>
+              </div>
+              <time>{new Date(event.created_at).toLocaleString()}</time>
+            </article>
+          );
+        })}
+        {!runEvents.length && (
+          <div className="empty-state large">No agent runs have been recorded for this project yet.</div>
+        )}
+      </div>
+    </section>
+  );
+
   const renderKnowledgeView = () => {
     const content = {
       brain: {
@@ -1618,6 +1681,7 @@ export default function Home() {
           <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>◉</i><span>Command</span></button>
           <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}><i>⌘</i><span>Agent Network</span><b>{agents.length}</b></button>
           <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}><i>↗</i><span>Work Routing</span><b>{tasks.length}</b></button>
+          <button className={activeView === "runs" ? "active" : ""} onClick={() => setActiveView("runs")}><i>◎</i><span>Runs</span><b>{runEvents.length}</b></button>
 
           <span className="nav-section">KNOWLEDGE</span>
           <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>◇</i><span>Brain</span></button>
@@ -1660,6 +1724,7 @@ export default function Home() {
         {activeView === "command" && renderCommandCenter()}
         {activeView === "network" && renderNetwork()}
         {activeView === "work" && renderWork()}
+        {activeView === "runs" && renderRuns()}
         {["brain", "sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
       </div>
     </main>
