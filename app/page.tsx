@@ -1,52 +1,156 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 type Message = {
+  id?: string;
   role: "user" | "assistant";
   text: string;
+  inputMode?: "text" | "voice";
 };
 
 type Agent = {
+  id: string;
   name: string;
   role: string;
-  status: "Working" | "Complete" | "Waiting" | "Idle";
-  detail: string;
+  status: string;
 };
 
-const agents: Agent[] = [
-  { name: "Korben", role: "Orchestrator", status: "Working", detail: "Coordinating the build" },
-  { name: "Atlas", role: "Product Manager", status: "Complete", detail: "Requirements drafted" },
-  { name: "Archer", role: "Solutions Architect", status: "Working", detail: "Reviewing architecture" },
-  { name: "Pixel", role: "UX / UI Designer", status: "Idle", detail: "Ready" },
-  { name: "Forge", role: "Frontend Engineer", status: "Waiting", detail: "Waiting on plan" },
-  { name: "Stack", role: "Backend Engineer", status: "Waiting", detail: "Waiting on plan" },
-  { name: "Schema", role: "Database Engineer", status: "Waiting", detail: "Waiting on plan" },
-  { name: "Sentinel", role: "QA Engineer", status: "Idle", detail: "Ready" },
-];
+type Task = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  sequence: number;
+};
 
-const executionSteps = [
-  ["Product Spec", "Define requirements and acceptance criteria", "complete"],
-  ["Architecture Review", "Map dependencies and implementation path", "active"],
-  ["Task Breakdown", "Create structured engineering tasks", "waiting"],
-  ["Build", "Frontend, backend and database implementation", "waiting"],
-  ["QA & Security", "Test behavior, permissions and regressions", "waiting"],
-  ["Preview Deploy", "Ship a Vercel preview for review", "waiting"],
-];
+const fallbackGreeting: Message = {
+  role: "assistant",
+  text: "Good morning. I’m ready to coordinate your Web Development team. What should we build?",
+};
 
 export default function Home() {
+  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      text: "Good morning. I’m ready to coordinate your Web Development team. What should we build?",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [activeObjective, setActiveObjective] = useState<string>("No active objective");
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [loadingState, setLoadingState] = useState("Connecting…");
   const [listening, setListening] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
+  const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const recognitionRef = useRef<any>(null);
   const heldShortcutRef = useRef(false);
+
+  useEffect(() => {
+    const bootstrap = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        setLoadingState("Sign in required");
+        return;
+      }
+
+      const { data: project } = await supabase
+        .from("projects")
+        .select("id,name")
+        .eq("slug", "cabinet-genies-portal")
+        .single();
+
+      if (!project) {
+        setLoadingState("Project not found");
+        return;
+      }
+
+      setProjectId(project.id);
+
+      const { data: dept } = await supabase
+        .from("departments")
+        .select("id")
+        .eq("slug", "web-development")
+        .single();
+
+      if (dept) {
+        const { data: agentRows } = await supabase
+          .from("agents")
+          .select("id,name,role,status")
+          .eq("department_id", dept.id)
+          .order("name");
+        setAgents(agentRows || []);
+      }
+
+      let currentConversationId: string | null = null;
+      const { data: existingConversation } = await supabase
+        .from("conversations")
+        .select("id,title")
+        .eq("project_id", project.id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingConversation) {
+        currentConversationId = existingConversation.id;
+      } else {
+        const { data: created } = await supabase
+          .from("conversations")
+          .insert({
+            project_id: project.id,
+            title: "Command Center",
+          })
+          .select("id")
+          .single();
+        currentConversationId = created?.id || null;
+      }
+
+      setConversationId(currentConversationId);
+
+      if (currentConversationId) {
+        const { data: history } = await supabase
+          .from("messages")
+          .select("id,role,content,input_mode,created_at")
+          .eq("conversation_id", currentConversationId)
+          .in("role", ["user", "assistant"])
+          .order("created_at", { ascending: true });
+
+        if (history && history.length) {
+          setMessages(
+            history.map((row) => ({
+              id: row.id,
+              role: row.role as "user" | "assistant",
+              text: row.content,
+              inputMode: row.input_mode === "voice" ? "voice" : "text",
+            }))
+          );
+        }
+      }
+
+      const { data: objective } = await supabase
+        .from("objectives")
+        .select("id,title,status,created_at")
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (objective) {
+        setActiveObjective(objective.title);
+        const { data: taskRows } = await supabase
+          .from("tasks")
+          .select("id,title,description,status,sequence")
+          .eq("objective_id", objective.id)
+          .order("sequence");
+        setTasks(taskRows || []);
+      }
+
+      setLoadingState("System online");
+    };
+
+    bootstrap();
+  }, [supabase]);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -62,7 +166,10 @@ export default function Home() {
     recognition.interimResults = true;
     recognition.continuous = false;
 
-    recognition.onstart = () => setListening(true);
+    recognition.onstart = () => {
+      setListening(true);
+      setInputMode("voice");
+    };
     recognition.onend = () => {
       setListening(false);
       if (voiceMode && !heldShortcutRef.current) {
@@ -142,20 +249,137 @@ export default function Home() {
     }
   };
 
-  const sendMessage = () => {
-    const text = input.trim();
-    if (!text) return;
+  const buildDefaultTasks = (objectiveId: string) => [
+    {
+      objective_id: objectiveId,
+      title: "Product Spec",
+      description: "Define requirements and acceptance criteria",
+      status: "queued",
+      sequence: 1,
+    },
+    {
+      objective_id: objectiveId,
+      title: "Architecture Review",
+      description: "Map dependencies and implementation path",
+      status: "queued",
+      sequence: 2,
+    },
+    {
+      objective_id: objectiveId,
+      title: "Task Breakdown",
+      description: "Create structured engineering tasks",
+      status: "queued",
+      sequence: 3,
+    },
+    {
+      objective_id: objectiveId,
+      title: "Build",
+      description: "Frontend, backend and database implementation",
+      status: "queued",
+      sequence: 4,
+    },
+    {
+      objective_id: objectiveId,
+      title: "QA & Security",
+      description: "Test behavior, permissions and regressions",
+      status: "queued",
+      sequence: 5,
+    },
+    {
+      objective_id: objectiveId,
+      title: "Preview Deploy",
+      description: "Ship a Vercel preview for review",
+      status: "queued",
+      sequence: 6,
+    },
+  ];
 
-    setMessages((current) => [
-      ...current,
-      { role: "user", text },
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text || !conversationId || !projectId) return;
+
+    setInput("");
+    const userMessage: Message = { role: "user", text, inputMode };
+    setMessages((current) => [...current, userMessage]);
+
+    const { data: insertedMessage } = await supabase
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        role: "user",
+        content: text,
+        input_mode: inputMode,
+      })
+      .select("id")
+      .single();
+
+    const objectiveTitle = text.length > 72 ? `${text.slice(0, 69)}…` : text;
+    const { data: objective } = await supabase
+      .from("objectives")
+      .insert({
+        project_id: projectId,
+        conversation_id: conversationId,
+        title: objectiveTitle,
+        description: text,
+        status: "planning",
+        priority: "normal",
+      })
+      .select("id,title")
+      .single();
+
+    if (objective) {
+      setActiveObjective(objective.title);
+      const { data: createdTasks } = await supabase
+        .from("tasks")
+        .insert(buildDefaultTasks(objective.id))
+        .select("id,title,description,status,sequence")
+        .order("sequence");
+      setTasks(createdTasks || []);
+    }
+
+    await supabase
+      .from("conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", conversationId);
+
+    const reply =
+      "Understood. I saved this as a real objective and created the initial Web Development execution plan. Next, the orchestrator will replace this default plan with an AI-generated plan and assign specialist agents.";
+
+    const assistantMessage: Message = { role: "assistant", text: reply };
+    setMessages((current) => [...current, assistantMessage]);
+
+    await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content: reply,
+      input_mode: "system",
+    });
+
+    await supabase.from("activity_events").insert([
       {
-        role: "assistant",
-        text: "Understood. I’ll turn that into a structured objective, identify the right specialists, and prepare an execution plan before anything important ships.",
+        project_id: projectId,
+        objective_id: objective?.id || null,
+        event_type: "message_received",
+        message: "New Command Center request received",
+        metadata: {
+          input_mode: inputMode,
+          message_id: insertedMessage?.id || null,
+        },
+      },
+      {
+        project_id: projectId,
+        objective_id: objective?.id || null,
+        event_type: "objective_created",
+        message: objective ? `Objective created: ${objective.title}` : "Objective creation attempted",
+        metadata: {},
       },
     ]);
-    setInput("");
+
+    setInputMode("text");
   };
+
+  const completedTasks = tasks.filter((task) => task.status === "complete").length;
+  const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
 
   return (
     <main className="app-shell">
@@ -167,10 +391,9 @@ export default function Home() {
             <span>Multi-Agent OS</span>
           </div>
         </div>
-
         <nav className="nav">
           <button className="nav-item active"><span>⌘</span>Command Center</button>
-          <button className="nav-item"><span>✓</span>Tasks <b>7</b></button>
+          <button className="nav-item"><span>✓</span>Tasks <b>{tasks.length}</b></button>
           <button className="nav-item"><span>↻</span>Runs</button>
           <div className="nav-label">Workspace</div>
           <button className="nav-item"><span>▦</span>Departments</button>
@@ -181,12 +404,11 @@ export default function Home() {
           <button className="nav-item"><span>⌁</span>Integrations</button>
           <button className="nav-item"><span>⚙</span>Settings</button>
         </nav>
-
         <div className="sidebar-footer">
           <div className="system-dot" />
           <div>
-            <strong>System online</strong>
-            <span>Development workspace</span>
+            <strong>{loadingState}</strong>
+            <span>KorbenOS workspace</span>
           </div>
         </div>
       </aside>
@@ -231,7 +453,7 @@ export default function Home() {
 
             <div className="conversation">
               {messages.map((message, index) => (
-                <div key={index} className={`message ${message.role}`}>
+                <div key={message.id || index} className={`message ${message.role}`}>
                   <div className="message-avatar">{message.role === "user" ? "JG" : "K"}</div>
                   <div className="message-bubble">{message.text}</div>
                 </div>
@@ -247,7 +469,10 @@ export default function Home() {
               )}
               <textarea
                 value={input}
-                onChange={(event) => setInput(event.target.value)}
+                onChange={(event) => {
+                  setInput(event.target.value);
+                  setInputMode("text");
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
@@ -288,15 +513,14 @@ export default function Home() {
               </div>
               <span className="live-badge">● Live</span>
             </div>
-
             <div className="agent-list">
               {agents.map((agent) => (
-                <div className="agent-row" key={agent.name}>
+                <div className="agent-row" key={agent.id}>
                   <div className="agent-avatar">{agent.name.slice(0, 2).toUpperCase()}</div>
                   <div className="agent-copy">
                     <strong>{agent.name}</strong>
                     <span>{agent.role}</span>
-                    <small>{agent.detail}</small>
+                    <small>{agent.status === "idle" ? "Ready" : agent.status}</small>
                   </div>
                   <span className={`status-pill ${agent.status.toLowerCase()}`}>{agent.status}</span>
                 </div>
@@ -308,26 +532,36 @@ export default function Home() {
             <div className="section-heading compact">
               <div>
                 <span className="kicker">ACTIVE OBJECTIVE</span>
-                <h3>Build Korben Command Center</h3>
+                <h3>{activeObjective}</h3>
               </div>
-              <span className="progress-number">32%</span>
+              <span className="progress-number">{progress}%</span>
             </div>
-            <div className="progress-track"><span style={{ width: "32%" }} /></div>
+            <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
             <div className="execution-list">
-              {executionSteps.map(([title, description, status], index) => (
-                <div className="execution-row" key={title}>
-                  <div className={`step-index ${status}`}>
-                    {status === "complete" ? "✓" : index + 1}
+              {tasks.map((task, index) => (
+                <div className="execution-row" key={task.id}>
+                  <div className={`step-index ${task.status === "complete" ? "complete" : task.status === "in_progress" ? "active" : "waiting"}`}>
+                    {task.status === "complete" ? "✓" : index + 1}
                   </div>
                   <div className="step-copy">
-                    <strong>{title}</strong>
-                    <span>{description}</span>
+                    <strong>{task.title}</strong>
+                    <span>{task.description || ""}</span>
                   </div>
-                  <span className={`step-status ${status}`}>
-                    {status === "complete" ? "Complete" : status === "active" ? "In progress" : "Waiting"}
+                  <span className={`step-status ${task.status === "complete" ? "complete" : task.status === "in_progress" ? "active" : "waiting"}`}>
+                    {task.status === "complete" ? "Complete" : task.status === "in_progress" ? "In progress" : "Waiting"}
                   </span>
                 </div>
               ))}
+              {!tasks.length && (
+                <div className="execution-row">
+                  <div className="step-index waiting">1</div>
+                  <div className="step-copy">
+                    <strong>Waiting for your first objective</strong>
+                    <span>Send Korben a typed or voice request.</span>
+                  </div>
+                  <span className="step-status waiting">Ready</span>
+                </div>
+              )}
             </div>
           </section>
 
@@ -335,15 +569,14 @@ export default function Home() {
             <div className="section-heading compact">
               <div>
                 <span className="kicker">ACTIVITY</span>
-                <h3>Live run log</h3>
+                <h3>Persistent workspace active</h3>
               </div>
-              <button className="text-button">View all</button>
             </div>
             <div className="activity-list">
-              <div><span className="activity-icon done">✓</span><p><strong>Project initialized</strong><small>Next.js app connected to Vercel</small></p><time>Today</time></div>
-              <div><span className="activity-icon done">✓</span><p><strong>Feature branch created</strong><small>phase-1-command-center</small></p><time>Now</time></div>
-              <div><span className="activity-icon active">↻</span><p><strong>Building Command Center</strong><small>Chat, voice and team workspace</small></p><time>Now</time></div>
-              <div><span className="activity-icon waiting">○</span><p><strong>Preview deployment</strong><small>Waiting for implementation</small></p><time>Next</time></div>
+              <div><span className="activity-icon done">✓</span><p><strong>Supabase connected</strong><small>Authenticated, organization-scoped data</small></p><time>Live</time></div>
+              <div><span className="activity-icon done">✓</span><p><strong>Conversation persistence</strong><small>Typed and voice messages stored together</small></p><time>Live</time></div>
+              <div><span className="activity-icon done">✓</span><p><strong>Objective creation</strong><small>Every request becomes structured work</small></p><time>Live</time></div>
+              <div><span className="activity-icon active">↻</span><p><strong>AI orchestration</strong><small>Next phase: generate plans and assign agents</small></p><time>Next</time></div>
             </div>
           </section>
         </div>
