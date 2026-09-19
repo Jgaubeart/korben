@@ -5932,3 +5932,46 @@ html[data-ambient-tone="night"] .webgl-orb .spirit-orb-webgl {
     animation: none !important;
   }
 }
+
+
+/* Refined static orb sizing and contrast */
+.webgl-orb {
+  width: clamp(250px, 25vw, 330px) !important;
+}
+
+.webgl-orb.large {
+  width: min(360px, 38vw) !important;
+}
+
+.static-glass-orb {
+  inset: -6% !important;
+  filter:
+    drop-shadow(0 14px 28px rgba(7, 42, 47, .18))
+    drop-shadow(0 0 24px rgba(214, 242, 236, .10));
+}
+
+.static-glass-orb .orb-shadow-ring {
+  opacity: .56;
+}
+
+.static-glass-orb .orb-aura-circle {
+  display: none;
+}
+
+.static-glass-orb .orb-stars {
+  animation-duration: 9s;
+}
+
+.static-glass-orb .orb-core-halo {
+  animation-duration: 5.4s;
+}
+
+.static-glass-orb .orb-core {
+  animation-duration: 5.4s;
+}
+
+@media (max-width: 860px) {
+  .webgl-orb {
+    width: clamp(220px, 56vw, 290px) !important;
+  }
+}
