@@ -1779,10 +1779,12 @@ export default function Home() {
             onClick={toggleVoiceMode}
             aria-label="Talk to Korben"
           >
-            <span className="zen-ring zen-ring-outer" />
-            <span className="zen-ring zen-ring-inner" />
-            <span className="zen-node zen-node-left" />
-            <span className="zen-node zen-node-right" />
+            <span className="zen-ring zen-ring-outer">
+              <span className="zen-node zen-node-outer" />
+            </span>
+            <span className="zen-ring zen-ring-inner">
+              <span className="zen-node zen-node-inner" />
+            </span>
             <span className="zen-core">
               <span className="zen-core-glow" />
             </span>
