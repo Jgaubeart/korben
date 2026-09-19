@@ -49,6 +49,25 @@ type AgentToolPermission = {
   max_approval_level: number;
 };
 
+type ApprovalRecord = {
+  id: string;
+  objective_id: string;
+  task_id: string | null;
+  action_type: string;
+  risk_level: number;
+  status: string;
+  created_at: string;
+};
+
+type IntegrationStatus = {
+  openai: boolean;
+  supabase: boolean;
+  github: boolean;
+  vercel: boolean;
+  gbrain: boolean;
+  obsidian: boolean;
+};
+
 type PlannedTask = {
   title: string;
   description: string;
@@ -102,6 +121,8 @@ export default function Home() {
   const [currentProjectName, setCurrentProjectName] = useState("General Workspace");
   const [tools, setTools] = useState<ToolRecord[]>([]);
   const [agentToolPermissions, setAgentToolPermissions] = useState<AgentToolPermission[]>([]);
+  const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
+  const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
@@ -190,6 +211,23 @@ export default function Home() {
 
       setAgentToolPermissions(permissionRows || []);
 
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      if (accessToken) {
+        try {
+          const statusResponse = await fetch("/api/tools/status", {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+
+          if (statusResponse.ok) {
+            setIntegrationStatus(await statusResponse.json());
+          }
+        } catch {
+          setIntegrationStatus(null);
+        }
+      }
+
       let currentConversationId: string | null = null;
       const { data: existingConversation } = await supabase
         .from("conversations")
@@ -251,6 +289,25 @@ export default function Home() {
           .eq("objective_id", objective.id)
           .order("sequence");
         setTasks(taskRows || []);
+      }
+
+      const { data: projectObjectives } = await supabase
+        .from("objectives")
+        .select("id")
+        .eq("project_id", project.id);
+
+      const objectiveIds = (projectObjectives || []).map((row) => row.id);
+
+      if (objectiveIds.length) {
+        const { data: approvalRows } = await supabase
+          .from("approvals")
+          .select("id,objective_id,task_id,action_type,risk_level,status,created_at")
+          .in("objective_id", objectiveIds)
+          .order("created_at", { ascending: false });
+
+        setApprovals(approvalRows || []);
+      } else {
+        setApprovals([]);
       }
 
       setLoadingState("System online");
@@ -560,7 +617,7 @@ export default function Home() {
       const { data: project, error: projectError } = await supabase
         .from("projects")
         .select("id")
-        .eq("slug", "general-workspace")
+        .eq("slug", selectedProjectSlug)
         .single();
 
       if (projectError || !project) {
@@ -629,6 +686,143 @@ export default function Home() {
     setActiveObjective("No active objective");
     setMessages([fallbackGreeting]);
     setLoadingState("Switching workspace…");
+  };
+
+  const runSingleTask = async (taskId: string) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+
+    if (!token) {
+      return { status: "failed" };
+    }
+
+    const response = await fetch("/api/runs/start", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ task_id: taskId }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+    return {
+      status:
+        response.ok && result.status === "complete"
+          ? "complete"
+          : result.status === "waiting_approval"
+            ? "awaiting_approval"
+            : "failed",
+    };
+  };
+
+  const approveAction = async (approval: ApprovalRecord) => {
+    const decidedAt = new Date().toISOString();
+
+    const { error } = await supabase
+      .from("approvals")
+      .update({
+        status: "approved",
+        decided_at: decidedAt,
+        decision_note: "Approved by owner in Korben OS",
+      })
+      .eq("id", approval.id);
+
+    if (error) return;
+
+    setApprovals((current) =>
+      current.map((item) =>
+        item.id === approval.id ? { ...item, status: "approved" } : item
+      )
+    );
+
+    if (!approval.task_id) return;
+
+    await supabase
+      .from("tasks")
+      .update({ status: "queued" })
+      .eq("id", approval.task_id);
+
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === approval.task_id ? { ...item, status: "in_progress" } : item
+      )
+    );
+
+    setLoadingState("Approved task running…");
+    const result = await runSingleTask(approval.task_id);
+
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === approval.task_id ? { ...item, status: result.status } : item
+      )
+    );
+
+    if (result.status === "complete") {
+      const approvedTask = tasks.find((task) => task.id === approval.task_id);
+      const remaining = tasks
+        .filter((task) =>
+          approvedTask ? task.sequence > approvedTask.sequence : false
+        )
+        .sort((a, b) => a.sequence - b.sequence);
+
+      for (const nextTask of remaining) {
+        const pendingApproval = approvals.some(
+          (item) => item.task_id === nextTask.id && item.status === "pending"
+        );
+
+        if (pendingApproval) break;
+        if (!["queued", "failed"].includes(nextTask.status)) continue;
+
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === nextTask.id ? { ...item, status: "in_progress" } : item
+          )
+        );
+
+        const nextResult = await runSingleTask(nextTask.id);
+
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === nextTask.id ? { ...item, status: nextResult.status } : item
+          )
+        );
+
+        if (nextResult.status !== "complete") break;
+      }
+    }
+
+    setLoadingState("System online");
+  };
+
+  const rejectAction = async (approval: ApprovalRecord) => {
+    await supabase
+      .from("approvals")
+      .update({
+        status: "rejected",
+        decided_at: new Date().toISOString(),
+        decision_note: "Rejected by owner in Korben OS",
+      })
+      .eq("id", approval.id);
+
+    setApprovals((current) =>
+      current.map((item) =>
+        item.id === approval.id ? { ...item, status: "rejected" } : item
+      )
+    );
+
+    if (approval.task_id) {
+      await supabase
+        .from("tasks")
+        .update({ status: "rejected" })
+        .eq("id", approval.task_id);
+
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === approval.task_id ? { ...item, status: "rejected" } : item
+        )
+      );
+    }
   };
 
   const executeTaskQueue = async (
@@ -1260,6 +1454,49 @@ export default function Home() {
         </div>
       </div>
 
+      {approvals.some((approval) => approval.status === "pending") && (
+        <section className="approval-panel">
+          <div className="approval-panel-header">
+            <div>
+              <span className="eyebrow">OWNER APPROVAL</span>
+              <h2>Actions waiting for you</h2>
+            </div>
+            <b>{approvals.filter((approval) => approval.status === "pending").length}</b>
+          </div>
+          <div className="approval-list">
+            {approvals
+              .filter((approval) => approval.status === "pending")
+              .map((approval) => (
+                <article className="approval-card" key={approval.id}>
+                  <div>
+                    <span className="approval-risk">L{approval.risk_level}</span>
+                    <strong>{approval.action_type}</strong>
+                    <small>
+                      {approval.risk_level === 3
+                        ? "Production / destructive boundary"
+                        : "Protected system change"}
+                    </small>
+                  </div>
+                  <div className="approval-actions">
+                    <button
+                      className="approval-reject"
+                      onClick={() => void rejectAction(approval)}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      className="approval-approve"
+                      onClick={() => void approveAction(approval)}
+                    >
+                      Approve & resume
+                    </button>
+                  </div>
+                </article>
+              ))}
+          </div>
+        </section>
+      )}
+
       <div className="work-board">
         {["queued", "in_progress", "complete"].map((status) => (
           <div className="work-lane" key={status}>
@@ -1332,14 +1569,14 @@ export default function Home() {
       integrations: {
         eyebrow: "SYSTEM CONNECTIONS",
         title: "Integrations",
-        description: "Connection health and external systems available to the Korben runtime.",
+        description: "Live runtime credential and adapter health for Korben.",
         cards: [
-          ["Supabase", "Connected", "Primary application data and authentication."],
-          ["OpenAI", "Configured", "Korben orchestration endpoint."],
-          ["GitHub", "Not wired into runtime", "Connector exists outside the app; runtime execution is next."],
-          ["Vercel", "Not wired into runtime", "Production host is active; agent deployment control is next."],
-          ["G-Brain", "Not configured", "Requires a companion service or accessible G-Brain endpoint."],
-          ["Obsidian", "Not configured", "Requires vault access through a local bridge or synced source."]
+          ["Supabase", integrationStatus?.supabase ? "Connected" : "Not configured", "Primary application data and authentication."],
+          ["OpenAI", integrationStatus?.openai ? "Connected" : "Not configured", "Intent routing and specialist agent reasoning."],
+          ["GitHub", integrationStatus?.github ? "Connected" : "Needs credential", "Server-side repository execution gateway."],
+          ["Vercel", integrationStatus?.vercel ? "Connected" : "Needs credential", "Server-side deployment inspection gateway."],
+          ["G-Brain", integrationStatus?.gbrain ? "Connected" : "Not configured", "Shared semantic knowledge retrieval."],
+          ["Obsidian", integrationStatus?.obsidian ? "Connected" : "Not configured", "Human-editable knowledge vault bridge."]
         ]
       }
     }[activeView as "brain" | "sops" | "tools" | "integrations"];
