@@ -48,7 +48,7 @@ const TOOL_ACTION_GUIDE: Record<string, string> = {
   "github.read":
     "Valid actions: repo, file, branch, pull_request, commit, compare. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Never use create/update/merge here.",
   "github.write":
-    "Valid actions: create_branch, update_file. All writes must be on a feature branch, never main/master.",
+    "Valid actions: create_branch, update_file, sync_branch. sync_branch may only merge main/master into an existing feature branch; it must never target main/master or force-reset history.",
   "github.pr":
     "Valid action: create only. Use this only to open a pull request; do not use it to list/read PRs.",
   "github.merge":
@@ -329,7 +329,7 @@ export async function POST(request: Request) {
               action: {
                 type: "string",
                 description:
-                  "Provider action. Examples: repo, file, branch, pull_request, commit, compare, create_branch, update_file, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
+                  "Provider action. Examples: repo, file, branch, pull_request, commit, compare, create_branch, update_file, sync_branch, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
               },
               params_json: {
                 type: "string",
