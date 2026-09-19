@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserSupabaseClient } from "../lib/supabase/client";
 import { AmbientScene } from "../components/ambient/AmbientScene";
+import { getGreetingForHour, getSimulatedTime } from "../lib/ambient-time";
 
 type Message = {
   id?: string;
@@ -213,6 +214,7 @@ export default function Home() {
   const [conversationActive, setConversationActive] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
+  const [ambientClock, setAmbientClock] = useState(() => new Date());
   const recognitionRef = useRef<any>(null);
   const heldShortcutRef = useRef(false);
   const sendingRef = useRef(false);
@@ -224,6 +226,19 @@ export default function Home() {
   const sendMessageRef = useRef<(messageText?: string, mode?: "text" | "voice") => Promise<void>>(
     async () => {}
   );
+
+  useEffect(() => {
+    const resolveAmbientClock = () => {
+      const simulated = getSimulatedTime(
+        new URLSearchParams(window.location.search).get("ambientTime")
+      );
+      setAmbientClock(simulated || new Date());
+    };
+
+    resolveAmbientClock();
+    const interval = window.setInterval(resolveAmbientClock, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -1741,9 +1756,9 @@ export default function Home() {
               month: "short",
               day: "numeric",
               year: "numeric",
-            }).format(new Date())}
+            }).format(ambientClock)}
           </span>
-          <h1>Good morning, Jordan.</h1>
+          <h1>{getGreetingForHour(ambientClock.getHours())}, Jordan.</h1>
           <p>Two key priorities, focused work ahead, and room to breathe later.</p>
         </div>
 
