@@ -1546,71 +1546,93 @@ export default function Home() {
                 ? "Listening"
                 : loadingState;
 
+  const toggleAuthTheme = () => {
+    const root = document.documentElement;
+    const current = root.dataset.theme;
+    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = current === "dark" ? "light" : current === "light" ? "dark" : systemDark ? "light" : "dark";
+    root.dataset.theme = next;
+    window.localStorage.setItem("korben:theme", next);
+  };
+
   if (!authReady) {
     return (
-      <main className="auth-shell">
-        <div className="auth-card">
-          <div className="brand auth-brand">
-            <div className="brand-mark">K</div>
-            <div>
-              <strong>KORBEN</strong>
-              <span>Multi-Agent OS</span>
-            </div>
+      <main className="auth-shell auth-shell-calm">
+        <header className="auth-topbar">
+          <span className="auth-wordmark">KORBEN</span>
+          <button className="auth-theme-toggle" onClick={toggleAuthTheme} aria-label="Toggle light and dark mode">☼</button>
+        </header>
+        <section className="auth-stage auth-stage-loading">
+          <div className="auth-presence" aria-hidden="true">
+            <span className="auth-presence-ring auth-presence-ring-outer" />
+            <span className="auth-presence-ring auth-presence-ring-inner" />
+            <span className="auth-presence-core" />
           </div>
           <p className="auth-status">Connecting to your workspace…</p>
-        </div>
+        </section>
       </main>
     );
   }
 
   if (!signedIn) {
     return (
-      <main className="auth-shell">
-        <div className="auth-card">
-          <div className="brand auth-brand">
-            <div className="brand-mark">K</div>
-            <div>
-              <strong>KORBEN</strong>
-              <span>Multi-Agent OS</span>
+      <main className="auth-shell auth-shell-calm">
+        <header className="auth-topbar">
+          <span className="auth-wordmark">KORBEN</span>
+          <button className="auth-theme-toggle" onClick={toggleAuthTheme} aria-label="Toggle light and dark mode">☼</button>
+        </header>
+
+        <section className="auth-stage">
+          <div className="auth-welcome">
+            <span className="auth-kicker">WELCOME BACK</span>
+            <h1>Return to Korben.</h1>
+            <p>Your calm command center is waiting.</p>
+          </div>
+
+          <div className="auth-presence" aria-hidden="true">
+            <span className="auth-presence-ring auth-presence-ring-outer" />
+            <span className="auth-presence-ring auth-presence-ring-inner" />
+            <span className="auth-presence-node auth-presence-node-left" />
+            <span className="auth-presence-node auth-presence-node-right" />
+            <span className="auth-presence-core" />
+          </div>
+
+          <div className="auth-card auth-card-calm">
+            <div className="auth-form">
+              <label>
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(event) => setLoginEmail(event.target.value)}
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                />
+              </label>
+              <label>
+                <span>Password</span>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      signIn();
+                    }
+                  }}
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                />
+              </label>
+              {loginError && <div className="auth-error">{loginError}</div>}
+              <button className="auth-submit auth-submit-calm" onClick={signIn} disabled={loginBusy}>
+                {loginBusy ? "Signing in…" : "Enter Korben"}
+              </button>
             </div>
           </div>
-          <div className="auth-copy">
-            <span className="kicker">OWNER ACCESS</span>
-            <h1>Sign in to Korben</h1>
-            <p>Your Command Center, agents, projects and run history are protected by your Korben account.</p>
-          </div>
-          <div className="auth-form">
-            <label>
-              Email
-              <input
-                type="email"
-                value={loginEmail}
-                onChange={(event) => setLoginEmail(event.target.value)}
-                autoComplete="email"
-                placeholder="you@example.com"
-              />
-            </label>
-            <label>
-              Password
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(event) => setLoginPassword(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    signIn();
-                  }
-                }}
-                autoComplete="current-password"
-                placeholder="••••••••"
-              />
-            </label>
-            {loginError && <div className="auth-error">{loginError}</div>}
-            <button className="auth-submit" onClick={signIn} disabled={loginBusy}>
-              {loginBusy ? "Signing in…" : "Sign in"}
-            </button>
-          </div>
-        </div>
+
+          <p className="auth-footnote">Private workspace · Secure sign in</p>
+        </section>
       </main>
     );
   }
