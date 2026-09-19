@@ -2405,3 +2405,266 @@ button { color: inherit; }
     left: 50%;
   }
 }
+
+
+/* Living Brain Galaxy */
+.brain-galaxy-view {
+  min-height: calc(100vh - 96px);
+}
+
+.brain-galaxy {
+  position: relative;
+  min-height: 670px;
+  border: 1px solid rgba(105,220,255,.08);
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(49,164,213,.11), transparent 20%),
+    radial-gradient(circle at 34% 62%, rgba(89,82,194,.06), transparent 24%),
+    linear-gradient(180deg, rgba(4,11,18,.88), rgba(2,6,10,.97));
+}
+
+.galaxy-grid {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(105,220,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(105,220,255,.018) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at 50% 50%, black, transparent 78%);
+}
+
+.galaxy-haze {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(24px);
+  opacity: .24;
+  pointer-events: none;
+}
+.haze-a {
+  width: 380px;
+  height: 380px;
+  left: 25%;
+  top: 20%;
+  background: rgba(54,168,214,.12);
+  animation: galaxyDrift 12s ease-in-out infinite alternate;
+}
+.haze-b {
+  width: 300px;
+  height: 300px;
+  right: 18%;
+  bottom: 12%;
+  background: rgba(111,240,204,.08);
+  animation: galaxyDrift 15s ease-in-out infinite alternate-reverse;
+}
+
+.galaxy-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.galaxy-link {
+  stroke: rgba(105,220,255,.13);
+  stroke-width: .12;
+  vector-effect: non-scaling-stroke;
+  animation: linkPulse 4s ease-in-out infinite;
+}
+.galaxy-link.sop { stroke: rgba(115,224,255,.22); }
+.galaxy-link.fact { stroke: rgba(111,240,204,.17); }
+.galaxy-link.decision { stroke: rgba(239,199,127,.18); }
+.galaxy-link.memory { stroke: rgba(169,138,255,.16); }
+
+.galaxy-core {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 47%;
+  width: 132px;
+  height: 132px;
+  transform: translate(-50%,-50%);
+  border-radius: 50%;
+  border: 1px solid rgba(116,229,255,.32);
+  background:
+    radial-gradient(circle at 48% 42%, rgba(191,246,255,.18), rgba(8,27,39,.92) 64%),
+    #07131d;
+  box-shadow:
+    inset 0 0 34px rgba(105,220,255,.12),
+    0 0 36px rgba(53,180,232,.12),
+    0 0 120px rgba(53,180,232,.07);
+  color: #dffaff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  animation: galaxyCorePulse 3.4s ease-in-out infinite;
+}
+.galaxy-core::before,
+.galaxy-core::after {
+  content: "";
+  position: absolute;
+  border: 1px solid rgba(105,220,255,.12);
+  border-radius: 50%;
+}
+.galaxy-core::before {
+  inset: -24px;
+  border-style: dashed;
+  animation: rotate 24s linear infinite;
+}
+.galaxy-core::after {
+  inset: -47px;
+  animation: rotateReverse 34s linear infinite;
+}
+.galaxy-core span {
+  font-size: 34px;
+  font-weight: 300;
+  text-shadow: 0 0 18px rgba(127,230,255,.5);
+}
+.galaxy-core strong,
+.galaxy-core small {
+  display: block;
+}
+.galaxy-core strong {
+  margin-top: 5px;
+  color: #9ccbd9;
+  font-size: 7px;
+  letter-spacing: .15em;
+}
+.galaxy-core small {
+  margin-top: 4px;
+  color: #466672;
+  font-size: 6px;
+}
+
+.galaxy-node {
+  --node-color: #68dfff;
+  position: absolute;
+  z-index: 4;
+  width: 16px;
+  height: 16px;
+  transform: translate(-50%,-50%);
+  animation: galaxyNodeFloat 4.8s ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+.galaxy-node.sop { --node-color: #6fdfff; }
+.galaxy-node.fact { --node-color: #6ff0cc; }
+.galaxy-node.decision { --node-color: #efc77f; }
+.galaxy-node.memory { --node-color: #b495ff; }
+.galaxy-node.document { --node-color: #7f98a3; }
+
+.galaxy-node-dot {
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--node-color);
+  box-shadow:
+    0 0 9px color-mix(in srgb, var(--node-color) 60%, transparent),
+    0 0 22px color-mix(in srgb, var(--node-color) 28%, transparent);
+}
+.galaxy-node::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid color-mix(in srgb, var(--node-color) 35%, transparent);
+  border-radius: 50%;
+  opacity: .55;
+}
+
+.galaxy-node-card {
+  position: absolute;
+  left: 17px;
+  top: -14px;
+  width: 190px;
+  padding: 9px 10px;
+  border: 1px solid rgba(105,220,255,.1);
+  border-radius: 10px;
+  background: rgba(5,14,21,.94);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translateX(-4px) scale(.98);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.galaxy-node:hover {
+  z-index: 20;
+}
+.galaxy-node:hover .galaxy-node-card {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+.galaxy-node-card small {
+  color: var(--node-color);
+  font-size: 6px;
+  letter-spacing: .12em;
+}
+.galaxy-node-card strong {
+  display: block;
+  margin-top: 4px;
+  color: #d9eff6;
+  font-size: 9px;
+}
+.galaxy-node-card p {
+  margin: 5px 0 0;
+  color: #5b7782;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.galaxy-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid rgba(105,220,255,.07);
+  border-radius: 10px;
+  background: rgba(5,14,21,.66);
+}
+.galaxy-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #506c77;
+  font-size: 6px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.galaxy-legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7f98a3;
+}
+.galaxy-legend .sop i { background: #6fdfff; }
+.galaxy-legend .fact i { background: #6ff0cc; }
+.galaxy-legend .decision i { background: #efc77f; }
+.galaxy-legend .memory i { background: #b495ff; }
+
+@keyframes galaxyDrift {
+  from { transform: translate3d(-14px, 8px, 0) scale(.96); }
+  to { transform: translate3d(18px, -12px, 0) scale(1.05); }
+}
+@keyframes galaxyCorePulse {
+  0%,100% { transform: translate(-50%,-50%) scale(.97); filter: brightness(.95); }
+  50% { transform: translate(-50%,-50%) scale(1.035); filter: brightness(1.22); }
+}
+@keyframes galaxyNodeFloat {
+  0%,100% { transform: translate(-50%,-50%) translateY(0) scale(.9); opacity: .72; }
+  50% { transform: translate(-50%,-50%) translateY(-5px) scale(1.15); opacity: 1; }
+}
+@keyframes linkPulse {
+  0%,100% { opacity: .28; }
+  50% { opacity: .8; }
+}
+
+@media (max-width: 760px) {
+  .brain-galaxy {
+    min-height: 560px;
+  }
+  .galaxy-node-card {
+    width: 150px;
+  }
+}
