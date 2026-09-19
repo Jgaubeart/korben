@@ -205,6 +205,44 @@ export async function POST(request: Request) {
     }),
   ]);
 
+  let knowledgeContext: any = null;
+
+  if (allowedToolKeys.includes("knowledge.search")) {
+    try {
+      const knowledgeResponse = await fetch(
+        `${new URL(request.url).origin}/api/tools/execute`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            tool_system_key: "knowledge.search",
+            agent_system_key: agent.system_key,
+            project_id: project.id,
+            task_id: task.id,
+            run_id: runId,
+            action: "search",
+            params: {
+              query: [objective.title, task.title, task.description]
+                .filter(Boolean)
+                .join(" "),
+              limit: 8,
+            },
+          }),
+        }
+      );
+
+      if (knowledgeResponse.ok) {
+        const payload = await knowledgeResponse.json();
+        knowledgeContext = payload?.result || null;
+      }
+    } catch {
+      knowledgeContext = null;
+    }
+  }
+
   const toolDefinition = allowedToolKeys.length
     ? [
         {
@@ -224,7 +262,7 @@ export async function POST(request: Request) {
               action: {
                 type: "string",
                 description:
-                  "Provider action. Examples: repo, file, branch, pull_request, create_branch, update_file, create, merge, project, deployments, deployment, deploy, select, insert, update.",
+                  "Provider action. Examples: repo, file, branch, pull_request, create_branch, update_file, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
               },
               params_json: {
                 type: "string",
@@ -256,6 +294,9 @@ export async function POST(request: Request) {
     task.description ? `Task details: ${task.description}` : "",
     `Acceptance criteria: ${safeJson(task.acceptance_criteria || [])}`,
     `Allowed tools: ${allowedToolKeys.join(", ") || "none"}`,
+    knowledgeContext
+      ? `Shared knowledge retrieved before execution: ${safeJson(knowledgeContext, 16000)}`
+      : "Shared knowledge search returned no additional context.",
   ]
     .filter(Boolean)
     .join("\n");
