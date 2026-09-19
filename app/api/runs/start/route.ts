@@ -162,6 +162,49 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Project is unavailable." }, { status: 404 });
   }
 
+  const { data: siblingTasks } = await supabase
+    .from("tasks")
+    .select("id,title,sequence,status")
+    .eq("objective_id", objective.id)
+    .lt("sequence", task.sequence)
+    .order("sequence");
+
+  const priorTaskIds = (siblingTasks || []).map((item) => item.id);
+  let priorTaskContext: Array<{
+    sequence: number;
+    title: string;
+    status: string;
+    summary: string;
+  }> = [];
+
+  if (priorTaskIds.length) {
+    const { data: priorRuns } = await supabase
+      .from("agent_runs")
+      .select("task_id,status,output,completed_at")
+      .in("task_id", priorTaskIds)
+      .order("completed_at", { ascending: false });
+
+    priorTaskContext = (siblingTasks || []).map((item) => {
+      const matchingRun = (priorRuns || []).find(
+        (run: any) => run.task_id === item.id && run.status === "complete"
+      );
+
+      const summary =
+        matchingRun?.output &&
+        typeof matchingRun.output === "object" &&
+        "summary" in matchingRun.output
+          ? String((matchingRun.output as any).summary || "")
+          : "";
+
+      return {
+        sequence: item.sequence,
+        title: item.title,
+        status: item.status,
+        summary,
+      };
+    });
+  }
+
   const { data: permissionRows } = await supabase
     .from("agent_tool_permissions")
     .select(
@@ -325,6 +368,12 @@ export async function POST(request: Request) {
           .map((key) => `- ${key}: ${TOOL_ACTION_GUIDE[key] || "Use only documented actions."}`)
           .join("\n")}`
       : "No tools are available.",
+    priorTaskContext.length
+      ? `Outputs from earlier tasks in this objective. Treat these as authoritative handoff context and reuse exact identifiers such as branch names, commit SHAs, PR numbers, file paths, and deployment URLs:\n${safeJson(
+          priorTaskContext,
+          16000
+        )}`
+      : "No earlier task outputs are available for this objective.",
     knowledgeContext
       ? `Shared knowledge retrieved before execution: ${safeJson(knowledgeContext, 16000)}`
       : "Shared knowledge search returned no additional context.",
