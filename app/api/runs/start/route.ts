@@ -395,7 +395,7 @@ export async function POST(request: Request) {
   let approvalBlocked = false;
   let executionFailed = false;
   let hadRecoverableToolFailure = false;
-  const maxTurns = 8;
+  const maxTurns = 12;
   const model =
     process.env.OPENAI_AGENT_MODEL ||
     process.env.OPENAI_ORCHESTRATOR_MODEL ||
@@ -549,14 +549,46 @@ export async function POST(request: Request) {
       }
     }
 
+    if (!finalText && !approvalBlocked) {
+      try {
+        const finalResponse = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            reasoning: { effort: "none" },
+            instructions:
+              "You are a specialist agent operating inside Korben OS. The tool-execution phase has ended. Do not request any more tools. Review the complete transcript and decide whether the assigned task acceptance criteria were satisfied. Your response MUST begin with exactly one line: TASK_STATUS: COMPLETE, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED. Then summarize the work performed, exact artifacts created or changed, any recoverable tool misses, and remaining risk.",
+            input: [
+              ...input,
+              {
+                role: "user",
+                content:
+                  "Tool execution is finished. Produce the final task status and completion summary now. A recoverable exploratory read miss does not make the task fail if the acceptance criteria were otherwise satisfied.",
+              },
+            ],
+          }),
+        });
+
+        const finalPayload = await finalResponse.json();
+
+        if (finalResponse.ok) {
+          finalText = responseText(finalPayload) || "";
+        }
+      } catch {
+        // Fall through to deterministic failure text below.
+      }
+    }
+
     if (!finalText) {
       finalText = approvalBlocked
         ? "TASK_STATUS: BLOCKED\nThis task is waiting for approval before Korben can continue."
         : executionFailed
           ? "TASK_STATUS: FAILED\nThis task stopped because a required tool call failed."
-          : hadRecoverableToolFailure
-            ? "TASK_STATUS: FAILED\nThe agent encountered tool failures and did not produce a final task result."
-            : "TASK_STATUS: FAILED\nThe agent reached its turn limit before completing the task.";
+          : "TASK_STATUS: FAILED\nThe agent exhausted its execution budget and could not produce a final verified task result.";
     }
 
     const statusMatch = finalText.match(/^TASK_STATUS:\s*(COMPLETE|BLOCKED|FAILED)\s*\n?/i);
