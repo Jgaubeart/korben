@@ -80,6 +80,28 @@ type RunEvent = {
   created_at: string;
 };
 
+type KnowledgeSource = {
+  id: string;
+  name: string;
+  provider: string;
+  status: string;
+  connection_type: string;
+  last_sync_at: string | null;
+  last_error: string | null;
+};
+
+type KnowledgeEntry = {
+  id: string;
+  project_id: string | null;
+  source_id: string | null;
+  entry_type: "document" | "sop" | "memory" | "decision" | "fact";
+  title: string;
+  content: string;
+  status: string;
+  tags: string[];
+  updated_at: string;
+};
+
 type PlannedTask = {
   title: string;
   description: string;
@@ -136,6 +158,8 @@ export default function Home() {
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
+  const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>([]);
+  const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
@@ -331,6 +355,26 @@ export default function Home() {
         .limit(100);
 
       setRunEvents(eventRows || []);
+
+      const { data: sourceRows } = await supabase
+        .from("knowledge_sources")
+        .select("id,name,provider,status,connection_type,last_sync_at,last_error")
+        .order("name");
+
+      setKnowledgeSources(sourceRows || []);
+
+      const { data: entryRows } = await supabase
+        .from("knowledge_entries")
+        .select("id,project_id,source_id,entry_type,title,content,status,tags,updated_at")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(250);
+
+      setKnowledgeEntries(
+        (entryRows || []).filter(
+          (entry) => !entry.project_id || entry.project_id === project.id
+        ) as KnowledgeEntry[]
+      );
 
       setLoadingState("System online");
     };
@@ -1600,24 +1644,31 @@ export default function Home() {
       brain: {
         eyebrow: "KNOWLEDGE LAYER",
         title: "Brain & Memory",
-        description: "Korben’s long-term knowledge layer. G-Brain and Obsidian will feed the same governed memory surface.",
+        description: "Live shared knowledge sources and governed memory available to every Korben agent.",
         cards: [
-          ["G-Brain", "Not configured", "Semantic search and durable Markdown knowledge store."],
-          ["Obsidian Vault", "Not configured", "Human-editable notes, SOPs, decisions and source documents."],
-          ["Conversation Memory", "Live", "Supabase-backed Korben conversation history."],
-          ["Workspace Context", "Live", "Organization, project, objective and task context."]
+          ...knowledgeSources.map((source) => [
+            source.name,
+            source.status.replaceAll("_", " "),
+            `${source.provider} · ${source.connection_type}${source.last_sync_at ? ` · synced ${new Date(source.last_sync_at).toLocaleString()}` : ""}${source.last_error ? ` · ${source.last_error}` : ""}`
+          ]),
+          [
+            "Shared knowledge",
+            `${knowledgeEntries.length} entries`,
+            `${knowledgeEntries.filter((entry) => entry.entry_type === "memory").length} memories · ${knowledgeEntries.filter((entry) => entry.entry_type === "fact").length} facts · ${knowledgeEntries.filter((entry) => entry.entry_type === "decision").length} decisions`
+          ]
         ]
       },
       sops: {
         eyebrow: "OPERATING KNOWLEDGE",
         title: "SOP Library",
-        description: "Procedures Korben and its agents can retrieve before acting.",
-        cards: [
-          ["Global SOPs", "Structure ready", "Cross-business operating procedures."],
-          ["Department SOPs", "Structure ready", "Procedures scoped to each agent department."],
-          ["Project Playbooks", "Structure ready", "Project-specific standards and constraints."],
-          ["Approval Policies", "Live foundation", "Risk levels already exist in Korben’s work model."]
-        ]
+        description: "Live procedures retrieved by agents before they act.",
+        cards: knowledgeEntries
+          .filter((entry) => entry.entry_type === "sop")
+          .map((entry) => [
+            entry.title,
+            entry.status,
+            entry.content.length > 260 ? `${entry.content.slice(0, 260)}…` : entry.content
+          ])
       },
       tools: {
         eyebrow: "CAPABILITY REGISTRY",
