@@ -31,207 +31,218 @@ const PALETTES: Record<AmbientSceneKey, Palette> = {
 };
 
 function speedFor(state: SpiritOrbProps["state"]) {
-  if (state === "listening") return 1.25;
+  if (state === "listening") return 1.30;
   if (state === "thinking") return 1.75;
-  if (state === "responding") return 1.42;
-  if (state === "working") return 1.15;
-  return 0.58;
+  if (state === "responding") return 1.45;
+  if (state === "working") return 1.18;
+  return 0.62;
 }
 
-function energyFor(state: SpiritOrbProps["state"]) {
-  if (state === "listening") return 1.10;
-  if (state === "thinking") return 1.22;
-  if (state === "responding") return 1.28;
-  if (state === "working") return 1.12;
-  return 0.92;
+function curlFor(state: SpiritOrbProps["state"]) {
+  if (state === "thinking") return 32;
+  if (state === "listening") return 26;
+  if (state === "responding") return 28;
+  if (state === "working") return 23;
+  return 18;
 }
 
-const VOLUME_VERTEX = `
-  varying vec3 vLocalPos;
+function splatForceFor(state: SpiritOrbProps["state"]) {
+  if (state === "thinking") return 115;
+  if (state === "listening") return 92;
+  if (state === "responding") return 104;
+  if (state === "working") return 86;
+  return 66;
+}
+
+const QUAD_VERTEX = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+  }
+`;
+
+const ADVECT_FRAGMENT = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uSource;
+  uniform sampler2D uVelocity;
+  uniform vec2 uTexel;
+  uniform float uDt;
+  uniform float uDissipation;
 
   void main() {
-    vLocalPos = position;
+    vec2 velocity = texture2D(uVelocity, vUv).xy;
+    vec2 coord = vUv - uDt * velocity * uTexel;
+    gl_FragColor = texture2D(uSource, coord) * uDissipation;
+  }
+`;
+
+const CURL_FRAGMENT = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVelocity;
+  uniform vec2 uTexel;
+
+  void main() {
+    float left = texture2D(uVelocity, vUv - vec2(uTexel.x, 0.0)).y;
+    float right = texture2D(uVelocity, vUv + vec2(uTexel.x, 0.0)).y;
+    float bottom = texture2D(uVelocity, vUv - vec2(0.0, uTexel.y)).x;
+    float top = texture2D(uVelocity, vUv + vec2(0.0, uTexel.y)).x;
+    float curl = 0.5 * (right - left - top + bottom);
+    gl_FragColor = vec4(curl, 0.0, 0.0, 1.0);
+  }
+`;
+
+const VORTICITY_FRAGMENT = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVelocity;
+  uniform sampler2D uCurl;
+  uniform vec2 uTexel;
+  uniform float uDt;
+  uniform float uCurlStrength;
+
+  void main() {
+    float left = abs(texture2D(uCurl, vUv - vec2(uTexel.x, 0.0)).x);
+    float right = abs(texture2D(uCurl, vUv + vec2(uTexel.x, 0.0)).x);
+    float bottom = abs(texture2D(uCurl, vUv - vec2(0.0, uTexel.y)).x);
+    float top = abs(texture2D(uCurl, vUv + vec2(0.0, uTexel.y)).x);
+    float center = texture2D(uCurl, vUv).x;
+
+    vec2 force = 0.5 * vec2(top - bottom, right - left);
+    force /= length(force) + 0.0001;
+    force *= uCurlStrength * center;
+    force.y *= -1.0;
+
+    vec2 velocity = texture2D(uVelocity, vUv).xy;
+    velocity += force * uDt;
+    velocity = clamp(velocity, vec2(-1000.0), vec2(1000.0));
+    gl_FragColor = vec4(velocity, 0.0, 1.0);
+  }
+`;
+
+const DIVERGENCE_FRAGMENT = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVelocity;
+  uniform vec2 uTexel;
+
+  void main() {
+    float left = texture2D(uVelocity, vUv - vec2(uTexel.x, 0.0)).x;
+    float right = texture2D(uVelocity, vUv + vec2(uTexel.x, 0.0)).x;
+    float bottom = texture2D(uVelocity, vUv - vec2(0.0, uTexel.y)).y;
+    float top = texture2D(uVelocity, vUv + vec2(0.0, uTexel.y)).y;
+    float div = 0.5 * (right - left + top - bottom);
+    gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
+  }
+`;
+
+const PRESSURE_FRAGMENT = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uPressure;
+  uniform sampler2D uDivergence;
+  uniform vec2 uTexel;
+
+  void main() {
+    float left = texture2D(uPressure, vUv - vec2(uTexel.x, 0.0)).x;
+    float right = texture2D(uPressure, vUv + vec2(uTexel.x, 0.0)).x;
+    float bottom = texture2D(uPressure, vUv - vec2(0.0, uTexel.y)).x;
+    float top = texture2D(uPressure, vUv + vec2(0.0, uTexel.y)).x;
+    float divergence = texture2D(uDivergence, vUv).x;
+    float pressure = (left + right + bottom + top - divergence) * 0.25;
+    gl_FragColor = vec4(pressure, 0.0, 0.0, 1.0);
+  }
+`;
+
+const GRADIENT_FRAGMENT = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uPressure;
+  uniform sampler2D uVelocity;
+  uniform vec2 uTexel;
+
+  void main() {
+    float left = texture2D(uPressure, vUv - vec2(uTexel.x, 0.0)).x;
+    float right = texture2D(uPressure, vUv + vec2(uTexel.x, 0.0)).x;
+    float bottom = texture2D(uPressure, vUv - vec2(0.0, uTexel.y)).x;
+    float top = texture2D(uPressure, vUv + vec2(0.0, uTexel.y)).x;
+    vec2 velocity = texture2D(uVelocity, vUv).xy;
+    velocity -= 0.5 * vec2(right - left, top - bottom);
+    gl_FragColor = vec4(velocity, 0.0, 1.0);
+  }
+`;
+
+const SPLAT_FRAGMENT = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uTarget;
+  uniform vec2 uPoint;
+  uniform vec3 uColor;
+  uniform float uRadius;
+  uniform float uAspect;
+
+  void main() {
+    vec2 p = vUv - uPoint;
+    p.x *= uAspect;
+    float falloff = exp(-dot(p, p) / max(uRadius, 0.00001));
+    vec3 base = texture2D(uTarget, vUv).rgb;
+    gl_FragColor = vec4(base + uColor * falloff, 1.0);
+  }
+`;
+
+const DISPLAY_VERTEX = `
+  varying vec2 vUv;
+  varying vec3 vNormalLocal;
+  void main() {
+    vUv = uv;
+    vNormalLocal = normal;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
-const VOLUME_FRAGMENT = `
+const DISPLAY_FRAGMENT = `
   precision highp float;
+  varying vec2 vUv;
+  varying vec3 vNormalLocal;
 
-  varying vec3 vLocalPos;
-
-  uniform float uTime;
-  uniform float uEnergy;
-  uniform vec3 uCameraLocal;
+  uniform sampler2D uDye;
   uniform vec3 uDeep;
-  uniform vec3 uMid;
   uniform vec3 uLight;
   uniform vec3 uCream;
+  uniform float uTime;
 
-  #define STEPS 56
-
-  mat2 rot(float a) {
-    float s = sin(a);
-    float c = cos(a);
-    return mat2(c, -s, s, c);
-  }
-
-  float hash31(vec3 p) {
-    p = fract(p * 0.1031);
-    p += dot(p, p.yzx + 33.33);
-    return fract((p.x + p.y) * p.z);
-  }
-
-  float noise3(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-
-    float n000 = hash31(i + vec3(0.0,0.0,0.0));
-    float n100 = hash31(i + vec3(1.0,0.0,0.0));
-    float n010 = hash31(i + vec3(0.0,1.0,0.0));
-    float n110 = hash31(i + vec3(1.0,1.0,0.0));
-    float n001 = hash31(i + vec3(0.0,0.0,1.0));
-    float n101 = hash31(i + vec3(1.0,0.0,1.0));
-    float n011 = hash31(i + vec3(0.0,1.0,1.0));
-    float n111 = hash31(i + vec3(1.0,1.0,1.0));
-
-    float nx00 = mix(n000, n100, f.x);
-    float nx10 = mix(n010, n110, f.x);
-    float nx01 = mix(n001, n101, f.x);
-    float nx11 = mix(n011, n111, f.x);
-    float nxy0 = mix(nx00, nx10, f.y);
-    float nxy1 = mix(nx01, nx11, f.y);
-    return mix(nxy0, nxy1, f.z);
-  }
-
-  float fbm(vec3 p) {
-    float value = 0.0;
-    float amp = 0.52;
-    for (int i = 0; i < 4; i++) {
-      value += noise3(p) * amp;
-      p = p * 2.03 + vec3(13.2, 7.7, 4.1);
-      amp *= 0.50;
-    }
-    return value;
-  }
-
-  vec3 swirl(vec3 p) {
-    float a = uTime * 0.16 + p.y * 1.45;
-    p.xz = rot(a) * p.xz;
-
-    float b = sin(p.z * 2.2 + uTime * 0.13) * 0.32;
-    p.xy = rot(b) * p.xy;
-
-    p += vec3(
-      sin(p.y * 3.0 + uTime * 0.18),
-      sin(p.z * 2.7 - uTime * 0.14),
-      sin(p.x * 2.9 + uTime * 0.11)
-    ) * 0.055;
-
-    return p;
-  }
-
-  vec4 field(vec3 p) {
-    vec3 q = swirl(p);
-    float n = fbm(q * 3.15 + vec3(0.0, uTime * 0.055, -uTime * 0.04));
-    float fine = fbm(q * 6.0 - vec3(uTime * 0.035, 0.0, uTime * 0.025));
-
-    float waveA = abs(
-      q.y
-      - 0.26 * sin(q.x * 2.35 + q.z * 1.45 + uTime * 0.32 + n * 2.1)
-      - 0.10 * sin(q.z * 4.0 - uTime * 0.21)
-    );
-
-    float waveB = abs(
-      q.x
-      - 0.30 * sin(q.z * 2.05 - q.y * 1.55 - uTime * 0.25 + n * 1.9)
-      + 0.08 * cos(q.y * 4.1 + uTime * 0.15)
-    );
-
-    float waveC = abs(
-      q.z
-      - 0.23 * sin(q.x * 1.8 + q.y * 2.15 + uTime * 0.19 + n * 1.6)
-    );
-
-    float sA = exp(-waveA * 13.0);
-    float sB = exp(-waveB * 12.0);
-    float sC = exp(-waveC * 14.0);
-
-    float breakup = smoothstep(0.22, 0.88, n * 0.72 + fine * 0.46);
-    float radius = length(p);
-    float shell = 1.0 - smoothstep(0.68, 0.91, radius);
-    float hollow = smoothstep(0.08, 0.24, radius);
-
-    float dA = sA * (0.45 + 0.82 * breakup);
-    float dB = sB * (0.36 + 0.70 * breakup);
-    float dC = sC * (0.26 + 0.54 * breakup);
-
-    float density = (dA + dB + dC) * shell * hollow;
-    density *= 0.72 + 0.28 * sin(n * 6.2831 + uTime * 0.2);
-
-    vec3 color = vec3(0.0);
-    float total = max(dA + dB + dC, 0.0001);
-    color += uCream * dA;
-    color += uLight * dB;
-    color += uMid * dC;
-    color /= total;
-
-    color = mix(uDeep, color, 0.76 + breakup * 0.18);
-    return vec4(color, max(density, 0.0));
-  }
-
-  vec2 sphereHit(vec3 ro, vec3 rd, float radius) {
-    float b = dot(ro, rd);
-    float c = dot(ro, ro) - radius * radius;
-    float h = b * b - c;
-    if (h < 0.0) return vec2(-1.0);
-    h = sqrt(h);
-    return vec2(-b - h, -b + h);
+  vec2 wrapUv(vec2 uv) {
+    return fract(uv);
   }
 
   void main() {
-    vec3 ro = uCameraLocal;
-    vec3 rd = normalize(vLocalPos - ro);
-    vec2 hit = sphereHit(ro, rd, 0.96);
-    if (hit.y <= 0.0) discard;
+    vec3 n = normalize(vNormalLocal);
+    vec2 flowUv = vUv;
+    flowUv.x += sin(vUv.y * 6.2831 + uTime * 0.08) * 0.012;
+    flowUv.y += sin(vUv.x * 7.0 - uTime * 0.065) * 0.009;
 
-    float t0 = max(hit.x, 0.0);
-    float t1 = hit.y;
-    float span = max(t1 - t0, 0.001);
-    float stepSize = span / float(STEPS);
+    vec3 a = texture2D(uDye, wrapUv(flowUv)).rgb;
+    vec3 b = texture2D(uDye, wrapUv(flowUv * vec2(1.03, .97) + vec2(.17, .11))).rgb;
+    vec3 c = texture2D(uDye, wrapUv(flowUv * vec2(.96, 1.04) + vec2(.41, .27))).rgb;
 
-    vec4 acc = vec4(0.0);
-    float jitter = hash31(vLocalPos * 31.7);
-    float t = t0 + jitter * stepSize;
+    vec3 dye = a * 0.58 + b * 0.27 + c * 0.15;
+    float intensity = max(max(dye.r, dye.g), dye.b);
+    float alpha = smoothstep(0.025, 0.36, intensity);
 
-    for (int i = 0; i < STEPS; i++) {
-      if (t > t1 || acc.a > 0.93) break;
+    float edge = pow(1.0 - abs(n.z), 1.5);
+    vec3 color = mix(uDeep * 0.18, dye, 0.92);
+    color += uLight * edge * 0.06;
+    color += uCream * pow(intensity, 1.4) * 0.08;
 
-      vec3 p = ro + rd * t;
-      vec4 sampleField = field(p);
-      float alpha = clamp(sampleField.a * stepSize * 2.25 * uEnergy, 0.0, 0.24);
-
-      float centerGlow = exp(-length(p) * 4.2) * 0.075;
-      vec3 sampleColor = sampleField.rgb + uCream * centerGlow;
-
-      acc.rgb += (1.0 - acc.a) * sampleColor * alpha;
-      acc.a += (1.0 - acc.a) * alpha;
-      t += stepSize;
-    }
-
-    acc.rgb *= 1.18;
-    acc.a *= 0.92;
-
-    if (acc.a < 0.01) discard;
-    gl_FragColor = acc;
+    gl_FragColor = vec4(color, alpha * 0.84);
   }
 `;
 
 const GLASS_VERTEX = `
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
-
   void main() {
     vec4 worldPosition = modelMatrix * vec4(position, 1.0);
     vWorldPos = worldPosition.xyz;
@@ -242,7 +253,6 @@ const GLASS_VERTEX = `
 
 const GLASS_FRAGMENT = `
   precision highp float;
-
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
 
@@ -254,17 +264,37 @@ const GLASS_FRAGMENT = `
     vec3 n = normalize(vWorldNormal);
     vec3 v = normalize(cameraPosition - vWorldPos);
 
-    float fresnel = pow(1.0 - max(dot(n, v), 0.0), 2.6);
-    float upperGlint = pow(max(dot(n, normalize(vec3(-0.55, 0.78, 0.55))), 0.0), 12.0);
-    float sideGlint = pow(max(dot(n, normalize(vec3(0.82, 0.12, 0.56))), 0.0), 20.0);
+    float fresnel = pow(1.0 - max(dot(n, v), 0.0), 2.35);
+    float glintA = pow(max(dot(n, normalize(vec3(-0.55, 0.78, 0.55))), 0.0), 14.0);
+    float glintB = pow(max(dot(n, normalize(vec3(0.82, 0.12, 0.56))), 0.0), 24.0);
 
-    vec3 color = mix(uLight, uCream, upperGlint * 0.72 + sideGlint * 0.38);
-    float alpha = 0.025 + fresnel * 0.26 + upperGlint * 0.14 + sideGlint * 0.16;
-    alpha *= 0.94 + uPulse * 0.06;
+    vec3 color = mix(uLight, uCream, glintA * 0.75 + glintB * 0.35);
+    float alpha = 0.018 + fresnel * 0.24 + glintA * 0.12 + glintB * 0.14;
+    alpha *= 0.96 + uPulse * 0.04;
 
-    gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.42));
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.34));
   }
 `;
+
+function makeTarget(size: number) {
+  return new THREE.WebGLRenderTarget(size, size, {
+    type: THREE.HalfFloatType,
+    format: THREE.RGBAFormat,
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    wrapS: THREE.ClampToEdgeWrapping,
+    wrapT: THREE.ClampToEdgeWrapping,
+    depthBuffer: false,
+    stencilBuffer: false,
+  });
+}
+
+function setMaterial(
+  quad: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>,
+  material: THREE.ShaderMaterial
+) {
+  quad.material = material;
+}
 
 export function SpiritOrb({ state, tone }: SpiritOrbProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -275,10 +305,6 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
 
     const palette = PALETTES[tone];
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(31, 1, 0.1, 20);
-    camera.position.set(0, 0, 4.15);
-
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
@@ -289,30 +315,166 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(renderer.domElement);
 
-    const orbGroup = new THREE.Group();
-    scene.add(orbGroup);
+    const simSize = 128;
+    const texel = new THREE.Vector2(1 / simSize, 1 / simSize);
 
-    const volumeGeometry = new THREE.SphereGeometry(0.96, 72, 72);
-    const volumeMaterial = new THREE.ShaderMaterial({
-      vertexShader: VOLUME_VERTEX,
-      fragmentShader: VOLUME_FRAGMENT,
-      transparent: true,
+    let velocityA = makeTarget(simSize);
+    let velocityB = makeTarget(simSize);
+    let dyeA = makeTarget(simSize);
+    let dyeB = makeTarget(simSize);
+    let pressureA = makeTarget(simSize);
+    let pressureB = makeTarget(simSize);
+    const divergence = makeTarget(simSize);
+    const curl = makeTarget(simSize);
+
+    const simScene = new THREE.Scene();
+    const simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const quadGeometry = new THREE.PlaneGeometry(2, 2);
+    const quad = new THREE.Mesh(
+      quadGeometry,
+      new THREE.ShaderMaterial({ vertexShader: QUAD_VERTEX, fragmentShader: ADVECT_FRAGMENT })
+    );
+    simScene.add(quad);
+
+    const advectMaterial = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VERTEX,
+      fragmentShader: ADVECT_FRAGMENT,
+      depthTest: false,
       depthWrite: false,
-      side: THREE.FrontSide,
-      blending: THREE.NormalBlending,
       uniforms: {
-        uTime: { value: 0 },
-        uEnergy: { value: energyFor(state) },
-        uCameraLocal: { value: new THREE.Vector3() },
-        uDeep: { value: new THREE.Color(palette.deep) },
-        uMid: { value: new THREE.Color(palette.mid) },
-        uLight: { value: new THREE.Color(palette.light) },
-        uCream: { value: new THREE.Color(palette.cream) },
+        uSource: { value: null },
+        uVelocity: { value: null },
+        uTexel: { value: texel },
+        uDt: { value: 1 / 30 },
+        uDissipation: { value: 0.99 },
       },
     });
-    const volume = new THREE.Mesh(volumeGeometry, volumeMaterial);
-    volume.renderOrder = 2;
-    orbGroup.add(volume);
+
+    const curlMaterial = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VERTEX,
+      fragmentShader: CURL_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        uVelocity: { value: null },
+        uTexel: { value: texel },
+      },
+    });
+
+    const vorticityMaterial = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VERTEX,
+      fragmentShader: VORTICITY_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        uVelocity: { value: null },
+        uCurl: { value: curl.texture },
+        uTexel: { value: texel },
+        uDt: { value: 1 / 30 },
+        uCurlStrength: { value: curlFor(state) },
+      },
+    });
+
+    const divergenceMaterial = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VERTEX,
+      fragmentShader: DIVERGENCE_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        uVelocity: { value: null },
+        uTexel: { value: texel },
+      },
+    });
+
+    const pressureMaterial = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VERTEX,
+      fragmentShader: PRESSURE_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        uPressure: { value: null },
+        uDivergence: { value: divergence.texture },
+        uTexel: { value: texel },
+      },
+    });
+
+    const gradientMaterial = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VERTEX,
+      fragmentShader: GRADIENT_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        uPressure: { value: null },
+        uVelocity: { value: null },
+        uTexel: { value: texel },
+      },
+    });
+
+    const splatMaterial = new THREE.ShaderMaterial({
+      vertexShader: QUAD_VERTEX,
+      fragmentShader: SPLAT_FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
+      uniforms: {
+        uTarget: { value: null },
+        uPoint: { value: new THREE.Vector2(0.5, 0.5) },
+        uColor: { value: new THREE.Vector3() },
+        uRadius: { value: 0.0035 },
+        uAspect: { value: 1 },
+      },
+    });
+
+    const renderPass = (material: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget) => {
+      setMaterial(quad, material);
+      renderer.setRenderTarget(target);
+      renderer.render(simScene, simCamera);
+    };
+
+    const clearTarget = (target: THREE.WebGLRenderTarget) => {
+      renderer.setRenderTarget(target);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear(true, false, false);
+    };
+
+    [velocityA, velocityB, dyeA, dyeB, pressureA, pressureB, divergence, curl].forEach(clearTarget);
+
+    const displayScene = new THREE.Scene();
+    const displayCamera = new THREE.PerspectiveCamera(31, 1, 0.1, 20);
+    displayCamera.position.set(0, 0, 4.15);
+
+    const orbGroup = new THREE.Group();
+    displayScene.add(orbGroup);
+
+    const fluidGeometry = new THREE.SphereGeometry(0.97, 96, 96);
+    const fluidMaterial = new THREE.ShaderMaterial({
+      vertexShader: DISPLAY_VERTEX,
+      fragmentShader: DISPLAY_FRAGMENT,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: {
+        uDye: { value: dyeA.texture },
+        uDeep: { value: new THREE.Color(palette.deep) },
+        uLight: { value: new THREE.Color(palette.light) },
+        uCream: { value: new THREE.Color(palette.cream) },
+        uTime: { value: 0 },
+      },
+    });
+    const fluidSphere = new THREE.Mesh(fluidGeometry, fluidMaterial);
+    fluidSphere.renderOrder = 2;
+    orbGroup.add(fluidSphere);
+
+    const innerGlowGeometry = new THREE.SphereGeometry(0.90, 64, 64);
+    const innerGlowMaterial = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(palette.deep),
+      transparent: true,
+      opacity: tone === "night" ? 0.10 : 0.075,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    const innerGlow = new THREE.Mesh(innerGlowGeometry, innerGlowMaterial);
+    innerGlow.renderOrder = 1;
+    orbGroup.add(innerGlow);
 
     const glassGeometry = new THREE.SphereGeometry(1.065, 96, 96);
     const glassMaterial = new THREE.ShaderMaterial({
@@ -321,7 +483,6 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       transparent: true,
       depthWrite: false,
       side: THREE.FrontSide,
-      blending: THREE.NormalBlending,
       uniforms: {
         uLight: { value: new THREE.Color(palette.light) },
         uCream: { value: new THREE.Color(palette.cream) },
@@ -332,7 +493,7 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     glass.renderOrder = 6;
     orbGroup.add(glass);
 
-    const coreGeometry = new THREE.SphereGeometry(0.068, 32, 32);
+    const coreGeometry = new THREE.SphereGeometry(0.065, 36, 36);
     const coreMaterial = new THREE.MeshBasicMaterial({
       color: new THREE.Color(palette.core),
       transparent: true,
@@ -341,91 +502,188 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
       depthWrite: false,
     });
     const core = new THREE.Mesh(coreGeometry, coreMaterial);
-    core.renderOrder = 7;
+    core.renderOrder = 8;
     orbGroup.add(core);
 
-    const glowGeometry = new THREE.SphereGeometry(0.19, 28, 28);
-    const glowMaterial = new THREE.MeshBasicMaterial({
+    const coreGlowGeometry = new THREE.SphereGeometry(0.17, 32, 32);
+    const coreGlowMaterial = new THREE.MeshBasicMaterial({
       color: new THREE.Color(palette.light),
       transparent: true,
-      opacity: 0.09,
+      opacity: 0.08,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    glow.renderOrder = 5;
-    orbGroup.add(glow);
+    const coreGlow = new THREE.Mesh(coreGlowGeometry, coreGlowMaterial);
+    coreGlow.renderOrder = 7;
+    orbGroup.add(coreGlow);
 
-    const particleCount = 42;
-    const particlePositions = new Float32Array(particleCount * 3);
-    for (let i = 0; i < particleCount; i += 1) {
-      const r = 0.74 * Math.cbrt(Math.random());
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      particlePositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      particlePositions[i * 3 + 1] = r * Math.cos(phi);
-      particlePositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-    }
-    const particleGeometry = new THREE.BufferGeometry();
-    particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
-    const particleMaterial = new THREE.PointsMaterial({
-      color: new THREE.Color(palette.cream),
-      size: 0.014,
-      transparent: true,
-      opacity: 0.48,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      sizeAttenuation: true,
-    });
-    const particles = new THREE.Points(particleGeometry, particleMaterial);
-    particles.renderOrder = 4;
-    orbGroup.add(particles);
+    const colors = [
+      new THREE.Color(palette.cream),
+      new THREE.Color(palette.light),
+      new THREE.Color(palette.mid),
+    ];
+
+    const doSplat = (
+      targetA: THREE.WebGLRenderTarget,
+      targetB: THREE.WebGLRenderTarget,
+      point: THREE.Vector2,
+      color: THREE.Vector3,
+      radius: number
+    ) => {
+      splatMaterial.uniforms.uTarget.value = targetA.texture;
+      splatMaterial.uniforms.uPoint.value.copy(point);
+      splatMaterial.uniforms.uColor.value.copy(color);
+      splatMaterial.uniforms.uRadius.value = radius;
+      renderPass(splatMaterial, targetB);
+    };
 
     const resize = () => {
       const rect = host.getBoundingClientRect();
       const width = Math.max(1, rect.width);
       const height = Math.max(1, rect.height);
       renderer.setSize(width, height, false);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
+      displayCamera.aspect = width / height;
+      displayCamera.updateProjectionMatrix();
+      splatMaterial.uniforms.uAspect.value = width / height;
     };
 
     const observer = new ResizeObserver(resize);
     observer.observe(host);
     resize();
 
-    const clock = new THREE.Clock();
-    const cameraLocal = new THREE.Vector3();
     let frame = 0;
+    let lastSimTime = 0;
+    const clock = new THREE.Clock();
     const speed = speedFor(state);
-    const energy = energyFor(state);
+    const force = splatForceFor(state);
+
+    const swapVelocity = () => {
+      const temp = velocityA;
+      velocityA = velocityB;
+      velocityB = temp;
+    };
+
+    const swapDye = () => {
+      const temp = dyeA;
+      dyeA = dyeB;
+      dyeB = temp;
+    };
+
+    const swapPressure = () => {
+      const temp = pressureA;
+      pressureA = pressureB;
+      pressureB = temp;
+    };
+
+    const injectOrbitingSpirit = (time: number) => {
+      const baseRadius = state === "listening" ? 0.16 : 0.23;
+      const radius = state === "thinking" ? 0.0048 : 0.0064;
+
+      for (let i = 0; i < 3; i += 1) {
+        const angle = time * (0.52 + i * 0.045) * speed + i * (Math.PI * 2 / 3);
+        const wobble = Math.sin(time * 0.37 + i * 1.7) * 0.055;
+        const r = baseRadius + wobble;
+        const px = 0.5 + Math.cos(angle) * r;
+        const py = 0.5 + Math.sin(angle) * r * 0.78;
+        const point = new THREE.Vector2(px, py);
+
+        const tangent = new THREE.Vector2(-Math.sin(angle), Math.cos(angle));
+        const inward = new THREE.Vector2(0.5 - px, 0.5 - py).normalize();
+        const stateBias =
+          state === "listening"
+            ? inward.multiplyScalar(0.7).add(tangent.multiplyScalar(0.55))
+            : state === "responding"
+              ? inward.multiplyScalar(-0.22).add(tangent)
+              : tangent;
+
+        const velColor = new THREE.Vector3(stateBias.x * force, stateBias.y * force, 0);
+        doSplat(velocityA, velocityB, point, velColor, radius);
+        swapVelocity();
+
+        const dyeColor = colors[i].clone().multiplyScalar(i === 0 ? 0.052 : 0.038);
+        doSplat(dyeA, dyeB, point, new THREE.Vector3(dyeColor.r, dyeColor.g, dyeColor.b), radius * 1.45);
+        swapDye();
+      }
+    };
+
+    const stepFluid = (time: number) => {
+      const dt = 1 / 30;
+
+      advectMaterial.uniforms.uSource.value = velocityA.texture;
+      advectMaterial.uniforms.uVelocity.value = velocityA.texture;
+      advectMaterial.uniforms.uDt.value = dt;
+      advectMaterial.uniforms.uDissipation.value = 0.991;
+      renderPass(advectMaterial, velocityB);
+      swapVelocity();
+
+      curlMaterial.uniforms.uVelocity.value = velocityA.texture;
+      renderPass(curlMaterial, curl);
+
+      vorticityMaterial.uniforms.uVelocity.value = velocityA.texture;
+      vorticityMaterial.uniforms.uCurl.value = curl.texture;
+      vorticityMaterial.uniforms.uDt.value = dt;
+      vorticityMaterial.uniforms.uCurlStrength.value = curlFor(state);
+      renderPass(vorticityMaterial, velocityB);
+      swapVelocity();
+
+      divergenceMaterial.uniforms.uVelocity.value = velocityA.texture;
+      renderPass(divergenceMaterial, divergence);
+
+      clearTarget(pressureA);
+      clearTarget(pressureB);
+      for (let i = 0; i < 10; i += 1) {
+        pressureMaterial.uniforms.uPressure.value = pressureA.texture;
+        pressureMaterial.uniforms.uDivergence.value = divergence.texture;
+        renderPass(pressureMaterial, pressureB);
+        swapPressure();
+      }
+
+      gradientMaterial.uniforms.uPressure.value = pressureA.texture;
+      gradientMaterial.uniforms.uVelocity.value = velocityA.texture;
+      renderPass(gradientMaterial, velocityB);
+      swapVelocity();
+
+      advectMaterial.uniforms.uSource.value = dyeA.texture;
+      advectMaterial.uniforms.uVelocity.value = velocityA.texture;
+      advectMaterial.uniforms.uDt.value = dt;
+      advectMaterial.uniforms.uDissipation.value = state === "responding" ? 0.997 : 0.994;
+      renderPass(advectMaterial, dyeB);
+      swapDye();
+
+      injectOrbitingSpirit(time);
+      fluidMaterial.uniforms.uDye.value = dyeA.texture;
+    };
+
+    for (let i = 0; i < 24; i += 1) {
+      injectOrbitingSpirit(i * 0.16);
+      stepFluid(i * 0.16);
+    }
 
     const render = () => {
       const elapsed = clock.getElapsedTime();
-      const motionTime = reducedMotion ? 0 : elapsed * speed;
 
-      if (!reducedMotion) {
-        orbGroup.rotation.y = Math.sin(elapsed * 0.10) * 0.055;
-        orbGroup.rotation.x = Math.sin(elapsed * 0.075) * 0.026;
-        particles.rotation.y = elapsed * 0.035 * speed;
-        particles.rotation.x = Math.sin(elapsed * 0.09) * 0.09;
+      if (!reducedMotion && elapsed - lastSimTime >= 1 / 30) {
+        stepFluid(elapsed);
+        lastSimTime = elapsed;
       }
 
-      orbGroup.updateMatrixWorld(true);
-      cameraLocal.copy(camera.position);
-      orbGroup.worldToLocal(cameraLocal);
+      if (!reducedMotion) {
+        orbGroup.rotation.y = Math.sin(elapsed * 0.10) * 0.045;
+        orbGroup.rotation.x = Math.sin(elapsed * 0.075) * 0.022;
+      }
 
-      volumeMaterial.uniforms.uTime.value = motionTime;
-      volumeMaterial.uniforms.uEnergy.value = energy;
-      volumeMaterial.uniforms.uCameraLocal.value.copy(cameraLocal);
-
-      const pulse = reducedMotion ? 0 : (Math.sin(elapsed * 1.45 * speed) + 1) * 0.5;
+      const pulse = reducedMotion ? 0.4 : (Math.sin(elapsed * 1.35 * speed) + 1) * 0.5;
+      fluidMaterial.uniforms.uTime.value = reducedMotion ? 0 : elapsed * speed;
       glassMaterial.uniforms.uPulse.value = pulse;
-      core.scale.setScalar(reducedMotion ? 1 : 0.93 + pulse * 0.13);
-      glow.scale.setScalar(reducedMotion ? 1 : 0.90 + pulse * 0.22);
-      glowMaterial.opacity = 0.065 + pulse * 0.055;
+      core.scale.setScalar(0.94 + pulse * 0.11);
+      coreGlow.scale.setScalar(0.92 + pulse * 0.18);
+      coreGlowMaterial.opacity = 0.055 + pulse * 0.055;
 
-      renderer.render(scene, camera);
+      renderer.setRenderTarget(null);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear(true, true, true);
+      renderer.render(displayScene, displayCamera);
+
       frame = requestAnimationFrame(render);
     };
     render();
@@ -433,16 +691,36 @@ export function SpiritOrb({ state, tone }: SpiritOrbProps) {
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
-      volumeGeometry.dispose();
-      volumeMaterial.dispose();
+
+      velocityA.dispose();
+      velocityB.dispose();
+      dyeA.dispose();
+      dyeB.dispose();
+      pressureA.dispose();
+      pressureB.dispose();
+      divergence.dispose();
+      curl.dispose();
+
+      quadGeometry.dispose();
+      advectMaterial.dispose();
+      curlMaterial.dispose();
+      vorticityMaterial.dispose();
+      divergenceMaterial.dispose();
+      pressureMaterial.dispose();
+      gradientMaterial.dispose();
+      splatMaterial.dispose();
+
+      fluidGeometry.dispose();
+      fluidMaterial.dispose();
+      innerGlowGeometry.dispose();
+      innerGlowMaterial.dispose();
       glassGeometry.dispose();
       glassMaterial.dispose();
       coreGeometry.dispose();
       coreMaterial.dispose();
-      glowGeometry.dispose();
-      glowMaterial.dispose();
-      particleGeometry.dispose();
-      particleMaterial.dispose();
+      coreGlowGeometry.dispose();
+      coreGlowMaterial.dispose();
+
       renderer.dispose();
       renderer.domElement.remove();
     };
