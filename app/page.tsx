@@ -1725,12 +1725,88 @@ export default function Home() {
       <span className="orb-glow" />
       <span className="orb-glass-shell" />
       <span className="orb-inner-field">
-        <span className="spirit-wave wave-one" />
-        <span className="spirit-wave wave-two" />
-        <span className="spirit-wave wave-three" />
-        <span className="spirit-wave wave-four" />
-        <span className="spirit-mist mist-one" />
-        <span className="spirit-mist mist-two" />
+        <svg className="spirit-wave-svg" viewBox="0 0 320 320" aria-hidden="true">
+          <defs>
+            <linearGradient id="spiritWaveA" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,242,205,.05)" />
+              <stop offset="24%" stopColor="rgba(255,242,205,.92)" />
+              <stop offset="52%" stopColor="rgba(255,255,255,.98)" />
+              <stop offset="74%" stopColor="rgba(176,242,226,.86)" />
+              <stop offset="100%" stopColor="rgba(57,150,137,.06)" />
+            </linearGradient>
+            <linearGradient id="spiritWaveB" x1="100%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="rgba(176,242,226,.02)" />
+              <stop offset="28%" stopColor="rgba(176,242,226,.72)" />
+              <stop offset="55%" stopColor="rgba(255,255,255,.82)" />
+              <stop offset="78%" stopColor="rgba(255,242,205,.68)" />
+              <stop offset="100%" stopColor="rgba(255,242,205,.02)" />
+            </linearGradient>
+            <filter id="spiritSoftGlow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="3.4" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <filter id="spiritMistBlur" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="14" />
+            </filter>
+            <clipPath id="spiritSphereClip">
+              <circle cx="160" cy="160" r="147" />
+            </clipPath>
+          </defs>
+
+          <g clipPath="url(#spiritSphereClip)" className="spirit-vortex">
+            <g className="spirit-ribbon ribbon-a">
+              <path
+                d="M35 170 C55 82 145 57 220 86 C292 114 294 197 235 239 C176 282 92 260 60 213"
+                fill="none"
+                stroke="url(#spiritWaveA)"
+                strokeWidth="18"
+                strokeLinecap="round"
+                filter="url(#spiritSoftGlow)"
+              />
+            </g>
+            <g className="spirit-ribbon ribbon-b">
+              <path
+                d="M75 77 C154 34 252 72 277 147 C299 215 246 279 170 278 C90 277 38 216 49 151"
+                fill="none"
+                stroke="url(#spiritWaveB)"
+                strokeWidth="13"
+                strokeLinecap="round"
+                filter="url(#spiritSoftGlow)"
+              />
+            </g>
+            <g className="spirit-ribbon ribbon-c">
+              <path
+                d="M48 208 C87 275 184 300 254 245 C322 192 297 98 226 57 C160 19 77 56 48 122"
+                fill="none"
+                stroke="url(#spiritWaveA)"
+                strokeWidth="9"
+                strokeLinecap="round"
+                opacity=".74"
+                filter="url(#spiritSoftGlow)"
+              />
+            </g>
+            <g className="spirit-ribbon ribbon-d">
+              <path
+                d="M105 43 C40 89 32 186 83 246 C135 307 234 289 275 220 C314 154 280 72 209 42"
+                fill="none"
+                stroke="url(#spiritWaveB)"
+                strokeWidth="7"
+                strokeLinecap="round"
+                opacity=".52"
+                filter="url(#spiritSoftGlow)"
+              />
+            </g>
+
+            <g className="spirit-mist-svg" filter="url(#spiritMistBlur)">
+              <ellipse cx="98" cy="112" rx="72" ry="42" className="mist-blob blob-a" />
+              <ellipse cx="222" cy="203" rx="82" ry="48" className="mist-blob blob-b" />
+              <ellipse cx="175" cy="78" rx="58" ry="30" className="mist-blob blob-c" />
+            </g>
+          </g>
+        </svg>
         <span className="orb-core-dot" />
         <span className="orb-particle particle-one" />
         <span className="orb-particle particle-two" />
