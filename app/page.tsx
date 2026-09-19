@@ -25,6 +25,22 @@ type Department = {
   slug: string;
 };
 
+type ToolRecord = {
+  id: string;
+  system_key: string;
+  name: string;
+  provider: string;
+  description: string | null;
+  status: string;
+  risk_level: number;
+};
+
+type AgentToolPermission = {
+  agent_id: string;
+  tool_id: string;
+  max_approval_level: number;
+};
+
 type PlannedTask = {
   title: string;
   description: string;
@@ -73,6 +89,8 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
   const [activeView, setActiveView] = useState<"command" | "network" | "work" | "brain" | "sops" | "tools" | "integrations">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [tools, setTools] = useState<ToolRecord[]>([]);
+  const [agentToolPermissions, setAgentToolPermissions] = useState<AgentToolPermission[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
@@ -137,6 +155,20 @@ export default function Home() {
         .order("name");
 
       setAgents(agentRows || []);
+
+      const { data: toolRows } = await supabase
+        .from("tools")
+        .select("id,system_key,name,provider,description,status,risk_level")
+        .order("provider")
+        .order("name");
+
+      setTools(toolRows || []);
+
+      const { data: permissionRows } = await supabase
+        .from("agent_tool_permissions")
+        .select("agent_id,tool_id,max_approval_level");
+
+      setAgentToolPermissions(permissionRows || []);
 
       let currentConversationId: string | null = null;
       const { data: existingConversation } = await supabase
@@ -1082,7 +1114,11 @@ export default function Home() {
                       <div className="agent-node">{agent.name.slice(0, 2).toUpperCase()}</div>
                       <div className="agent-detail">
                         <div><strong>{agent.name}</strong><span>{agent.role}</span></div>
-                        <small>{assignedTask ? assignedTask.title : "No routed task"}</small>
+                        <small>
+                          {assignedTask
+                            ? assignedTask.title
+                            : `${agentToolPermissions.filter((permission) => permission.agent_id === agent.id).length} tools available`}
+                        </small>
                       </div>
                       <span className={`agent-state ${agent.status}`}>{agent.status}</span>
                     </div>
@@ -1175,16 +1211,12 @@ export default function Home() {
       tools: {
         eyebrow: "CAPABILITY REGISTRY",
         title: "Tool Registry",
-        description: "An honest inventory of what Korben can use now and what still needs a connector.",
-        cards: [
-          ["OpenAI Orchestrator", "Configured", "Conversation and structured planning."],
-          ["Supabase", "Connected", "Auth, persistence, objectives, tasks, runs and approvals."],
-          ["Browser Voice", "Connected", "Wake listening, transcription and spoken replies."],
-          ["GitHub Execution", "Next", "Branch, code, commit, pull request and review actions."],
-          ["Vercel Execution", "Next", "Preview inspection and controlled deployment actions."],
-          ["G-Brain Retrieval", "Not configured", "Shared semantic knowledge retrieval."],
-          ["Obsidian Vault", "Not configured", "Local/source Markdown knowledge access."]
-        ]
+        description: "Live governed capabilities from Korben’s tool registry.",
+        cards: tools.map((tool) => [
+          tool.name,
+          tool.status === "available" ? `L${tool.risk_level} available` : tool.status,
+          `${tool.provider} · ${tool.system_key} · ${tool.description || "No description"}`
+        ])
       },
       integrations: {
         eyebrow: "SYSTEM CONNECTIONS",
