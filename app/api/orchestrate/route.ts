@@ -3,41 +3,51 @@ import { NextResponse } from "next/server";
 const SYSTEM_PROMPT = `
 You are Korben, the general-purpose orchestrator for a multi-agent operating system.
 
-You can have ordinary conversation, answer questions, help think through ideas, and coordinate work.
+You can have ordinary conversation, answer questions, help think through ideas, coordinate work, and identify when an external action is being requested.
 Do not assume the user is talking about any company, client, project, or prior business unless that context is explicitly present in the current request or supplied workspace context.
 
-When the user is making casual conversation or asking a question that does not require execution, respond naturally and return an empty tasks array.
-When the user clearly requests software-development work, convert it into a concise, executable plan for the Web Development department.
-
-Available roles:
-- product_manager: requirements, user stories, acceptance criteria
-- solutions_architect: architecture, dependencies, technical design
-- ux_ui_designer: user flows, interface design, design review
-- frontend_engineer: Next.js, React, TypeScript, frontend
-- backend_engineer: APIs, business logic, integrations
-- database_engineer: Postgres, Supabase, RLS, migrations
-- qa_engineer: testing, regression, acceptance tests
-- security_reviewer: authorization, secrets, RLS, security review
-- devops_engineer: GitHub, Vercel, CI, deployments
+Classify every request into exactly one intent:
+- conversation: casual conversation, social interaction, brainstorming with no factual research or execution needed
+- question: informational, analytical, or research-style request that can be answered without changing external systems
+- work: a request that should become structured work/tasks but does not itself require immediate external side effects
+- action: a request to use external systems or tools to do something
+- approval: a requested action that is L2/L3 and therefore requires explicit approval before execution
 
 Rules:
-1. For casual conversation, brainstorming, or informational questions, create no tasks.
-2. Never invent or assume business-specific context.
-3. Create only the tasks necessary when the user is clearly requesting executable software-development work.
+1. conversation and question must return requires_execution=false and an empty tasks array.
+2. work, action, and approval may create tasks only when useful.
+3. Never invent or assume business-specific context.
 4. Put tasks in dependency order.
 5. Assign exactly one primary role to each task.
 6. Use approval_level 0 for read/plan/test, 1 for reversible branch work and previews,
    2 for migrations/permissions/config/merge-ready changes, and 3 for production,
    destructive data changes, billing, or external communications.
-7. Never assume production deployment is approved.
-8. Keep the assistant_reply natural, concise, and useful.
-9. The output must match the requested JSON schema exactly.
+7. If the user's requested action is approval level 2 or 3, classify intent as approval.
+8. Never assume production deployment is approved.
+9. Keep assistant_reply natural, concise, and useful.
+10. The output must match the requested JSON schema exactly.
+
+Available roles:
+- product_manager
+- solutions_architect
+- ux_ui_designer
+- frontend_engineer
+- backend_engineer
+- database_engineer
+- qa_engineer
+- security_reviewer
+- devops_engineer
 `;
 
 const PLAN_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
+    intent: {
+      type: "string",
+      enum: ["conversation", "question", "work", "action", "approval"]
+    },
+    requires_execution: { type: "boolean" },
     title: { type: "string" },
     summary: { type: "string" },
     assistant_reply: { type: "string" },
@@ -83,7 +93,14 @@ const PLAN_SCHEMA = {
       }
     }
   },
-  required: ["title", "summary", "assistant_reply", "tasks"]
+  required: [
+    "intent",
+    "requires_execution",
+    "title",
+    "summary",
+    "assistant_reply",
+    "tasks"
+  ]
 };
 
 export async function POST(request: Request) {
@@ -100,7 +117,7 @@ export async function POST(request: Request) {
   const requestText = String(body?.request ?? "")
     .trim()
     .replace(/\bcorbin\b/gi, "Korben");
-  const projectName = String(body?.projectName ?? "Unknown project");
+  const workspaceName = String(body?.projectName ?? "General Workspace");
 
   if (!requestText) {
     return NextResponse.json({ error: "Request is required." }, { status: 400 });
@@ -116,7 +133,7 @@ export async function POST(request: Request) {
       model: process.env.OPENAI_ORCHESTRATOR_MODEL || "gpt-5.6-sol",
       reasoning: { effort: "medium" },
       instructions: SYSTEM_PROMPT,
-      input: `Project: ${projectName}\n\nUser request:\n${requestText}`,
+      input: `Workspace: ${workspaceName}\n\nUser request:\n${requestText}`,
       text: {
         format: {
           type: "json_schema",
@@ -133,7 +150,7 @@ export async function POST(request: Request) {
   if (!response.ok) {
     console.error("OpenAI orchestration error", payload);
     return NextResponse.json(
-      { error: "Korben could not generate a plan." },
+      { error: "Korben could not classify or plan the request." },
       { status: 502 }
     );
   }
@@ -147,7 +164,7 @@ export async function POST(request: Request) {
 
   if (!outputText) {
     return NextResponse.json(
-      { error: "Korben returned an empty plan." },
+      { error: "Korben returned an empty response." },
       { status: 502 }
     );
   }
@@ -156,7 +173,7 @@ export async function POST(request: Request) {
     return NextResponse.json(JSON.parse(outputText));
   } catch {
     return NextResponse.json(
-      { error: "Korben returned an invalid plan." },
+      { error: "Korben returned invalid structured output." },
       { status: 502 }
     );
   }
