@@ -8,7 +8,6 @@ import {
 } from "../../lib/ambient-time";
 import { AmbientMist } from "./AmbientMist";
 import { AtmosphereOverlay } from "./AtmosphereOverlay";
-import { CelestialBody } from "./CelestialBody";
 
 type AmbientSceneProps = {
   className?: string;
@@ -77,17 +76,6 @@ export function AmbientScene({ className = "" }: AmbientSceneProps) {
         brightness={state.brightness}
         starOpacity={state.starOpacity}
         isNight={state.isNight}
-      />
-
-      <CelestialBody
-        kind="sun"
-        progress={state.daylightProgress}
-        opacity={state.sunVisible}
-      />
-      <CelestialBody
-        kind="moon"
-        progress={state.nightProgress}
-        opacity={state.moonVisible}
       />
 
       <AmbientMist />
