@@ -81,6 +81,7 @@ export default function Home() {
   const [listening, setListening] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const [voiceState, setVoiceState] = useState<"waiting" | "listening" | "thinking" | "speaking">("waiting");
+  const [conversationActive, setConversationActive] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const recognitionRef = useRef<any>(null);
@@ -89,6 +90,8 @@ export default function Home() {
   const voiceModeRef = useRef(false);
   const voiceSubmittedRef = useRef(false);
   const wakeDetectedRef = useRef(false);
+  const conversationActiveRef = useRef(false);
+  const conversationTimeoutRef = useRef<number | null>(null);
   const sendMessageRef = useRef<(messageText?: string, mode?: "text" | "voice") => Promise<void>>(
     async () => {}
   );
@@ -253,12 +256,15 @@ export default function Home() {
 
       const normalized = normalizeKorbenName(transcript.trim());
 
-      if (!wakeDetectedRef.current) {
+      if (!conversationActiveRef.current) {
         if (/\bkorben\b/i.test(normalized)) {
+          conversationActiveRef.current = true;
+          setConversationActive(true);
           wakeDetectedRef.current = true;
           voiceSubmittedRef.current = false;
           setVoiceState("listening");
           setInputMode("voice");
+          clearConversationTimeout();
 
           const remainder = normalized
             .replace(/^.*?\bkorben\b[\s,.:;!?-]*/i, "")
@@ -277,11 +283,19 @@ export default function Home() {
         return;
       }
 
-      const spokenText = normalized
-        .replace(/^\bkorben\b[\s,.:;!?-]*/i, "")
-        .trim();
+      const spokenText = normalized.trim();
+
+      if (/^(korben[\s,.:;!?-]*)?(go to sleep|sleep|standby|stop listening)$/i.test(spokenText)) {
+        try {
+          recognition.stop();
+        } catch {}
+        returnToWakeStandby();
+        return;
+      }
 
       if (spokenText) {
+        clearConversationTimeout();
+        setVoiceState("listening");
         setInput(spokenText);
       }
 
@@ -298,13 +312,15 @@ export default function Home() {
         void sendMessageRef.current(spokenText, "voice");
       }
     };
-
     recognitionRef.current = recognition;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.shiftKey && event.code === "Space" && !event.repeat) {
         event.preventDefault();
+        conversationActiveRef.current = true;
+        setConversationActive(true);
         wakeDetectedRef.current = true;
+        clearConversationTimeout();
         setVoiceState("listening");
         setInputMode("voice");
         try {
@@ -323,6 +339,38 @@ export default function Home() {
       window.speechSynthesis?.cancel();
     };
   }, []);
+  const clearConversationTimeout = () => {
+    if (conversationTimeoutRef.current) {
+      window.clearTimeout(conversationTimeoutRef.current);
+      conversationTimeoutRef.current = null;
+    }
+  };
+
+  const returnToWakeStandby = () => {
+    clearConversationTimeout();
+    conversationActiveRef.current = false;
+    setConversationActive(false);
+    wakeDetectedRef.current = false;
+    voiceSubmittedRef.current = false;
+    setInput("");
+    setVoiceState("waiting");
+
+    if (voiceModeRef.current && speechSupported) {
+      window.setTimeout(() => {
+        try {
+          recognitionRef.current?.start();
+        } catch {}
+      }, 350);
+    }
+  };
+
+  const armConversationTimeout = () => {
+    clearConversationTimeout();
+    conversationTimeoutRef.current = window.setTimeout(() => {
+      returnToWakeStandby();
+    }, 30000);
+  };
+
   const signIn = async () => {
     const email = loginEmail.trim();
 
@@ -353,6 +401,7 @@ export default function Home() {
   };
 
   const signOut = async () => {
+    clearConversationTimeout();
     await supabase.auth.signOut();
     setSignedIn(false);
     setMessages([fallbackGreeting]);
@@ -363,48 +412,31 @@ export default function Home() {
     setLoadingState("Sign in required");
   };
 
-  const beginListening = () => {
-    if (!speechSupported || !recognitionRef.current) return;
-    wakeDetectedRef.current = true;
-    voiceSubmittedRef.current = false;
-    setVoiceState("listening");
-    setInputMode("voice");
-    setInput("");
-
-    try {
-      recognitionRef.current.start();
-    } catch {}
-  };
-
-  const toggleMic = () => {
-    if (voiceState === "listening") {
-      wakeDetectedRef.current = false;
-      voiceSubmittedRef.current = false;
-      setVoiceState("waiting");
-      try {
-        recognitionRef.current?.stop();
-      } catch {}
-      return;
-    }
-
-    beginListening();
-  };
-
   const toggleVoiceMode = () => {
     const next = !voiceMode;
     voiceModeRef.current = next;
     setVoiceMode(next);
-    wakeDetectedRef.current = false;
-    voiceSubmittedRef.current = false;
-    setVoiceState("waiting");
+    clearConversationTimeout();
 
     if (!next) {
+      conversationActiveRef.current = false;
+      setConversationActive(false);
+      wakeDetectedRef.current = false;
+      voiceSubmittedRef.current = false;
+      setVoiceState("waiting");
+      setInput("");
       window.speechSynthesis?.cancel();
       try {
         recognitionRef.current?.stop();
       } catch {}
       return;
     }
+
+    conversationActiveRef.current = false;
+    setConversationActive(false);
+    wakeDetectedRef.current = false;
+    voiceSubmittedRef.current = false;
+    setVoiceState("waiting");
 
     if (speechSupported) {
       window.setTimeout(() => {
@@ -736,25 +768,39 @@ export default function Home() {
         utterance.voice = preferredVoice;
       }
 
-      const resumeWakeMode = () => {
-        wakeDetectedRef.current = false;
+      const resumeConversation = () => {
         voiceSubmittedRef.current = false;
-        setVoiceState("waiting");
 
+        if (conversationActiveRef.current) {
+          setVoiceState("listening");
+          armConversationTimeout();
+
+          window.setTimeout(() => {
+            try {
+              recognitionRef.current?.start();
+            } catch {}
+          }, 500);
+        } else {
+          returnToWakeStandby();
+        }
+      };
+
+      utterance.onend = resumeConversation;
+      utterance.onerror = resumeConversation;
+      window.speechSynthesis.speak(utterance);
+    } else {
+      voiceSubmittedRef.current = false;
+      if (conversationActiveRef.current) {
+        setVoiceState("listening");
+        armConversationTimeout();
         window.setTimeout(() => {
           try {
             recognitionRef.current?.start();
           } catch {}
-        }, 500);
-      };
-
-      utterance.onend = resumeWakeMode;
-      utterance.onerror = resumeWakeMode;
-      window.speechSynthesis.speak(utterance);
-    } else {
-      wakeDetectedRef.current = false;
-      voiceSubmittedRef.current = false;
-      setVoiceState("waiting");
+        }, 350);
+      } else {
+        returnToWakeStandby();
+      }
     }
   };
 
@@ -840,7 +886,9 @@ export default function Home() {
         : voiceState === "speaking"
           ? "Speaking"
           : voiceMode
-            ? "Say “Korben”"
+            ? conversationActive
+              ? "Conversation open"
+              : "Say “Korben”"
             : "Voice standby";
 
   const agentById = (id?: string | null) =>
@@ -862,7 +910,7 @@ export default function Home() {
       <div className="core-column">
         <div
           className={`korben-core ${voiceState} ${voiceMode ? "armed" : ""}`}
-          onClick={voiceMode ? toggleMic : toggleVoiceMode}
+          onClick={toggleVoiceMode}
           role="button"
           tabIndex={0}
           aria-label="Korben voice core"
