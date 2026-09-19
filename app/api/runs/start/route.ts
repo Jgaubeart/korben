@@ -205,6 +205,72 @@ export async function POST(request: Request) {
     });
   }
 
+  let recentProjectContext: Array<{
+    objective: string;
+    task: string;
+    status: string;
+    summary: string;
+  }> = [];
+
+  const { data: recentObjectives } = await supabase
+    .from("objectives")
+    .select("id,title,created_at")
+    .eq("project_id", project.id)
+    .neq("id", objective.id)
+    .order("created_at", { ascending: false })
+    .limit(4);
+
+  const recentObjectiveIds = (recentObjectives || []).map((item: any) => item.id);
+
+  if (recentObjectiveIds.length) {
+    const { data: recentTasks } = await supabase
+      .from("tasks")
+      .select("id,objective_id,title,status,sequence")
+      .in("objective_id", recentObjectiveIds)
+      .order("sequence", { ascending: true });
+
+    const recentTaskIds = (recentTasks || []).map((item: any) => item.id);
+
+    if (recentTaskIds.length) {
+      const { data: recentRuns } = await supabase
+        .from("agent_runs")
+        .select("task_id,status,output,completed_at")
+        .in("task_id", recentTaskIds)
+        .order("completed_at", { ascending: false });
+
+      recentProjectContext = (recentTasks || [])
+        .map((item: any) => {
+          const matchingRun = (recentRuns || []).find(
+            (run: any) =>
+              run.task_id === item.id &&
+              run.output &&
+              typeof run.output === "object" &&
+              "summary" in run.output
+          );
+
+          if (!matchingRun) return null;
+
+          const parentObjective = (recentObjectives || []).find(
+            (candidate: any) => candidate.id === item.objective_id
+          );
+
+          return {
+            objective: String(parentObjective?.title || ""),
+            task: String(item.title || ""),
+            status: String(matchingRun.status || item.status || ""),
+            summary: String((matchingRun.output as any).summary || ""),
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 8) as Array<{
+          objective: string;
+          task: string;
+          status: string;
+          summary: string;
+        }>;
+    }
+  }
+
   const { data: permissionRows } = await supabase
     .from("agent_tool_permissions")
     .select(
@@ -377,6 +443,12 @@ export async function POST(request: Request) {
           16000
         )}`
       : "No earlier task outputs are available for this objective.",
+    recentProjectContext.length
+      ? `Recent outputs from related work in this same project. Use these to continue existing missions across objective boundaries. Reuse exact durable identifiers such as branch names, commit SHAs, PR numbers, file paths, and deployment URLs when clearly relevant, but re-verify mutable state before acting:\n${safeJson(
+          recentProjectContext,
+          24000
+        )}`
+      : "No recent cross-objective project context is available.",
     knowledgeContext
       ? `Shared knowledge retrieved before execution: ${safeJson(knowledgeContext, 16000)}`
       : "Shared knowledge search returned no additional context.",
