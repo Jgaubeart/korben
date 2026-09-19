@@ -1811,7 +1811,7 @@ export default function Home() {
           </button>
 
           <div className="korben-home-listening">
-            <strong>{voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "speaking" ? "Speaking" : "Listening"}</strong>
+            <strong>{voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "speaking" ? "Responding" : "Listening"}</strong>
             <span>{voiceMode ? "Just speak to Korben." : "Tap Korben and speak."}</span>
           </div>
 
