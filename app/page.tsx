@@ -1730,32 +1730,63 @@ export default function Home() {
     </button>
   );
 
-  const renderCommandCenter = () => (
-    <section className="calm-dashboard">
-      <div className="dashboard-atmosphere" aria-hidden="true">
-        <span className="mountain mountain-a" />
-        <span className="mountain mountain-b" />
-        <span className="mountain mountain-c" />
-        <span className="lake-haze" />
-      </div>
+  const renderCommandCenter = () => {
+    const pendingApprovalCount = approvals.filter((approval) => approval.status === "pending").length;
+    const visiblePriorities = priorityItems.slice(0, 4);
+    const visibleEvents = todayEvents.slice(0, 4);
+    const visibleCommunications = communicationItems.slice(0, 5);
+    const visibleProjects = (projects.length
+      ? projects.slice(0, 3).map((project, index) => ({
+          id: project.id,
+          name: project.name,
+          subtitle: project.slug.replaceAll("-", " "),
+          progress: [75, 60, 40][index] || 45,
+          status: ["On track", "In progress", "At risk"][index] || "Active",
+        }))
+      : [
+          { id: "kitchen", name: "Kitchen campaign", subtitle: "Launch a high-performing spring campaign", progress: 75, status: "On track" },
+          { id: "client", name: "Client portal", subtitle: "A more delightful client experience", progress: 60, status: "In progress" },
+          { id: "website", name: "Website refresh", subtitle: "Modernize our brand and content", progress: 40, status: "At risk" },
+        ]);
 
-      <div className="dashboard-header-row">
-        <div className="morning-copy">
-          <span className="dashboard-date">
-            {new Intl.DateTimeFormat("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            }).format(ambientClock)}
-          </span>
-          <h1>{getGreetingForHour(ambientClock.getHours())}, Jordan.</h1>
-          <p>Two key priorities, focused work ahead, and room to breathe later.</p>
+    return (
+      <section className="calm-dashboard command-v2">
+        <div className="command-v2-header">
+          <div className="command-v2-greeting">
+            <span className="dashboard-date">
+              {new Intl.DateTimeFormat("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              }).format(ambientClock)}
+            </span>
+            <h1>{getGreetingForHour(ambientClock.getHours())}, Jordan.</h1>
+            <p>Focus today. A bigger tomorrow.</p>
+          </div>
+
+          <div className="command-v2-meta">
+            <span className="system-online"><i />System online</span>
+            <span>{ambientClock.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+            <button className="quiet-icon" onClick={() => setCalmMode(true)} aria-label="Open focus mode">☼</button>
+            <button className="command-avatar" onClick={signOut} title="Sign out">J</button>
+          </div>
         </div>
 
-        <div className="dashboard-header-actions">
-          <label className="top-search">
-            <span>⌕</span>
+        <div className="command-v2-hero">
+          <div className="command-v2-orb">
+            {renderOrb()}
+          </div>
+          <div className="command-v2-flow">IDEAS <span>→</span> PLANS <span>→</span> ACTION <span>→</span> RESULTS</div>
+
+          <div className="command-v2-input-wrap">
+            <button
+              className={`command-v2-voice ${voiceMode ? "active" : ""}`}
+              onClick={toggleVoiceMode}
+              disabled={!speechSupported}
+              aria-label="Voice input"
+            >
+              ◉
+            </button>
             <input
               value={input}
               onChange={(event) => {
@@ -1765,214 +1796,105 @@ export default function Home() {
               onKeyDown={(event) => {
                 if (event.key === "Enter") void sendMessage();
               }}
-              placeholder="Ask Korben anything..."
+              placeholder="Ask, plan, or delegate anything..."
             />
-          </label>
-          <button className="header-icon" title="Notifications">●</button>
-          <div className="weather-chip">
-            <span className="sun-icon">☼</span>
-            <div><strong>78°</strong><small>Cape Coral, FL</small></div>
-          </div>
-          <button className="mode-switch" onClick={() => setCalmMode(true)}>
-            Calm mode
-          </button>
-        </div>
-      </div>
-
-      <div className="dashboard-grid">
-        <div className="dashboard-column left-column">
-          <article className="soft-card today-card">
-            <div className="soft-card-heading">
-              <div><h2>Today</h2><span>Most relevant moments</span></div>
-              <button>View Calendar →</button>
-            </div>
-            <div className="today-list">
-              {todayEvents.map(([time, label, kind]) => (
-                <div className="today-row" key={`${time}-${label}`}>
-                  <time>{time}</time>
-                  <span className={`event-dot ${kind}`} />
-                  <strong>{label}</strong>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="soft-card tasks-card">
-            <div className="soft-card-heading">
-              <div><h2>Tasks</h2><span>{dashboardCompleted}/{dashboardTasks.length} completed</span></div>
-              <button onClick={() => setActiveView("work")}>View All →</button>
-            </div>
-            <div className="task-progress"><span style={{ width: `${dashboardProgress}%` }} /></div>
-            <div className="calm-task-list">
-              {dashboardTasks.map((task) => (
-                <div className="calm-task-row" key={task.id}>
-                  <span className={`task-check ${task.status === "complete" ? "done" : ""}`}>
-                    {task.status === "complete" ? "✓" : ""}
-                  </span>
-                  <strong>{task.title}</strong>
-                  <small>{task.status === "complete" ? "Done" : task.status.replaceAll("_", " ")}</small>
-                </div>
-              ))}
-            </div>
-            <button className="agent-activity-link" onClick={() => setActiveView("network")}>
-              <span><i /> Agents active: {Math.max(workingAgentCount, currentTask ? 1 : 0)}</span>
-              <b>›</b>
+            <button
+              className="command-v2-send"
+              onClick={() => void sendMessage()}
+              disabled={!input.trim() || sending}
+              aria-label="Send"
+            >
+              {sending ? "…" : "↗"}
             </button>
-          </article>
-        </div>
+          </div>
 
-        <div className="dashboard-center">
-          {renderOrb()}
-          <div className="orb-context">
-            <strong>{compactStatus}</strong>
-            <span>{currentTask?.title || "Today’s brief nearly ready"}</span>
-            <span>{currentTask ? `Watching step ${currentTask.sequence}` : "Watching calendar changes"}</span>
+          <div className="command-v2-system-strip">
+            <button onClick={() => setActiveView("runs")}><span>⚙</span><strong>{Math.max(runEvents.length, 14)}</strong> automations <i /></button>
+            <button onClick={() => setActiveView("work")}><span>✓</span><strong>{pendingApprovalCount}</strong> approvals</button>
+            <button onClick={() => setActiveView("network")}><span>⌘</span><strong>{Math.max(workingAgentCount, currentTask ? 1 : 0)}</strong> agents active</button>
+            <button onClick={() => setActiveView("brain")}><span>▱</span>Knowledge synced <i /></button>
+            <button onClick={() => setActiveView("runs")}><span>⌁</span>System working quietly <b>›</b></button>
           </div>
         </div>
 
-        <div className="dashboard-column right-column">
-          <article className="soft-card priorities-card">
-            <div className="soft-card-heading">
-              <h2>Top Priorities</h2>
-              <button onClick={() => setActiveView("work")}>View All →</button>
+        <div className="command-v2-primary-grid">
+          <article className="command-v2-card priorities-panel">
+            <div className="command-v2-card-head">
+              <h2>Today’s priorities</h2>
+              <button onClick={() => setActiveView("work")}>View all&nbsp; →</button>
             </div>
-            <div className="priority-list">
-              {priorityItems.map(([title, meta], index) => (
-                <div className="priority-row" key={title}>
-                  <span className={`priority-number p${index + 1}`}>{index + 1}</span>
+            <div className="command-priority-list">
+              {visiblePriorities.map(([title, meta], index) => (
+                <button className="command-priority-row" key={title} onClick={() => setActiveView("work")}>
+                  <span className="priority-radio" />
                   <div><strong>{title}</strong><small>{meta}</small></div>
+                  <span className={`priority-chip priority-chip-${index}`}>{index === 0 ? "High" : index === 3 ? "Low" : "Medium"}</span>
                   <b>›</b>
-                </div>
+                </button>
               ))}
+              <button className="command-add-row" onClick={() => setActiveView("work")}><span>＋</span>Add a task</button>
             </div>
           </article>
 
-          <article className="soft-card communications-card">
-            <div className="soft-card-heading">
-              <h2>Communications</h2>
-              <button>View All →</button>
+          <article className="command-v2-card schedule-panel">
+            <div className="command-v2-card-head">
+              <h2>Today’s schedule</h2>
+              <button>View all&nbsp; →</button>
             </div>
-            <div className="communication-list">
-              {communicationItems.map(([name, subject, time, kind]) => (
-                <div className="communication-row" key={`${name}-${subject}`}>
-                  <span className={`communication-icon ${kind}`}>
-                    {kind === "mail" ? "M" : kind === "team" ? "T" : kind === "travel" ? "✈" : "●"}
-                  </span>
-                  <strong>{name}</strong>
-                  <span>{subject}</span>
+            <div className="command-schedule-list">
+              {visibleEvents.map(([time, label, kind], index) => (
+                <div className={`command-schedule-row ${index === 1 ? "active" : ""}`} key={`${time}-${label}`}>
+                  <span className="schedule-node" />
                   <time>{time}</time>
+                  <div><strong>{label}</strong><small>{kind === "focus" ? "Focus time · 2 hr" : "KORBEN · 30 min"}</small></div>
+                  {index === 1 && <b>›</b>}
                 </div>
               ))}
             </div>
           </article>
 
-          <article className="soft-card look-forward-card">
-            <div className="soft-card-heading">
-              <h2>Something to Look Forward To</h2>
-              <button>View All →</button>
+          <article className="command-v2-card communications-panel">
+            <div className="command-v2-card-head">
+              <h2>Communications</h2>
+              <button>View all&nbsp; →</button>
             </div>
-            <div className="look-forward-content">
-              <div className="look-forward-image" aria-hidden="true">
-                <span className="sunset" />
-                <span className="table-light t1" />
-                <span className="table-light t2" />
-                <span className="table-light t3" />
-              </div>
-              <div>
-                <strong>Dinner with Melissa</strong>
-                <small>Today · 7:00 PM</small>
-                <p>Good food, great company, a well-deserved evening.</p>
-              </div>
+            <div className="command-comms-list">
+              {visibleCommunications.map(([name, subject, time, kind], index) => (
+                <button className="command-comms-row" key={`${name}-${subject}`}>
+                  <span className="command-comms-avatar">{name.slice(0, 1)}</span>
+                  <span className={`command-comms-dot ${index < 2 ? "unread" : ""}`} />
+                  <div><strong>{name}</strong><small>{subject}</small></div>
+                  <time>{time}</time>
+                </button>
+              ))}
             </div>
           </article>
         </div>
-      </div>
 
-      <div className="dashboard-lower-grid">
-        <article className="soft-card ambient-mini-card agent-pulse-card">
-          <div className="soft-card-heading">
-            <div><h2>Agent Activity</h2><span>{Math.max(workingAgentCount, currentTask ? 1 : 0)} active now</span></div>
-            <button onClick={() => setActiveView("network")}>View →</button>
+        <div className="command-projects-section">
+          <div className="command-projects-head">
+            <h2>Active projects</h2>
+            <button onClick={() => setActiveView("work")}>View all&nbsp; →</button>
           </div>
-          <div className="mini-agent-list">
-            {(agents.length ? agents : [
-              { id: "research", name: "Research Agent", role: "Research", status: "active", system_key: "research" },
-              { id: "content", name: "Content Agent", role: "Content", status: "active", system_key: "content" },
-              { id: "ops", name: "Ops Agent", role: "Operations", status: "active", system_key: "ops" },
-            ]).slice(0, 3).map((agent) => (
-              <div className="mini-agent-row" key={agent.id}>
-                <span className="mini-agent-dot" />
-                <div><strong>{agent.name}</strong><small>{agent.id === currentAgent?.id ? currentTask?.title || "Working" : agent.role || "Standing by"}</small></div>
-              </div>
+          <div className="command-projects-row">
+            {visibleProjects.map((project, index) => (
+              <button className="command-project-tile" key={project.id} onClick={() => setActiveView("work")}>
+                <span className={`project-thumb project-thumb-${index + 1}`} />
+                <div className="project-tile-copy">
+                  <strong>{project.name}</strong>
+                  <small>{project.subtitle}</small>
+                  <div className="project-progress-line"><span style={{ width: `${project.progress}%` }} /></div>
+                </div>
+                <b>{project.progress}%</b>
+                <span className={`project-status ${project.status.toLowerCase().replaceAll(" ", "-")}`}>{project.status}</span>
+              </button>
             ))}
+            <button className="command-new-project" onClick={() => setActiveView("work")}><span>＋</span><small>New project</small></button>
           </div>
-        </article>
-
-        <article className="soft-card ambient-mini-card focus-pulse-card">
-          <div className="soft-card-heading">
-            <div><h2>Focus</h2><span>Deep work</span></div>
-            <button onClick={() => setActiveView("focus")}>{focusRunning ? "Open →" : "Start →"}</button>
-          </div>
-          <div className="focus-pulse-copy">
-            <strong>{focusRunning ? `${Math.floor(focusRemaining / 60)}:${String(focusRemaining % 60).padStart(2, "0")}` : "2:00:00"}</strong>
-            <span>{focusRunning ? focusGoal || "Focus session" : "Protect the next block of attention."}</span>
-          </div>
-          <div className="focus-pills"><span>No notifications</span><span>AI support on</span></div>
-        </article>
-
-        <article className="soft-card ambient-mini-card brief-pulse-card">
-          <div className="soft-card-heading">
-            <div><h2>Daily Brief</h2><span>What matters now</span></div>
-            <button onClick={() => setActiveView("work")}>View →</button>
-          </div>
-          <div className="brief-lines">
-            <span>✦ <strong>{Math.max(1, dashboardTasks.length - dashboardCompleted)} priorities moving forward</strong></span>
-            <span>▣ <strong>{approvals.filter((approval) => approval.status === "pending").length} approvals waiting</strong></span>
-            <span>○ <strong>{Math.max(workingAgentCount, currentTask ? 1 : 0)} agents in motion</strong></span>
-          </div>
-        </article>
-
-        <article className="soft-card ambient-mini-card personal-pulse-card">
-          <div className="soft-card-heading">
-            <div><h2>Personal Pulse</h2><span>Something beyond work</span></div>
-            <button>View →</button>
-          </div>
-          <div className="personal-pulse-copy">
-            <span className="personal-pulse-moon">◌</span>
-            <div><strong>Dinner with Melissa</strong><small>Today · 7:00 PM</small><p>A calm evening is already on the calendar.</p></div>
-          </div>
-        </article>
-      </div>
-
-      <div className="bottom-command-bar">
-        <button
-          className={`voice-command ${voiceMode ? "active" : ""}`}
-          onClick={toggleVoiceMode}
-          disabled={!speechSupported}
-          aria-label="Voice input"
-        >
-          ◉
-        </button>
-        <input
-          value={input}
-          onChange={(event) => {
-            setInput(event.target.value);
-            setInputMode("text");
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void sendMessage();
-          }}
-          placeholder="Ask Korben to do something..."
-        />
-        <button className="send-command" onClick={() => void sendMessage()} disabled={!input.trim() || sending}>
-          {sending ? "…" : "→"}
-        </button>
-        <button className="quick-command">▣ <span>Plan My Day</span></button>
-        <button className="quick-command">⌕ <span>Deep Research</span></button>
-        <button className="quick-command">＋ <span>Create</span></button>
-      </div>
-    </section>
-  );
+        </div>
+      </section>
+    );
+  };
 
   const renderCalmMode = () => (
     <section className="ambient-calm-mode">
@@ -2510,24 +2432,17 @@ export default function Home() {
         </button>
 
         <nav className="calm-nav">
-          <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>⌂</i><span>Home</span></button>
+          <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>⌂</i><span>Overview</span></button>
           <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}><i>☑</i><span>Tasks</span></button>
-          <button onClick={() => setActiveView("command")}><i>□</i><span>Calendar</span></button>
-          <button onClick={() => setActiveView("work")}><i>▱</i><span>Projects</span></button>
-          <button onClick={() => setActiveView("command")}><i>✉</i><span>Communications</span></button>
-          <button onClick={() => setActiveView("runs")}><i>▥</i><span>Finances</span></button>
-          <button onClick={() => setActiveView("focus")}><i>♡</i><span>Personal Life</span></button>
-          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>⌑</i><span>Knowledge</span></button>
+          <button onClick={() => setActiveView("work")}><i>□</i><span>Projects</span></button>
+          <button onClick={() => setActiveView("command")}><i>▣</i><span>Calendar</span></button>
+          <button onClick={() => setActiveView("command")}><i>▢</i><span>Communications</span></button>
+          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}><i>⌘</i><span>Agents</span></button>
 
           <span className="calm-nav-divider" />
 
-          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}><i>⌘</i><span>Agent Network</span></button>
-          <button onClick={() => setActiveView("network")}><i>⌘</i><span>Org Chart</span></button>
-          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>✧</i><span>Brain View</span></button>
-
-          <span className="calm-nav-divider" />
-
-          <button className={activeView === "runs" ? "active" : ""} onClick={() => setActiveView("runs")}><i>ϟ</i><span>Automations</span></button>
+          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>◇</i><span>Knowledge</span></button>
+          <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>▦</i><span>Integrations</span></button>
           <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>⚙</i><span>Settings</span></button>
         </nav>
 
