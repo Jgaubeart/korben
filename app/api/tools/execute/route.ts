@@ -199,7 +199,7 @@ async function executeGitHub(tool: string, action: string, params: Record<string
   throw new Error("Unsupported GitHub tool/action combination.");
 }
 
-async function vercelRequest(path: string) {
+async function vercelRequest(path: string, init?: RequestInit) {
   const token = process.env.KORBEN_VERCEL_TOKEN || process.env.VERCEL_TOKEN;
 
   if (!token) {
@@ -207,7 +207,12 @@ async function vercelRequest(path: string) {
   }
 
   const response = await fetch(`https://api.vercel.com${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
   });
 
   const payload = await response.json().catch(() => null);
@@ -253,6 +258,58 @@ async function executeVercel(action: string, params: Record<string, any>) {
   }
 
   throw new Error("Unsupported Vercel read action.");
+}
+
+async function executeVercelPreview(
+  project: {
+    name: string;
+    github_repo: string | null;
+    vercel_project_id: string | null;
+  },
+  params: Record<string, any>
+) {
+  if (!project.vercel_project_id) {
+    throw new Error("The selected project does not have a Vercel project configured.");
+  }
+
+  if (!project.github_repo || !project.github_repo.includes("/")) {
+    throw new Error("The selected project does not have a GitHub repository configured.");
+  }
+
+  const branch = String(params.branch || params.ref || "").trim();
+
+  if (!branch) {
+    throw new Error("A feature branch is required for a preview deployment.");
+  }
+
+  if (["main", "master"].includes(branch.toLowerCase())) {
+    throw new Error("Preview deployments must use a feature branch, not main or master.");
+  }
+
+  const [org, repo] = project.github_repo.split("/");
+  const teamId =
+    process.env.KORBEN_VERCEL_TEAM_ID ||
+    process.env.VERCEL_TEAM_ID ||
+    "";
+  const teamQuery = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
+
+  return vercelRequest(`/v13/deployments${teamQuery}`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: repo.toLowerCase(),
+      project: project.vercel_project_id,
+      gitSource: {
+        type: "github",
+        org,
+        repo,
+        ref: branch,
+      },
+      meta: {
+        source: "korben",
+        branch,
+      },
+    }),
+  });
 }
 
 async function executeSupabaseRead(
@@ -322,7 +379,7 @@ export async function POST(request: Request) {
 
   const { data: project } = await supabase
     .from("projects")
-    .select("id")
+    .select("id,name,github_repo,vercel_project_id")
     .eq("id", projectId)
     .maybeSingle();
 
@@ -417,9 +474,43 @@ export async function POST(request: Request) {
     let result: any;
 
     if (tool.startsWith("github.")) {
-      result = await executeGitHub(tool, action, params);
+      if (!project.github_repo) {
+        throw new Error("The selected project does not have a GitHub repository configured.");
+      }
+
+      const requestedRepo = params.repo ? String(params.repo) : project.github_repo;
+
+      if (requestedRepo.toLowerCase() !== project.github_repo.toLowerCase()) {
+        throw new Error("This agent cannot access a repository outside the selected project.");
+      }
+
+      result = await executeGitHub(tool, action, {
+        ...params,
+        repo: project.github_repo,
+      });
     } else if (tool === "vercel.read") {
-      result = await executeVercel(action, params);
+      if (!project.vercel_project_id) {
+        throw new Error("The selected project does not have a Vercel project configured.");
+      }
+
+      const requestedProject = String(
+        params.project_id || params.project || project.vercel_project_id
+      );
+
+      if (requestedProject !== project.vercel_project_id) {
+        throw new Error("This agent cannot access a Vercel project outside the selected project.");
+      }
+
+      result = await executeVercel(action, {
+        ...params,
+        project_id: project.vercel_project_id,
+      });
+    } else if (tool === "vercel.preview") {
+      if (action !== "deploy") {
+        throw new Error("Unsupported Vercel preview action.");
+      }
+
+      result = await executeVercelPreview(project, params);
     } else if (tool === "supabase.read") {
       result = await executeSupabaseRead(supabase, action, params);
     } else {
