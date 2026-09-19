@@ -310,7 +310,7 @@ export default function Home() {
     ],
   });
 
-  const ensureWorkspace = async () => {
+  const ensureWorkspace = async (): Promise<{ projectId: string; conversationId: string }> => {
     const { data: userData, error: userError } = await supabase.auth.getUser();
 
     if (userError || !userData.user) {
@@ -332,6 +332,10 @@ export default function Home() {
 
       resolvedProjectId = project.id;
       setProjectId(project.id);
+    }
+
+    if (!resolvedProjectId) {
+      throw new Error("Korben could not resolve the current project.");
     }
 
     let resolvedConversationId = conversationId;
@@ -364,7 +368,13 @@ export default function Home() {
         resolvedConversationId = createdConversation.id;
       }
 
-      setConversationId(resolvedConversationId);
+      if (resolvedConversationId) {
+        setConversationId(resolvedConversationId);
+      }
+    }
+
+    if (!resolvedConversationId) {
+      throw new Error("Korben could not resolve the current conversation.");
     }
 
     return {
