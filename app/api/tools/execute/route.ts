@@ -425,6 +425,130 @@ async function executeSupabaseWrite(
   throw new Error("Supabase L1 writes support only insert and update.");
 }
 
+async function executeKnowledgeSearch(
+  supabase: ReturnType<typeof serverSupabase>,
+  project: {
+    id: string;
+    business_id: string;
+    name: string;
+  },
+  params: Record<string, any>
+) {
+  const queryText = String(params.query || params.q || "").trim();
+  const limit = Math.min(Math.max(Number(params.limit || 8), 1), 20);
+
+  if (!queryText) {
+    throw new Error("A knowledge search query is required.");
+  }
+
+  const gbrainUrl = process.env.KORBEN_GBRAIN_URL;
+
+  if (gbrainUrl) {
+    try {
+      const response = await fetch(
+        `${gbrainUrl.replace(/\/$/, "")}/search`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(process.env.KORBEN_GBRAIN_TOKEN
+              ? { Authorization: `Bearer ${process.env.KORBEN_GBRAIN_TOKEN}` }
+              : {}),
+          },
+          body: JSON.stringify({
+            query: queryText,
+            project: project.name,
+            limit,
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        return {
+          provider: "gbrain",
+          results: result?.results || result,
+        };
+      }
+    } catch {
+      // Fall back to governed local knowledge below.
+    }
+  }
+
+  const { data: business, error: businessError } = await supabase
+    .from("businesses")
+    .select("organization_id")
+    .eq("id", project.business_id)
+    .single();
+
+  if (businessError || !business) {
+    throw new Error("Could not resolve the project knowledge scope.");
+  }
+
+  let knowledgeQuery: any = supabase
+    .from("knowledge_entries")
+    .select("id,entry_type,title,content,source_uri,status,tags,metadata,project_id,updated_at")
+    .eq("organization_id", business.organization_id)
+    .eq("status", "active")
+    .limit(250);
+
+  if (params.entry_type) {
+    knowledgeQuery = knowledgeQuery.eq("entry_type", String(params.entry_type));
+  }
+
+  const { data, error } = await knowledgeQuery;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const terms = queryText
+    .toLowerCase()
+    .split(/\s+/)
+    .map((term) => term.replace(/[^a-z0-9_-]/g, ""))
+    .filter((term) => term.length >= 2);
+
+  const ranked = (data || [])
+    .filter((entry: any) => !entry.project_id || entry.project_id === project.id)
+    .map((entry: any) => {
+      const title = String(entry.title || "").toLowerCase();
+      const content = String(entry.content || "").toLowerCase();
+      const tags = Array.isArray(entry.tags)
+        ? entry.tags.join(" ").toLowerCase()
+        : "";
+
+      let score = 0;
+
+      for (const term of terms) {
+        if (title.includes(term)) score += 5;
+        if (tags.includes(term)) score += 3;
+        if (content.includes(term)) score += 1;
+      }
+
+      return { ...entry, score };
+    })
+    .filter((entry: any) => entry.score > 0)
+    .sort((a: any, b: any) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry: any) => ({
+      id: entry.id,
+      entry_type: entry.entry_type,
+      title: entry.title,
+      excerpt:
+        String(entry.content || "").length > 1200
+          ? `${String(entry.content).slice(0, 1200)}…`
+          : entry.content,
+      source_uri: entry.source_uri,
+      tags: entry.tags,
+      score: entry.score,
+    }));
+
+  return {
+    provider: "korben_local",
+    results: ranked,
+  };
+}
+
 export async function POST(request: Request) {
   const token = bearerToken(request);
 
@@ -455,7 +579,7 @@ export async function POST(request: Request) {
 
   const { data: project } = await supabase
     .from("projects")
-    .select("id,name,github_repo,vercel_project_id")
+    .select("id,name,business_id,github_repo,vercel_project_id")
     .eq("id", projectId)
     .maybeSingle();
 
@@ -591,6 +715,11 @@ export async function POST(request: Request) {
       result = await executeSupabaseRead(supabase, action, params);
     } else if (tool === "supabase.write") {
       result = await executeSupabaseWrite(supabase, action, params);
+    } else if (tool === "knowledge.search") {
+      if (action !== "search") {
+        throw new Error("Unsupported knowledge action.");
+      }
+      result = await executeKnowledgeSearch(supabase, project, params);
     } else {
       throw new Error("This tool adapter is registered but not implemented yet.");
     }
