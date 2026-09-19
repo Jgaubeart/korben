@@ -1727,48 +1727,44 @@ export default function Home() {
       <span className="orb-inner-field">
         <svg className="spirit-wave-svg" viewBox="0 0 320 320" aria-hidden="true">
           <defs>
-            <linearGradient id="spiritWaveA" x1="0%" y1="20%" x2="100%" y2="80%">
-              <stop offset="0%" stopColor="rgba(255,242,205,0)" />
-              <stop offset="20%" stopColor="rgba(255,242,205,.88)" />
-              <stop offset="48%" stopColor="rgba(255,255,255,1)" />
-              <stop offset="72%" stopColor="rgba(176,242,226,.90)" />
+            <linearGradient id="spiritFillA" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,245,214,0)" />
+              <stop offset="18%" stopColor="rgba(255,245,214,.78)" />
+              <stop offset="48%" stopColor="rgba(255,255,255,.96)" />
+              <stop offset="74%" stopColor="rgba(176,242,226,.78)" />
               <stop offset="100%" stopColor="rgba(57,150,137,0)" />
             </linearGradient>
-            <linearGradient id="spiritWaveB" x1="100%" y1="0%" x2="0%" y2="100%">
+            <linearGradient id="spiritFillB" x1="100%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor="rgba(176,242,226,0)" />
-              <stop offset="24%" stopColor="rgba(176,242,226,.78)" />
-              <stop offset="52%" stopColor="rgba(255,255,255,.96)" />
-              <stop offset="78%" stopColor="rgba(255,242,205,.76)" />
-              <stop offset="100%" stopColor="rgba(255,242,205,0)" />
+              <stop offset="24%" stopColor="rgba(176,242,226,.68)" />
+              <stop offset="52%" stopColor="rgba(245,255,252,.90)" />
+              <stop offset="78%" stopColor="rgba(255,230,188,.64)" />
+              <stop offset="100%" stopColor="rgba(255,230,188,0)" />
             </linearGradient>
-            <linearGradient id="spiritWaveC" x1="12%" y1="100%" x2="88%" y2="0%">
-              <stop offset="0%" stopColor="rgba(88,196,179,0)" />
-              <stop offset="30%" stopColor="rgba(130,224,207,.64)" />
-              <stop offset="58%" stopColor="rgba(242,255,251,.92)" />
-              <stop offset="82%" stopColor="rgba(255,231,190,.68)" />
-              <stop offset="100%" stopColor="rgba(255,231,190,0)" />
+            <linearGradient id="spiritFillC" x1="15%" y1="100%" x2="85%" y2="0%">
+              <stop offset="0%" stopColor="rgba(83,193,176,0)" />
+              <stop offset="28%" stopColor="rgba(111,220,201,.55)" />
+              <stop offset="55%" stopColor="rgba(240,255,250,.78)" />
+              <stop offset="80%" stopColor="rgba(255,237,199,.54)" />
+              <stop offset="100%" stopColor="rgba(255,237,199,0)" />
             </linearGradient>
 
-            <filter id="spiritRibbonGlow" x="-70%" y="-70%" width="240%" height="240%">
-              <feGaussianBlur stdDeviation="2.8" result="soft" />
-              <feMerge>
-                <feMergeNode in="soft" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-
-            <filter id="spiritRibbonWarp" x="-70%" y="-70%" width="240%" height="240%">
-              <feTurbulence type="fractalNoise" baseFrequency=".012 .02" numOctaves="2" seed="7" result="noise" />
-              <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="B" result="warped" />
-              <feGaussianBlur in="warped" stdDeviation="1.5" result="softWarp" />
+            <filter id="spiritSheetWarp" x="-80%" y="-80%" width="260%" height="260%">
+              <feTurbulence type="fractalNoise" baseFrequency=".009 .015" numOctaves="2" seed="11" result="noise" />
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="10" xChannelSelector="R" yChannelSelector="B" result="warp" />
+              <feGaussianBlur in="warp" stdDeviation="1.15" result="softWarp" />
               <feMerge>
                 <feMergeNode in="softWarp" />
-                <feMergeNode in="warped" />
+                <feMergeNode in="warp" />
               </feMerge>
             </filter>
 
-            <filter id="spiritMistBlur" x="-70%" y="-70%" width="240%" height="240%">
-              <feGaussianBlur stdDeviation="17" />
+            <filter id="spiritSheetSoft" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="2.6" />
+            </filter>
+
+            <filter id="spiritMistBlur" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="18" />
             </filter>
 
             <clipPath id="spiritSphereClip">
@@ -1777,41 +1773,82 @@ export default function Home() {
           </defs>
 
           <g clipPath="url(#spiritSphereClip)" className="spirit-vortex">
-            <g className="spirit-flow flow-one" filter="url(#spiritRibbonWarp)">
-              <path d="M18 208 C58 155 90 105 139 119 C188 133 191 190 232 202 C268 213 293 188 308 156"
-                fill="none" stroke="url(#spiritWaveA)" strokeWidth="19" strokeLinecap="round" />
+            <g className="spirit-sheet sheet-a" filter="url(#spiritSheetWarp)">
+              <path
+                d="M24 215
+                   C66 164 94 116 133 108
+                   C172 100 194 123 216 146
+                   C241 172 264 182 301 165
+                   C276 206 249 231 214 236
+                   C177 241 153 219 131 195
+                   C105 167 79 168 48 189
+                   C36 197 29 206 24 215 Z"
+                fill="url(#spiritFillA)"
+              />
             </g>
 
-            <g className="spirit-flow flow-two" filter="url(#spiritRibbonGlow)">
-              <path d="M40 78 C92 83 119 102 137 144 C156 188 178 218 223 241 C260 260 291 250 308 222"
-                fill="none" stroke="url(#spiritWaveB)" strokeWidth="14" strokeLinecap="round" />
+            <g className="spirit-sheet sheet-b" filter="url(#spiritSheetWarp)">
+              <path
+                d="M58 79
+                   C104 83 132 100 149 132
+                   C168 167 177 210 214 237
+                   C241 257 268 259 294 242
+                   C279 273 248 290 216 286
+                   C174 281 153 250 138 216
+                   C119 173 102 148 70 129
+                   C47 116 38 99 58 79 Z"
+                fill="url(#spiritFillB)"
+              />
             </g>
 
-            <g className="spirit-flow flow-three" filter="url(#spiritRibbonWarp)">
-              <path d="M91 301 C99 245 117 209 153 181 C190 153 230 132 263 91 C283 66 294 42 296 18"
-                fill="none" stroke="url(#spiritWaveC)" strokeWidth="11" strokeLinecap="round" />
+            <g className="spirit-sheet sheet-c" filter="url(#spiritSheetSoft)">
+              <path
+                d="M95 298
+                   C101 247 118 210 153 180
+                   C184 153 218 132 244 103
+                   C263 82 278 53 281 23
+                   C301 62 299 99 283 127
+                   C263 161 227 184 196 207
+                   C163 232 145 262 139 299 Z"
+                fill="url(#spiritFillC)"
+                opacity=".74"
+              />
             </g>
 
-            <g className="spirit-flow flow-four" filter="url(#spiritRibbonGlow)">
-              <path d="M17 247 C66 230 96 197 120 158 C146 115 176 93 223 84 C258 78 288 84 307 101"
-                fill="none" stroke="url(#spiritWaveA)" strokeWidth="9" strokeLinecap="round" opacity=".76" />
+            <g className="spirit-sheet sheet-d" filter="url(#spiritSheetSoft)">
+              <path
+                d="M28 246
+                   C76 228 106 197 127 157
+                   C148 117 175 94 217 84
+                   C250 76 279 80 302 96
+                   C279 91 257 94 236 105
+                   C204 121 188 145 171 177
+                   C149 219 113 247 67 259
+                   C50 263 37 259 28 246 Z"
+                fill="url(#spiritFillA)"
+                opacity=".60"
+              />
             </g>
 
-            <g className="spirit-flow flow-five" filter="url(#spiritRibbonWarp)">
-              <path d="M126 18 C139 72 159 102 199 126 C240 151 269 177 286 223 C296 251 296 277 286 302"
-                fill="none" stroke="url(#spiritWaveB)" strokeWidth="7" strokeLinecap="round" opacity=".62" />
-            </g>
-
-            <g className="spirit-flow flow-six" filter="url(#spiritRibbonGlow)">
-              <path d="M20 132 C62 118 99 127 125 154 C151 181 165 213 204 226 C243 239 278 220 308 184"
-                fill="none" stroke="url(#spiritWaveC)" strokeWidth="5" strokeLinecap="round" opacity=".52" />
+            <g className="spirit-sheet sheet-e" filter="url(#spiritSheetWarp)">
+              <path
+                d="M124 20
+                   C137 69 156 101 191 123
+                   C225 145 252 171 269 207
+                   C282 235 287 269 279 300
+                   C263 265 247 241 221 221
+                   C184 193 166 167 153 132
+                   C141 98 132 62 124 20 Z"
+                fill="url(#spiritFillB)"
+                opacity=".50"
+              />
             </g>
 
             <g className="spirit-mist-svg" filter="url(#spiritMistBlur)">
-              <ellipse cx="92" cy="112" rx="82" ry="46" className="mist-blob blob-a" />
-              <ellipse cx="224" cy="204" rx="88" ry="52" className="mist-blob blob-b" />
-              <ellipse cx="174" cy="82" rx="62" ry="34" className="mist-blob blob-c" />
-              <ellipse cx="155" cy="218" rx="72" ry="38" className="mist-blob blob-d" />
+              <ellipse cx="90" cy="112" rx="86" ry="48" className="mist-blob blob-a" />
+              <ellipse cx="224" cy="204" rx="90" ry="54" className="mist-blob blob-b" />
+              <ellipse cx="174" cy="82" rx="64" ry="34" className="mist-blob blob-c" />
+              <ellipse cx="153" cy="225" rx="76" ry="40" className="mist-blob blob-d" />
             </g>
           </g>
         </svg>
