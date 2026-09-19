@@ -93,8 +93,15 @@ export function getAmbientState(date: Date): AmbientState {
 
   const dawnFade = clamp01((minute - (sunrise - 45)) / 45);
   const duskFade = 1 - clamp01((minute - sunset) / 45);
-  const sunVisible = isNight ? 0 : Math.min(dawnFade, duskFade);
-  const moonVisible = clamp01(isNight ? 1 : 0);
+  // Let the celestial bodies overlap softly through dawn and dusk instead of
+  // snapping from sun to moon at the exact night boundary.
+  const sunVisible = Math.min(dawnFade, duskFade);
+  const moonVisible =
+    minute >= sunset - 30
+      ? clamp01((minute - (sunset - 30)) / 60)
+      : minute < sunrise + 30
+        ? 1 - clamp01((minute - (sunrise - 30)) / 60)
+        : 0;
   const starOpacity = isNight
     ? minute >= sunset
       ? clamp01((minute - sunset) / 75)
