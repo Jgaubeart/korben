@@ -52,6 +52,7 @@ const riskByTool: Record<string, number> = {
   "vercel.preview": 1,
   "vercel.production": 3,
   "supabase.read": 0,
+  "supabase.write": 1,
   "supabase.sql": 1,
   "supabase.migration": 2,
   "openai.orchestrate": 0,
