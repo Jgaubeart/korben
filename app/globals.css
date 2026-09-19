@@ -1503,3 +1503,279 @@ button { color: inherit; }
   font-size: 7px;
   white-space: nowrap;
 }
+
+
+/* JARVIS-inspired Focus + Preflight */
+.focus-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+  gap: 14px;
+}
+
+.focus-console,
+.focus-card,
+.preflight-summary,
+.preflight-card {
+  border: 1px solid rgba(105,220,255,.085);
+  border-radius: 16px;
+  background: rgba(7,16,24,.66);
+}
+
+.focus-console {
+  min-height: 470px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.focus-clock {
+  margin: 20px 0 22px;
+  color: #dff9ff;
+  font-size: clamp(58px, 8vw, 104px);
+  font-weight: 300;
+  letter-spacing: -.055em;
+  text-shadow: 0 0 30px rgba(105,220,255,.12);
+}
+
+.focus-clock.running {
+  color: #eaffff;
+  text-shadow:
+    0 0 26px rgba(105,220,255,.24),
+    0 0 68px rgba(105,220,255,.08);
+}
+
+.focus-goal-input {
+  width: min(560px, 100%);
+  height: 46px;
+  padding: 0 15px;
+  border: 1px solid rgba(105,220,255,.12);
+  border-radius: 12px;
+  background: rgba(3,10,16,.72);
+  color: #dff7ff;
+  outline: none;
+  text-align: center;
+  font-size: 12px;
+}
+
+.focus-goal-input:focus {
+  border-color: rgba(105,220,255,.35);
+  box-shadow: 0 0 0 3px rgba(105,220,255,.05);
+}
+
+.focus-duration-row,
+.focus-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.focus-duration-row {
+  margin-top: 14px;
+}
+
+.focus-duration-row button,
+.focus-actions button,
+.preflight-run {
+  height: 36px;
+  padding: 0 13px;
+  border: 1px solid rgba(105,220,255,.11);
+  border-radius: 9px;
+  background: rgba(105,220,255,.035);
+  color: #769dab;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.focus-duration-row button.active,
+.focus-actions button.active {
+  border-color: rgba(105,220,255,.28);
+  background: rgba(105,220,255,.11);
+  color: #dff8ff;
+}
+
+.focus-actions {
+  margin-top: 18px;
+}
+
+.focus-actions .focus-start {
+  min-width: 150px;
+  border-color: rgba(111,240,204,.22);
+  background: rgba(111,240,204,.08);
+  color: #9df3d8;
+}
+
+.focus-actions .focus-stop {
+  border-color: rgba(255,134,134,.18);
+  background: rgba(255,134,134,.05);
+  color: #e8a4a4;
+}
+
+.focus-side {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.focus-card {
+  padding: 18px;
+  min-height: 160px;
+}
+
+.focus-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #d9f4fc;
+  font-size: 12px;
+}
+
+.focus-card p {
+  margin: 9px 0 0;
+  color: #5c7884;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.preflight-run {
+  min-width: 118px;
+  border-color: rgba(105,220,255,.2);
+  color: #b9e9f8;
+}
+
+.preflight-run:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.preflight-summary {
+  min-height: 86px;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+}
+
+.preflight-summary strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 15px;
+}
+
+.preflight-summary small {
+  color: #55737f;
+  font-size: 8px;
+  text-align: right;
+}
+
+.preflight-summary.healthy {
+  border-color: rgba(111,240,204,.18);
+  box-shadow: inset 3px 0 0 rgba(111,240,204,.55);
+}
+
+.preflight-summary.degraded {
+  border-color: rgba(239,199,127,.18);
+  box-shadow: inset 3px 0 0 rgba(239,199,127,.55);
+}
+
+.preflight-summary.error {
+  border-color: rgba(255,134,134,.2);
+  box-shadow: inset 3px 0 0 rgba(255,134,134,.58);
+}
+
+.preflight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.preflight-card {
+  min-height: 112px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.preflight-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #527481;
+  box-shadow: 0 0 10px rgba(82,116,129,.25);
+}
+
+.preflight-card.healthy .preflight-dot {
+  background: #72e7c4;
+  box-shadow: 0 0 12px rgba(114,231,196,.45);
+}
+
+.preflight-card.warning .preflight-dot,
+.preflight-card.not_configured .preflight-dot {
+  background: #efc77f;
+  box-shadow: 0 0 12px rgba(239,199,127,.35);
+}
+
+.preflight-card.error .preflight-dot {
+  background: #ff8686;
+  box-shadow: 0 0 12px rgba(255,134,134,.4);
+}
+
+.preflight-card strong,
+.preflight-card span {
+  display: block;
+}
+
+.preflight-card strong {
+  font-size: 10px;
+}
+
+.preflight-card span {
+  margin-top: 4px;
+  color: #4f6d79;
+  font-size: 7px;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+}
+
+.preflight-card p {
+  margin: 10px 0 0;
+  color: #5a7681;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+@media (max-width: 980px) {
+  .focus-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .preflight-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .preflight-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preflight-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .preflight-summary small {
+    text-align: left;
+  }
+
+  .focus-console {
+    min-height: 390px;
+    padding: 20px 14px;
+  }
+}
