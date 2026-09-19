@@ -34,16 +34,16 @@ export type AmbientState = {
 };
 
 export const AMBIENT_SCENES: AmbientSceneDefinition[] = [
-  { key: "pre-dawn", minute: 300, src: "/ambient/01-pre-dawn.webp", warmth: 0.12, brightness: 0.62 },
-  { key: "dawn", minute: 360, src: "/ambient/02-dawn.webp", warmth: 0.34, brightness: 0.76 },
-  { key: "sunrise", minute: 420, src: "/ambient/03-sunrise.webp", warmth: 0.72, brightness: 0.94 },
-  { key: "morning", minute: 540, src: "/ambient/04-morning.webp", warmth: 0.34, brightness: 1 },
-  { key: "noon", minute: 720, src: "/ambient/05-noon.webp", warmth: 0.16, brightness: 1.03 },
-  { key: "afternoon", minute: 900, src: "/ambient/06-afternoon.webp", warmth: 0.28, brightness: 1 },
-  { key: "golden-hour", minute: 1050, src: "/ambient/07-golden-hour.webp", warmth: 0.68, brightness: 0.94 },
-  { key: "sunset", minute: 1140, src: "/ambient/08-sunset.webp", warmth: 0.88, brightness: 0.84 },
-  { key: "blue-hour", minute: 1200, src: "/ambient/09-blue-hour.webp", warmth: 0.18, brightness: 0.68 },
-  { key: "night", minute: 1320, src: "/ambient/10-night.webp", warmth: 0.04, brightness: 0.5 },
+  { key: "pre-dawn", minute: 300, src: "/ambient/korben-mountain-bg.webp", warmth: 0.12, brightness: 0.62 },
+  { key: "dawn", minute: 360, src: "/ambient/korben-mountain-bg.webp", warmth: 0.34, brightness: 0.76 },
+  { key: "sunrise", minute: 420, src: "/ambient/korben-mountain-bg.webp", warmth: 0.72, brightness: 0.94 },
+  { key: "morning", minute: 540, src: "/ambient/korben-mountain-bg.webp", warmth: 0.34, brightness: 1 },
+  { key: "noon", minute: 720, src: "/ambient/korben-mountain-bg.webp", warmth: 0.16, brightness: 1.03 },
+  { key: "afternoon", minute: 900, src: "/ambient/korben-mountain-bg.webp", warmth: 0.28, brightness: 1 },
+  { key: "golden-hour", minute: 1050, src: "/ambient/korben-mountain-bg.webp", warmth: 0.68, brightness: 0.94 },
+  { key: "sunset", minute: 1140, src: "/ambient/korben-mountain-bg.webp", warmth: 0.88, brightness: 0.84 },
+  { key: "blue-hour", minute: 1200, src: "/ambient/korben-mountain-bg.webp", warmth: 0.18, brightness: 0.68 },
+  { key: "night", minute: 1320, src: "/ambient/korben-mountain-bg.webp", warmth: 0.04, brightness: 0.5 },
 ];
 
 const DAY_MINUTES = 24 * 60;
