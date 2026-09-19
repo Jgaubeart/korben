@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "build": "npm test && next build",
+    "start": "next start",
+    "test": "node --experimental-strip-types lib/approval-policy.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

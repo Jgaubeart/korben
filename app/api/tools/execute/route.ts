@@ -1,5 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import {
+  approvalAuthorizes,
+  approvalBinding,
+  classifyApproval,
+  type ProtectedAction,
+  type VerifiedEffects,
+} from "../../../../lib/approval-policy";
 
 type ToolRequest = {
   tool_system_key?: string;
@@ -10,20 +17,6 @@ type ToolRequest = {
   approval_id?: string | null;
   action?: string;
   params?: Record<string, any>;
-};
-
-const toolRisk: Record<string, number> = {
-  "github.read": 0,
-  "github.write": 1,
-  "github.pr": 1,
-  "github.merge": 2,
-  "vercel.read": 0,
-  "vercel.preview": 1,
-  "vercel.production": 3,
-  "supabase.read": 0,
-  "supabase.write": 1,
-  "supabase.sql": 1,
-  "supabase.migration": 2,
 };
 
 function serverSupabase(token: string) {
@@ -536,6 +529,71 @@ async function executeSupabaseWrite(
   throw new Error("Supabase L1 writes support only insert and update.");
 }
 
+async function verifyActionEffects(
+  project: { github_repo: string | null; vercel_project_id: string | null },
+  protectedAction: ProtectedAction
+): Promise<VerifiedEffects> {
+  const effects: VerifiedEffects = {
+    repository: project.github_repo || undefined,
+    vercelProjectId: project.vercel_project_id || undefined,
+  };
+
+  if (protectedAction.tool === "github.merge" && protectedAction.action === "merge") {
+    if (!project.github_repo || !project.github_repo.includes("/")) {
+      throw new Error("The selected project does not have a GitHub repository configured.");
+    }
+
+    const number = Number(protectedAction.params.number);
+    if (!Number.isFinite(number) || number <= 0) {
+      throw new Error("A pull request number is required.");
+    }
+
+    const [owner, name] = project.github_repo.split("/");
+    const pr = await githubRequest(`/repos/${owner}/${name}/pulls/${number}`);
+    const baseBranch = String(pr?.base?.ref || "");
+    const headSha = String(pr?.head?.sha || "");
+
+    if (!baseBranch || !headSha) {
+      throw new Error("Could not verify pull request target state.");
+    }
+
+    effects.baseBranch = baseBranch;
+    effects.targetBranch = baseBranch;
+    effects.pullRequestNumber = number;
+    effects.pullRequestHeadSha = headSha;
+    effects.productionDeploymentTriggered = Boolean(
+      project.vercel_project_id &&
+      ["main", "master"].includes(baseBranch.toLowerCase())
+    );
+  }
+
+  if (protectedAction.tool === "github.write") {
+    const branch = String(protectedAction.params.branch || "").trim();
+    if (branch) effects.targetBranch = branch;
+  }
+
+  if (protectedAction.tool === "github.pr" && protectedAction.action === "create") {
+    effects.baseBranch = String(protectedAction.params.base || "main");
+    effects.targetBranch = effects.baseBranch;
+  }
+
+  if (protectedAction.tool === "vercel.preview") {
+    effects.targetBranch =
+      String(protectedAction.params.branch || protectedAction.params.ref || "").trim() ||
+      undefined;
+  }
+
+  if (protectedAction.tool === "vercel.production") {
+    effects.productionDeploymentTriggered = true;
+  }
+
+  if (protectedAction.tool === "supabase.migration") {
+    effects.databaseMigration = true;
+  }
+
+  return effects;
+}
+
 async function executeKnowledgeSearch(
   supabase: ReturnType<typeof serverSupabase>,
   project: {
@@ -729,38 +787,91 @@ export async function POST(request: Request) {
     );
   }
 
-  const riskLevel = toolRisk[tool] ?? Number(toolRecord.risk_level ?? 3);
+  const effectiveParams: Record<string, any> = { ...params };
+  if (tool.startsWith("github.") && project.github_repo) effectiveParams.repo = project.github_repo;
+  if (tool.startsWith("vercel.") && project.vercel_project_id) effectiveParams.project_id = project.vercel_project_id;
 
-  if (riskLevel > permission.max_approval_level) {
+  const protectedAction: ProtectedAction = { tool, action, params: effectiveParams };
+  const verifiedEffects = await verifyActionEffects(project, protectedAction);
+  const requiredLevel = classifyApproval(protectedAction, verifiedEffects);
+  const requiredBinding = approvalBinding(protectedAction, verifiedEffects);
+
+  if (requiredLevel > permission.max_approval_level) {
     return NextResponse.json(
-      { error: "Agent permission does not cover this tool risk level." },
+      { error: "Agent permission does not cover the verified approval level.", required_level: requiredLevel },
       { status: 403 }
     );
   }
 
-  if (riskLevel >= 2) {
-    if (!body.approval_id) {
-      return NextResponse.json(
-        { error: "Explicit approval is required for this action." },
-        { status: 409 }
-      );
+  if (requiredLevel >= 2) {
+    if (!body.task_id) {
+      return NextResponse.json({ error: "Protected actions require a task-bound approval." }, { status: 403 });
     }
 
-    const { data: approval } = await supabase
-      .from("approvals")
-      .select("id,status,risk_level,task_id")
-      .eq("id", body.approval_id)
-      .maybeSingle();
+    let approval: any = null;
+    if (body.approval_id) {
+      const { data } = await supabase
+        .from("approvals")
+        .select("id,status,risk_level,task_id,request_payload")
+        .eq("id", body.approval_id)
+        .maybeSingle();
+      approval = data;
+    }
 
-    if (
-      !approval ||
-      approval.status !== "approved" ||
-      approval.risk_level < riskLevel ||
-      (body.task_id && approval.task_id !== body.task_id)
-    ) {
+    const storedBinding = String(approval?.request_payload?.approval_binding || "");
+    const authorized =
+      approval?.task_id === body.task_id &&
+      approvalAuthorizes(
+        {
+          level: Number(approval?.risk_level || 0) as 0 | 1 | 2 | 3,
+          binding: storedBinding,
+          status: String(approval?.status || ""),
+        },
+        protectedAction,
+        verifiedEffects
+      );
+
+    if (!authorized) {
+      const exactPayload = {
+        approval_binding: requiredBinding,
+        action: protectedAction,
+        verified_effects: verifiedEffects,
+      };
+
+      const { data: pendingApproval } = await supabase
+        .from("approvals")
+        .select("id")
+        .eq("task_id", body.task_id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (pendingApproval?.id) {
+        await supabase
+          .from("approvals")
+          .update({
+            action_type: `${tool}:${action}`,
+            risk_level: requiredLevel,
+            request_payload: exactPayload,
+          })
+          .eq("id", pendingApproval.id);
+      } else {
+        await supabase.from("approvals").insert({
+          task_id: body.task_id,
+          action_type: `${tool}:${action}`,
+          risk_level: requiredLevel,
+          status: "pending",
+          request_payload: exactPayload,
+        });
+      }
+
       return NextResponse.json(
-        { error: "The supplied approval does not authorize this action." },
-        { status: 403 }
+        {
+          error: "Exact approval is required for this action.",
+          approval_required: { required_level: requiredLevel, ...exactPayload },
+        },
+        { status: 409 }
       );
     }
   }
@@ -795,10 +906,7 @@ export async function POST(request: Request) {
         throw new Error("This agent cannot access a repository outside the selected project.");
       }
 
-      result = await executeGitHub(tool, action, {
-        ...params,
-        repo: project.github_repo,
-      });
+      result = await executeGitHub(tool, action, effectiveParams);
     } else if (tool === "vercel.read") {
       if (!project.vercel_project_id) {
         throw new Error("The selected project does not have a Vercel project configured.");
@@ -812,16 +920,13 @@ export async function POST(request: Request) {
         throw new Error("This agent cannot access a Vercel project outside the selected project.");
       }
 
-      result = await executeVercel(action, {
-        ...params,
-        project_id: project.vercel_project_id,
-      });
+      result = await executeVercel(action, effectiveParams);
     } else if (tool === "vercel.preview") {
       if (action !== "deploy") {
         throw new Error("Unsupported Vercel preview action.");
       }
 
-      result = await executeVercelPreview(project, params);
+      result = await executeVercelPreview(project, effectiveParams);
     } else if (tool === "supabase.read") {
       result = await executeSupabaseRead(supabase, action, params);
     } else if (tool === "supabase.write") {
