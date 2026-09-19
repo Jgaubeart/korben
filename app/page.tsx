@@ -41,9 +41,14 @@ type Task = {
   sequence: number;
 };
 
+const normalizeKorbenName = (value: string) =>
+  value.replace(/\bcorbin\b/gi, (match) =>
+    match[0] === match[0]?.toUpperCase() ? "Korben" : "korben"
+  );
+
 const fallbackGreeting: Message = {
   role: "assistant",
-  text: "Good morning. I’m ready to coordinate your Web Development team. What should we build?",
+  text: "Good morning. I’m Korben. What can I help you with today?",
 };
 
 export default function Home() {
@@ -86,7 +91,7 @@ export default function Home() {
       const { data: project } = await supabase
         .from("projects")
         .select("id,name")
-        .eq("slug", "cabinet-genies-portal")
+        .eq("slug", "general-workspace")
         .single();
 
       if (!project) {
@@ -214,7 +219,7 @@ export default function Home() {
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         transcript += event.results[i][0].transcript;
       }
-      setInput(transcript.trim());
+      setInput(normalizeKorbenName(transcript.trim()));
     };
 
     recognitionRef.current = recognition;
@@ -374,7 +379,7 @@ export default function Home() {
       const { data: project, error: projectError } = await supabase
         .from("projects")
         .select("id")
-        .eq("slug", "cabinet-genies-portal")
+        .eq("slug", "general-workspace")
         .single();
 
       if (projectError || !project) {
@@ -435,7 +440,7 @@ export default function Home() {
   };
 
   const sendMessage = async () => {
-    const text = input.trim();
+    const text = normalizeKorbenName(input.trim());
     if (!text || sending) return;
 
     setSending(true);
@@ -483,7 +488,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           request: text,
-          projectName: "Cabinet Genies Portal",
+          projectName: "General Workspace",
         }),
       });
 
@@ -725,10 +730,10 @@ export default function Home() {
           </div>
           <div className="top-actions">
             <div className="project-pill">
-              <span className="project-icon">CG</span>
+              <span className="project-icon">K</span>
               <div>
-                <small>Current project</small>
-                <strong>Cabinet Genies Portal</strong>
+                <small>Current workspace</small>
+                <strong>General Workspace</strong>
               </div>
               <span>⌄</span>
             </div>
