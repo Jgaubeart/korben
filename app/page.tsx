@@ -172,6 +172,62 @@ const toSpokenReply = (value: string) => {
   return `${words.slice(0, 45).join(" ")}…`;
 };
 
+const KORBEN_VOICE_STORAGE_KEY = "korben:voice-uri";
+
+const chooseKorbenVoice = (voices: SpeechSynthesisVoice[]) => {
+  if (!voices.length) return null;
+
+  const savedUri =
+    typeof window !== "undefined"
+      ? window.localStorage.getItem(KORBEN_VOICE_STORAGE_KEY)
+      : null;
+
+  const savedVoice = savedUri
+    ? voices.find((voice) => voice.voiceURI === savedUri)
+    : null;
+
+  const preferredVoice =
+    savedVoice ||
+    voices.find((voice) => /Google UK English Male/i.test(voice.name)) ||
+    voices.find((voice) => /Microsoft.*(Guy|Ryan|Mark|David)/i.test(voice.name)) ||
+    voices.find((voice) => /male/i.test(voice.name)) ||
+    voices.find((voice) => /^en(-|_)?US/i.test(voice.lang)) ||
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ||
+    null;
+
+  if (preferredVoice && typeof window !== "undefined") {
+    window.localStorage.setItem(KORBEN_VOICE_STORAGE_KEY, preferredVoice.voiceURI);
+  }
+
+  return preferredVoice;
+};
+
+const resolveKorbenVoice = async () => {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    return null;
+  }
+
+  const synth = window.speechSynthesis;
+  const immediate = chooseKorbenVoice(synth.getVoices());
+  if (immediate) return immediate;
+
+  return await new Promise<SpeechSynthesisVoice | null>((resolve) => {
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      synth.removeEventListener("voiceschanged", handleVoicesChanged);
+      resolve(chooseKorbenVoice(synth.getVoices()));
+    };
+
+    const handleVoicesChanged = () => finish();
+
+    synth.addEventListener("voiceschanged", handleVoicesChanged, { once: true });
+    window.setTimeout(finish, 900);
+  });
+};
+
 const fallbackGreeting: Message = {
   role: "assistant",
   text: "Good morning. I’m Korben. What can I help you with today?",
@@ -1484,12 +1540,7 @@ export default function Home() {
       utterance.rate = 0.98;
       utterance.pitch = 0.9;
 
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice =
-        voices.find((voice) => /Google UK English Male/i.test(voice.name)) ||
-        voices.find((voice) => /Microsoft.*(Guy|Ryan|Mark|David)/i.test(voice.name)) ||
-        voices.find((voice) => /male/i.test(voice.name)) ||
-        voices.find((voice) => voice.lang.startsWith("en"));
+      const preferredVoice = await resolveKorbenVoice();
 
       if (preferredVoice) {
         utterance.voice = preferredVoice;
