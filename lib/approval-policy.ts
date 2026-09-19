@@ -29,21 +29,52 @@ const stable = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
-const ordinaryWrite = new Set(["insert", "update"]);
-const readActions = new Set(["repo", "file", "branch", "pull_request", "select", "search"]);
+const readPairs = new Set([
+  "github.read:repo",
+  "github.read:file",
+  "github.read:branch",
+  "github.read:pull_request",
+  "github.read:commit",
+  "github.read:compare",
+  "github.read:workflow_runs",
+  "github.read:workflow_run",
+  "github.read:workflow_jobs",
+  "vercel.read:project",
+  "vercel.read:deployments",
+  "vercel.read:deployment",
+  "supabase.read:select",
+  "knowledge.search:search",
+]);
+
+const l1Pairs = new Set([
+  "github.write:create_branch",
+  "github.write:update_file",
+  "github.write:sync_branch",
+  "github.pr:create",
+  "vercel.preview:deploy",
+  "supabase.write:insert",
+  "supabase.write:update",
+]);
 
 export function classifyApproval(action: ProtectedAction, effects: VerifiedEffects): ApprovalLevel {
   if (effects.destructiveDataChange) return 3;
   if (action.tool === "vercel.production") return 3;
   if (action.tool === "github.merge" && effects.productionDeploymentTriggered) return 3;
-  if (effects.databaseMigration || effects.rlsOrPermissionChange || effects.protectedConfigurationChange || effects.infrastructureChange) return 2;
-  if (action.tool === "github.merge") return 2;
+
+  if (
+    effects.databaseMigration ||
+    effects.rlsOrPermissionChange ||
+    effects.protectedConfigurationChange ||
+    effects.infrastructureChange
+  ) return 2;
+
+  if (action.tool === "github.merge" && action.action === "merge") return 2;
   if (action.tool === "supabase.migration") return 2;
-  if (action.tool === "github.pr" && action.action === "create") return 1;
-  if (action.tool === "github.write") return 1;
-  if (action.tool === "vercel.preview") return 1;
-  if (action.tool === "supabase.write" && ordinaryWrite.has(action.action)) return 1;
-  if (readActions.has(action.action)) return 0;
+
+  const pair = action.tool + ":" + action.action;
+  if (l1Pairs.has(pair)) return 1;
+  if (readPairs.has(pair)) return 0;
+
   return 3;
 }
 

@@ -52,7 +52,7 @@ const TOOL_ACTION_GUIDE: Record<string, string> = {
   "github.pr":
     "Valid action: create only. Use this only to open a pull request; do not use it to list/read PRs.",
   "github.merge":
-    "Valid action: merge only. This is L2 and requires explicit approval.",
+    "Valid action: merge only. Runtime verification may escalate a merge to L3 when the verified target triggers production.",
   "vercel.read":
     "Valid actions: project, deployments, deployment.",
   "vercel.preview":
@@ -544,37 +544,16 @@ export async function POST(request: Request) {
           continue;
         }
 
-        const riskLevel = riskByTool[toolKey] ?? 3;
-        let approvalId: string | null = null;
+        const { data: latestApproved } = await supabase
+          .from("approvals")
+          .select("id,status,risk_level,request_payload,decided_at")
+          .eq("task_id", task.id)
+          .eq("status", "approved")
+          .order("decided_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (riskLevel >= 2) {
-          const { data: approval } = await supabase
-            .from("approvals")
-            .select("id,status,risk_level")
-            .eq("task_id", task.id)
-            .eq("status", "approved")
-            .gte("risk_level", riskLevel)
-            .order("decided_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          approvalId = approval?.id || null;
-
-          if (!approvalId) {
-            approvalBlocked = true;
-            await supabase.from("run_events").insert({
-              run_id: runId,
-              project_id: project.id,
-              task_id: task.id,
-              agent_id: agent.id,
-              event_type: "approval_required",
-              tool_system_key: toolKey,
-              status: "waiting_approval",
-              message: `${toolKey} requires L${riskLevel} approval`,
-              payload: { action },
-            });
-          }
-        }
+        const approvalId = latestApproved?.id || null;
 
         const toolResponse = await fetch(
           `${new URL(request.url).origin}/api/tools/execute`,
