@@ -5,15 +5,17 @@ Korben is a multi-agent operating system. The first department is Web Developmen
 ## Core loop
 
 1. User sends typed or voice input.
-2. Orchestrator converts the request into an objective.
-3. Product Manager clarifies requirements only when necessary.
-4. Architect creates the implementation plan.
-5. Orchestrator creates structured tasks and dependencies.
-6. Specialist agents execute tasks with approved tools.
-7. QA and Security review the work.
-8. DevOps produces a preview deployment.
-9. Owner approves production-impacting actions.
-10. Korben records the result, artifacts, decisions, and activity.
+2. Korben classifies the intent as conversation, question, work, action, or approval-required action.
+3. Conversation and question intents return directly without creating objectives or tasks.
+4. Work/action intents become an objective only when structured work is actually required.
+5. Korben routes tasks to specialist agents.
+6. Each agent may use only tools explicitly granted through the agent-tool permission registry.
+7. Tool calls are written to the run-event ledger.
+8. Level 2 and Level 3 actions require an approved approval record before the Tool Gateway will execute them.
+9. QA and Security review the work.
+10. DevOps produces a preview deployment.
+11. Owner approves production-impacting actions.
+12. Korben records results, artifacts, decisions, and activity.
 
 ## Input modes
 
@@ -48,3 +50,38 @@ All inputs enter the same conversation and orchestrator context.
 ## Data boundary
 
 Korben gets its own Supabase project. Cabinet Genies Portal remains a separate workload and data boundary.
+
+
+## Intent model
+
+- conversation — casual interaction; no work object
+- question — informational or analytical response; no work object
+- work — structured tasks, no immediate external side effect
+- action — external tool use at Level 0 or Level 1
+- approval — requested action requiring Level 2 or Level 3 approval
+
+## Tool Gateway
+
+Runtime tools are server-side only. Browser clients never receive provider credentials.
+
+The gateway validates:
+
+1. authenticated Supabase user
+2. accessible project
+3. agent identity
+4. agent-to-tool permission
+5. tool risk level
+6. approval record for Level 2/3 actions
+7. run-event logging before and after execution
+
+Initial adapters:
+
+- GitHub read/write/pull request/merge
+- Vercel read
+- Supabase read
+
+Registered next adapters:
+
+- Vercel preview/production
+- Supabase SQL/migrations
+- knowledge search (G-Brain / Obsidian)
