@@ -352,7 +352,10 @@ export async function POST(request: Request) {
     "Never attempt to bypass an approval boundary.",
     "GitHub writes must use a feature branch, never main or master.",
     "If a required tool is unavailable or an approval is required, clearly state the blocker and stop.",
-    "When the task is complete, return a concise completion summary including what changed and any remaining risk.",
+    "Recoverable exploratory misses such as a file path returning Not Found do not by themselves mean the task failed; continue if you can still satisfy the acceptance criteria.",
+    "Your final response MUST begin with exactly one status line: TASK_STATUS: COMPLETE, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED.",
+    "Use COMPLETE only when the acceptance criteria are satisfied. Use BLOCKED when required access, data, or approval is missing. Use FAILED when a non-recoverable execution error prevents completion.",
+    "After the status line, return a concise completion summary including what changed and any remaining risk.",
     "",
     `Project: ${project.name}`,
     `GitHub repo: ${project.github_repo || "not configured"}`,
@@ -391,6 +394,7 @@ export async function POST(request: Request) {
   let finalText = "";
   let approvalBlocked = false;
   let executionFailed = false;
+  let hadRecoverableToolFailure = false;
   const maxTurns = 8;
   const model =
     process.env.OPENAI_AGENT_MODEL ||
@@ -529,7 +533,7 @@ export async function POST(request: Request) {
           if (toolResponse.status === 409) {
             approvalBlocked = true;
           } else {
-            executionFailed = true;
+            hadRecoverableToolFailure = true;
           }
         }
 
@@ -547,17 +551,37 @@ export async function POST(request: Request) {
 
     if (!finalText) {
       finalText = approvalBlocked
-        ? "This task is waiting for approval before Korben can continue."
+        ? "TASK_STATUS: BLOCKED\nThis task is waiting for approval before Korben can continue."
         : executionFailed
-          ? "This task stopped because a required tool call failed."
-          : "The agent reached its turn limit before completing the task.";
+          ? "TASK_STATUS: FAILED\nThis task stopped because a required tool call failed."
+          : hadRecoverableToolFailure
+            ? "TASK_STATUS: FAILED\nThe agent encountered tool failures and did not produce a final task result."
+            : "TASK_STATUS: FAILED\nThe agent reached its turn limit before completing the task.";
+    }
+
+    const statusMatch = finalText.match(/^TASK_STATUS:\s*(COMPLETE|BLOCKED|FAILED)\s*\n?/i);
+    const declaredStatus = statusMatch?.[1]?.toUpperCase() || "";
+    const cleanedFinalText = statusMatch
+      ? finalText.slice(statusMatch[0].length).trim()
+      : finalText.trim();
+
+    if (statusMatch) {
+      finalText = cleanedFinalText || "Task completed.";
     }
 
     const finalStatus = approvalBlocked
       ? "waiting_approval"
-      : executionFailed
+      : declaredStatus === "BLOCKED"
         ? "error"
-        : "complete";
+        : declaredStatus === "FAILED"
+          ? "error"
+          : declaredStatus === "COMPLETE"
+            ? "complete"
+            : executionFailed
+              ? "error"
+              : hadRecoverableToolFailure
+                ? "error"
+                : "complete";
 
     await Promise.all([
       supabase
