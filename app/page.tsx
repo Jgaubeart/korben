@@ -157,6 +157,21 @@ const normalizeKorbenName = (value: string) =>
     match[0] === match[0]?.toUpperCase() ? "Korben" : "korben"
   );
 
+const toSpokenReply = (value: string) => {
+  const cleaned = value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\b[a-f0-9]{7,40}\b/gi, " ")
+    .replace(/[_/\\]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const words = cleaned.split(" ").filter(Boolean);
+  if (words.length <= 45) return cleaned;
+  return `${words.slice(0, 45).join(" ")}…`;
+};
+
 const fallbackGreeting: Message = {
   role: "assistant",
   text: "Good morning. I’m Korben. What can I help you with today?",
@@ -1172,18 +1187,11 @@ export default function Home() {
       (outcome) => outcome.status !== "complete"
     );
 
-    const reportHeader = blocked
-      ? `Korben stopped after ${completedCount} completed step${completedCount === 1 ? "" : "s"} in ${projectNameForReport}.`
-      : `Korben completed all ${completedCount} step${completedCount === 1 ? "" : "s"} in ${projectNameForReport}.`;
-
-    const reportBody = outcomes
-      .map(
-        (outcome) =>
-          `[${outcome.status.toUpperCase()}] ${outcome.title}\n${outcome.summary}`
-      )
-      .join("\n\n");
-
-    const completionReport = `${reportHeader}\n\n${reportBody}`.trim();
+    const completionReport = blocked
+      ? blocked.status === "awaiting_approval"
+        ? `I finished ${completedCount} step${completedCount === 1 ? "" : "s"} and need your approval before I continue. You can review it in Tasks.`
+        : `I finished ${completedCount} step${completedCount === 1 ? "" : "s"}, but I hit a problem with ${blocked.title}. I left the details in Tasks so you can see exactly what happened.`
+      : `Done. I completed all ${completedCount} step${completedCount === 1 ? "" : "s"} in ${projectNameForReport}.`;
 
     setMessages((current) => [
       ...current,
@@ -1471,8 +1479,9 @@ export default function Home() {
       setVoiceState("speaking");
       window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(reply);
-      utterance.rate = 0.96;
+      const spokenReply = toSpokenReply(reply);
+      const utterance = new SpeechSynthesisUtterance(spokenReply);
+      utterance.rate = 0.98;
       utterance.pitch = 0.9;
 
       const voices = window.speechSynthesis.getVoices();
@@ -1740,6 +1749,9 @@ export default function Home() {
     </button>
   );
 
+  const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
+  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+
   const renderCommandCenter = () => {
     const pendingApprovalCount = approvals.filter((approval) => approval.status === "pending").length;
     const homeStatus = pendingApprovalCount
@@ -1803,6 +1815,21 @@ export default function Home() {
             <strong>{voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "speaking" ? "Speaking" : "Listening"}</strong>
             <span>{voiceMode ? "Just speak to Korben." : "Tap Korben and speak."}</span>
           </div>
+
+          {latestUserMessage && (
+            <div className="korben-live-transcript" aria-live="polite">
+              <div className="transcript-line user">
+                <span>You</span>
+                <p>{latestUserMessage.text}</p>
+              </div>
+              {latestAssistantMessage && (
+                <div className="transcript-line assistant">
+                  <span>Korben</span>
+                  <p>{latestAssistantMessage.text}</p>
+                </div>
+              )}
+            </div>
+          )}
 
           <button className="quiet-status" onClick={() => setActiveView(pendingApprovalCount ? "work" : "runs")}>
             <i className={pendingApprovalCount ? "attention" : ""} />

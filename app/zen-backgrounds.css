@@ -478,3 +478,70 @@ body {
     display: none;
   }
 }
+
+
+/* Live conversation transcript: visible, quiet, and intentionally secondary to Korben. */
+.korben-live-transcript {
+  width: min(620px, 72vw);
+  margin-top: 22px;
+  padding: 12px 16px;
+  border: 1px solid var(--korben-line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--korben-surface) 74%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  text-align: left;
+  box-shadow: 0 10px 32px rgba(42, 50, 45, .045);
+}
+
+.transcript-line {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.transcript-line + .transcript-line {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--korben-line);
+}
+
+.transcript-line span {
+  padding-top: 2px;
+  color: var(--korben-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.transcript-line.assistant span {
+  color: var(--korben-gold);
+}
+
+.transcript-line p {
+  margin: 0;
+  color: var(--korben-text);
+  font-size: 12px;
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.korben-live-transcript + .quiet-status {
+  margin-top: 15px;
+}
+
+@media (max-width: 760px) {
+  .korben-live-transcript {
+    width: min(92vw, 620px);
+    padding: 11px 13px;
+  }
+
+  .transcript-line {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+}
