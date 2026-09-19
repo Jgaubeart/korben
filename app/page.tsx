@@ -1727,83 +1727,91 @@ export default function Home() {
       <span className="orb-inner-field">
         <svg className="spirit-wave-svg" viewBox="0 0 320 320" aria-hidden="true">
           <defs>
-            <linearGradient id="spiritWaveA" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="rgba(255,242,205,.05)" />
-              <stop offset="24%" stopColor="rgba(255,242,205,.92)" />
-              <stop offset="52%" stopColor="rgba(255,255,255,.98)" />
-              <stop offset="74%" stopColor="rgba(176,242,226,.86)" />
-              <stop offset="100%" stopColor="rgba(57,150,137,.06)" />
+            <linearGradient id="spiritWaveA" x1="0%" y1="20%" x2="100%" y2="80%">
+              <stop offset="0%" stopColor="rgba(255,242,205,0)" />
+              <stop offset="20%" stopColor="rgba(255,242,205,.88)" />
+              <stop offset="48%" stopColor="rgba(255,255,255,1)" />
+              <stop offset="72%" stopColor="rgba(176,242,226,.90)" />
+              <stop offset="100%" stopColor="rgba(57,150,137,0)" />
             </linearGradient>
             <linearGradient id="spiritWaveB" x1="100%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="rgba(176,242,226,.02)" />
-              <stop offset="28%" stopColor="rgba(176,242,226,.72)" />
-              <stop offset="55%" stopColor="rgba(255,255,255,.82)" />
-              <stop offset="78%" stopColor="rgba(255,242,205,.68)" />
-              <stop offset="100%" stopColor="rgba(255,242,205,.02)" />
+              <stop offset="0%" stopColor="rgba(176,242,226,0)" />
+              <stop offset="24%" stopColor="rgba(176,242,226,.78)" />
+              <stop offset="52%" stopColor="rgba(255,255,255,.96)" />
+              <stop offset="78%" stopColor="rgba(255,242,205,.76)" />
+              <stop offset="100%" stopColor="rgba(255,242,205,0)" />
             </linearGradient>
-            <filter id="spiritSoftGlow" x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur stdDeviation="3.4" result="blur" />
+            <linearGradient id="spiritWaveC" x1="12%" y1="100%" x2="88%" y2="0%">
+              <stop offset="0%" stopColor="rgba(88,196,179,0)" />
+              <stop offset="30%" stopColor="rgba(130,224,207,.64)" />
+              <stop offset="58%" stopColor="rgba(242,255,251,.92)" />
+              <stop offset="82%" stopColor="rgba(255,231,190,.68)" />
+              <stop offset="100%" stopColor="rgba(255,231,190,0)" />
+            </linearGradient>
+
+            <filter id="spiritRibbonGlow" x="-70%" y="-70%" width="240%" height="240%">
+              <feGaussianBlur stdDeviation="2.8" result="soft" />
               <feMerge>
-                <feMergeNode in="blur" />
+                <feMergeNode in="soft" />
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
-            <filter id="spiritMistBlur" x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur stdDeviation="14" />
+
+            <filter id="spiritRibbonWarp" x="-70%" y="-70%" width="240%" height="240%">
+              <feTurbulence type="fractalNoise" baseFrequency=".012 .02" numOctaves="2" seed="7" result="noise" />
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="B" result="warped" />
+              <feGaussianBlur in="warped" stdDeviation="1.5" result="softWarp" />
+              <feMerge>
+                <feMergeNode in="softWarp" />
+                <feMergeNode in="warped" />
+              </feMerge>
             </filter>
+
+            <filter id="spiritMistBlur" x="-70%" y="-70%" width="240%" height="240%">
+              <feGaussianBlur stdDeviation="17" />
+            </filter>
+
             <clipPath id="spiritSphereClip">
               <circle cx="160" cy="160" r="147" />
             </clipPath>
           </defs>
 
           <g clipPath="url(#spiritSphereClip)" className="spirit-vortex">
-            <g className="spirit-ribbon ribbon-a">
-              <path
-                d="M35 170 C55 82 145 57 220 86 C292 114 294 197 235 239 C176 282 92 260 60 213"
-                fill="none"
-                stroke="url(#spiritWaveA)"
-                strokeWidth="18"
-                strokeLinecap="round"
-                filter="url(#spiritSoftGlow)"
-              />
+            <g className="spirit-flow flow-one" filter="url(#spiritRibbonWarp)">
+              <path d="M18 208 C58 155 90 105 139 119 C188 133 191 190 232 202 C268 213 293 188 308 156"
+                fill="none" stroke="url(#spiritWaveA)" strokeWidth="19" strokeLinecap="round" />
             </g>
-            <g className="spirit-ribbon ribbon-b">
-              <path
-                d="M75 77 C154 34 252 72 277 147 C299 215 246 279 170 278 C90 277 38 216 49 151"
-                fill="none"
-                stroke="url(#spiritWaveB)"
-                strokeWidth="13"
-                strokeLinecap="round"
-                filter="url(#spiritSoftGlow)"
-              />
+
+            <g className="spirit-flow flow-two" filter="url(#spiritRibbonGlow)">
+              <path d="M40 78 C92 83 119 102 137 144 C156 188 178 218 223 241 C260 260 291 250 308 222"
+                fill="none" stroke="url(#spiritWaveB)" strokeWidth="14" strokeLinecap="round" />
             </g>
-            <g className="spirit-ribbon ribbon-c">
-              <path
-                d="M48 208 C87 275 184 300 254 245 C322 192 297 98 226 57 C160 19 77 56 48 122"
-                fill="none"
-                stroke="url(#spiritWaveA)"
-                strokeWidth="9"
-                strokeLinecap="round"
-                opacity=".74"
-                filter="url(#spiritSoftGlow)"
-              />
+
+            <g className="spirit-flow flow-three" filter="url(#spiritRibbonWarp)">
+              <path d="M91 301 C99 245 117 209 153 181 C190 153 230 132 263 91 C283 66 294 42 296 18"
+                fill="none" stroke="url(#spiritWaveC)" strokeWidth="11" strokeLinecap="round" />
             </g>
-            <g className="spirit-ribbon ribbon-d">
-              <path
-                d="M105 43 C40 89 32 186 83 246 C135 307 234 289 275 220 C314 154 280 72 209 42"
-                fill="none"
-                stroke="url(#spiritWaveB)"
-                strokeWidth="7"
-                strokeLinecap="round"
-                opacity=".52"
-                filter="url(#spiritSoftGlow)"
-              />
+
+            <g className="spirit-flow flow-four" filter="url(#spiritRibbonGlow)">
+              <path d="M17 247 C66 230 96 197 120 158 C146 115 176 93 223 84 C258 78 288 84 307 101"
+                fill="none" stroke="url(#spiritWaveA)" strokeWidth="9" strokeLinecap="round" opacity=".76" />
+            </g>
+
+            <g className="spirit-flow flow-five" filter="url(#spiritRibbonWarp)">
+              <path d="M126 18 C139 72 159 102 199 126 C240 151 269 177 286 223 C296 251 296 277 286 302"
+                fill="none" stroke="url(#spiritWaveB)" strokeWidth="7" strokeLinecap="round" opacity=".62" />
+            </g>
+
+            <g className="spirit-flow flow-six" filter="url(#spiritRibbonGlow)">
+              <path d="M20 132 C62 118 99 127 125 154 C151 181 165 213 204 226 C243 239 278 220 308 184"
+                fill="none" stroke="url(#spiritWaveC)" strokeWidth="5" strokeLinecap="round" opacity=".52" />
             </g>
 
             <g className="spirit-mist-svg" filter="url(#spiritMistBlur)">
-              <ellipse cx="98" cy="112" rx="72" ry="42" className="mist-blob blob-a" />
-              <ellipse cx="222" cy="203" rx="82" ry="48" className="mist-blob blob-b" />
-              <ellipse cx="175" cy="78" rx="58" ry="30" className="mist-blob blob-c" />
+              <ellipse cx="92" cy="112" rx="82" ry="46" className="mist-blob blob-a" />
+              <ellipse cx="224" cy="204" rx="88" ry="52" className="mist-blob blob-b" />
+              <ellipse cx="174" cy="82" rx="62" ry="34" className="mist-blob blob-c" />
+              <ellipse cx="155" cy="218" rx="72" ry="38" className="mist-blob blob-d" />
             </g>
           </g>
         </svg>
