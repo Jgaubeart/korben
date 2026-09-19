@@ -952,9 +952,6 @@ export default function Home() {
             <span className="voice-primary-dot" />
             {voiceMode ? "Voice online" : "Activate voice"}
           </button>
-          <button className="voice-secondary" onClick={beginListening} disabled={!speechSupported || sending}>
-            Talk now
-          </button>
         </div>
 
         <div className="command-input">
