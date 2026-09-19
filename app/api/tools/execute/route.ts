@@ -21,6 +21,7 @@ const toolRisk: Record<string, number> = {
   "vercel.preview": 1,
   "vercel.production": 3,
   "supabase.read": 0,
+  "supabase.write": 1,
   "supabase.sql": 1,
   "supabase.migration": 2,
 };
@@ -349,6 +350,81 @@ async function executeSupabaseRead(
   return data;
 }
 
+async function executeSupabaseWrite(
+  supabase: ReturnType<typeof serverSupabase>,
+  action: string,
+  params: Record<string, any>
+) {
+  const table = String(params.table || "");
+
+  if (!/^[a-zA-Z0-9_]+$/.test(table)) {
+    throw new Error("A valid table name is required.");
+  }
+
+  const protectedTables = new Set([
+    "organizations",
+    "organization_memberships",
+    "agents",
+    "tools",
+    "agent_tool_permissions",
+    "approvals",
+  ]);
+
+  if (protectedTables.has(table)) {
+    throw new Error("This table is protected from L1 data writes.");
+  }
+
+  if (action === "insert") {
+    const rows = Array.isArray(params.rows)
+      ? params.rows
+      : params.row
+        ? [params.row]
+        : [];
+
+    if (!rows.length || rows.length > 20) {
+      throw new Error("Insert requires between 1 and 20 rows.");
+    }
+
+    const { data, error } = await supabase
+      .from(table)
+      .insert(rows)
+      .select();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  if (action === "update") {
+    const id = String(params.id || "").trim();
+    const values = params.values;
+
+    if (!id || !values || typeof values !== "object" || Array.isArray(values)) {
+      throw new Error("Update requires a specific row id and values object.");
+    }
+
+    if ("id" in values) {
+      throw new Error("Primary key changes are not permitted.");
+    }
+
+    const { data, error } = await supabase
+      .from(table)
+      .update(values)
+      .eq("id", id)
+      .select();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  throw new Error("Supabase L1 writes support only insert and update.");
+}
+
 export async function POST(request: Request) {
   const token = bearerToken(request);
 
@@ -513,6 +589,8 @@ export async function POST(request: Request) {
       result = await executeVercelPreview(project, params);
     } else if (tool === "supabase.read") {
       result = await executeSupabaseRead(supabase, action, params);
+    } else if (tool === "supabase.write") {
+      result = await executeSupabaseWrite(supabase, action, params);
     } else {
       throw new Error("This tool adapter is registered but not implemented yet.");
     }
