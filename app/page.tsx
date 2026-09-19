@@ -1251,6 +1251,10 @@ export default function Home() {
             github_repo: project.github_repo,
             vercel_project_id: project.vercel_project_id,
           })),
+          recentMessages: messages.slice(-12).map((message) => ({
+            role: message.role,
+            content: message.text,
+          })),
         }),
       });
 
