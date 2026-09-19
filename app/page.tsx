@@ -2222,6 +2222,92 @@ export default function Home() {
     </section>
   );
 
+  const renderBrainGalaxy = () => {
+    const galaxyEntries = knowledgeEntries.slice(0, 24);
+    const centerX = 50;
+    const centerY = 47;
+
+    return (
+      <section className="os-view brain-galaxy-view">
+        <div className="view-heading">
+          <div>
+            <span className="eyebrow">LIVING KNOWLEDGE GRAPH</span>
+            <h1>Brain Galaxy</h1>
+            <p>Korben’s shared Brain rendered as an active constellation of SOPs, facts, decisions, memories and project knowledge.</p>
+          </div>
+          <div className="metric-strip">
+            <div><strong>{knowledgeEntries.length}</strong><span>Entries</span></div>
+            <div><strong>{knowledgeSources.length}</strong><span>Sources</span></div>
+            <div><strong>{agents.length}</strong><span>Readers</span></div>
+          </div>
+        </div>
+
+        <div className="brain-galaxy">
+          <div className="galaxy-grid" />
+          <div className="galaxy-haze haze-a" />
+          <div className="galaxy-haze haze-b" />
+          <svg className="galaxy-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {galaxyEntries.map((entry, index) => {
+              const angle = (index / Math.max(galaxyEntries.length, 1)) * Math.PI * 2;
+              const radius = 20 + (index % 4) * 6;
+              const x = centerX + Math.cos(angle) * radius;
+              const y = centerY + Math.sin(angle) * radius * .72;
+              return (
+                <line
+                  key={entry.id}
+                  x1={centerX}
+                  y1={centerY}
+                  x2={x}
+                  y2={y}
+                  className={`galaxy-link ${entry.entry_type}`}
+                />
+              );
+            })}
+          </svg>
+
+          <button className="galaxy-core" onClick={() => setActiveView("command")}>
+            <span>K</span>
+            <strong>KORBEN BRAIN</strong>
+            <small>{knowledgeEntries.length} active entries</small>
+          </button>
+
+          {galaxyEntries.map((entry, index) => {
+            const angle = (index / Math.max(galaxyEntries.length, 1)) * Math.PI * 2;
+            const radius = 20 + (index % 4) * 6;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius * .72;
+
+            return (
+              <article
+                key={entry.id}
+                className={`galaxy-node ${entry.entry_type}`}
+                style={{
+                  left: `${x}%`,
+                  top: `${y}%`,
+                  "--delay": `${index * -.17}s`,
+                } as React.CSSProperties}
+                title={entry.title}
+              >
+                <span className="galaxy-node-dot" />
+                <div className="galaxy-node-card">
+                  <small>{entry.entry_type.toUpperCase()}</small>
+                  <strong>{entry.title}</strong>
+                  <p>{entry.content.length > 120 ? `${entry.content.slice(0, 120)}…` : entry.content}</p>
+                </div>
+              </article>
+            );
+          })}
+
+          <div className="galaxy-legend">
+            {["sop", "fact", "decision", "memory", "document"].map((type) => (
+              <span key={type} className={type}><i />{type}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
   const renderKnowledgeView = () => {
     const content = {
       brain: {
@@ -2363,7 +2449,8 @@ export default function Home() {
         {activeView === "runs" && renderRuns()}
         {activeView === "focus" && renderFocus()}
         {activeView === "preflight" && renderPreflight()}
-        {["brain", "sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
+        {activeView === "brain" && renderBrainGalaxy()}
+        {["sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
       </div>
     </main>
   );
