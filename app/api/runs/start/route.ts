@@ -46,7 +46,7 @@ function safeJson(value: any, max = 30000) {
 
 const TOOL_ACTION_GUIDE: Record<string, string> = {
   "github.read":
-    "Valid actions: repo, file, branch, pull_request. Never use list/create/update/merge here.",
+    "Valid actions: repo, file, branch, pull_request, commit, compare. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Never use create/update/merge here.",
   "github.write":
     "Valid actions: create_branch, update_file. All writes must be on a feature branch, never main/master.",
   "github.pr":
@@ -329,7 +329,7 @@ export async function POST(request: Request) {
               action: {
                 type: "string",
                 description:
-                  "Provider action. Examples: repo, file, branch, pull_request, create_branch, update_file, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
+                  "Provider action. Examples: repo, file, branch, pull_request, commit, compare, create_branch, update_file, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
               },
               params_json: {
                 type: "string",
