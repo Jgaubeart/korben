@@ -14,6 +14,7 @@ type WorkMessage = {
   resume_task_id?: string | null;
   target_task_id?: string | null;
   enqueued_at?: string;
+  wait_attempt?: number;
 };
 
 type TaskRow = {
@@ -216,6 +217,29 @@ async function queueTask(
   );
 }
 
+async function queueWaitingTask(
+  objectiveId: string,
+  taskId: string,
+  message: WorkMessage,
+  waitAttempt: number
+) {
+  await send(
+    "korben-work",
+    {
+      ...message,
+      target_task_id: taskId,
+      reason: `waiting-external:${waitAttempt}`,
+      wait_attempt: waitAttempt,
+      enqueued_at: new Date().toISOString(),
+    },
+    {
+      idempotencyKey: `objective:${objectiveId}:task:${taskId}:waiting:${waitAttempt}`,
+      delaySeconds: 30,
+      retentionSeconds: 604800,
+    }
+  );
+}
+
 async function queueCoordinator(
   objectiveId: string,
   completedTaskId: string,
@@ -388,7 +412,7 @@ export const POST = handleCallback(async (rawMessage) => {
       return;
     }
 
-    if (!["queued", "awaiting_approval"].includes(task.status)) {
+    if (!["queued", "awaiting_approval", "waiting"].includes(task.status)) {
       return;
     }
 
@@ -454,7 +478,7 @@ export const POST = handleCallback(async (rawMessage) => {
         last_heartbeat_at: now,
       })
       .eq("id", task.id)
-      .in("status", ["queued", "awaiting_approval"])
+      .in("status", ["queued", "awaiting_approval", "waiting"])
       .select("id")
       .maybeSingle();
 
@@ -488,6 +512,63 @@ export const POST = handleCallback(async (rawMessage) => {
         .eq("id", task.id);
 
       throw new Error("Background worker authentication expired.");
+    }
+
+    if (result.status === "waiting_external") {
+      const waitAttempt = Number(message.wait_attempt || 0) + 1;
+
+      if (waitAttempt > 20) {
+        const timeoutSummary =
+          result.summary ||
+          "The external dependency did not become ready within the automatic retry window.";
+
+        await Promise.all([
+          supabase
+            .from("tasks")
+            .update({
+              status: "blocked",
+              progress_message: `Blocked · external wait timed out · ${timeoutSummary.slice(0, 180)}`,
+              result_summary: timeoutSummary,
+              completed_at: new Date().toISOString(),
+              last_heartbeat_at: new Date().toISOString(),
+            })
+            .eq("id", task.id),
+          supabase
+            .from("objectives")
+            .update({ status: "blocked" })
+            .eq("id", objective.id),
+        ]);
+
+        await addReport(
+          supabase,
+          message,
+          objective.project_id,
+          `I’m blocked on “${objective.title}” because “${task.title}” waited about 10 minutes for an external dependency and it still was not ready.`,
+          "blocked",
+          objective.mission_summary || objective.title
+        );
+        return;
+      }
+
+      await supabase
+        .from("tasks")
+        .update({
+          status: "waiting",
+          progress_message:
+            result.summary ||
+            `Waiting on external dependency · retry ${waitAttempt}/20`,
+          result_summary: result.summary || null,
+          last_heartbeat_at: new Date().toISOString(),
+        })
+        .eq("id", task.id);
+
+      await supabase
+        .from("objectives")
+        .update({ status: "in_progress" })
+        .eq("id", objective.id);
+
+      await queueWaitingTask(objective.id, task.id, message, waitAttempt);
+      return;
     }
 
     if (result.status === "waiting_approval") {
@@ -621,7 +702,9 @@ export const POST = handleCallback(async (rawMessage) => {
     return;
   }
 
-  const activeTasks = tasks.filter((task) => task.status === "in_progress");
+  const activeTasks = tasks.filter((task) =>
+    ["in_progress", "waiting"].includes(task.status)
+  );
   if (activeTasks.length) {
     return;
   }
