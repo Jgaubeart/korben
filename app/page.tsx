@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { createBrowserSupabaseClient } from "../lib/supabase/client";
 import { AmbientScene } from "../components/ambient/AmbientScene";
 import { SpiritOrb } from "../components/orb/SpiritOrb";
@@ -373,6 +374,8 @@ const fallbackGreeting: Message = {
 };
 
 export default function Home() {
+  const pathname = usePathname();
+  const standaloneChat = pathname === "/chat";
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [input, setInput] = useState("");
   const [authReady, setAuthReady] = useState(false);
@@ -438,7 +441,6 @@ export default function Home() {
   const [presenceState, setPresenceState] = useState<"present" | "idle" | "away">("present");
   const [screenAware, setScreenAware] = useState(false);
   const [screenSummary, setScreenSummary] = useState("");
-  const [homeChatOpen, setHomeChatOpen] = useState(false);
   const recognitionRef = useRef<any>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const conversationRailRef = useRef<HTMLDivElement | null>(null);
@@ -1934,6 +1936,30 @@ export default function Home() {
     }
 
     let plan = fallbackPlan(text);
+    let conversationSummary = "";
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      if (token) {
+        const contextResponse = await fetch("/api/chat/context", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ conversation_id: resolvedConversationId }),
+        });
+
+        if (contextResponse.ok) {
+          const contextPayload = await contextResponse.json().catch(() => ({}));
+          conversationSummary = String(contextPayload?.summary || "");
+        }
+      }
+    } catch (error) {
+      console.warn("Korben context compaction skipped.", error);
+    }
 
     try {
       const planResponse = await fetch("/api/orchestrate", {
@@ -1949,6 +1975,7 @@ export default function Home() {
             github_repo: project.github_repo,
             vercel_project_id: project.vercel_project_id,
           })),
+          conversationSummary,
           recentMessages: messages.slice(-12).map((message) => ({
             role: message.role,
             content: message.text,
@@ -2645,7 +2672,7 @@ export default function Home() {
               <section className="korben-live-transcript" aria-live="polite">
                 <div className="home-chat-header">
                   <span>CONVERSATION</span>
-                  <button onClick={() => setHomeChatOpen(true)}>Open</button>
+                  <button onClick={() => window.location.assign("/chat")}>Open</button>
                 </div>
                 <div className="transcript-line user">
                   <span>You</span>
@@ -2756,54 +2783,6 @@ export default function Home() {
           <span>{ambientClock.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
         </div>
 
-        {homeChatOpen && (
-          <div className="home-chat-overlay" role="dialog" aria-modal="true" aria-label="Korben conversation history">
-            <button className="home-chat-backdrop" onClick={() => setHomeChatOpen(false)} aria-label="Close conversation history" />
-            <aside className="home-chat-drawer">
-              <div className="home-chat-drawer-head">
-                <div>
-                  <span>CONVERSATION</span>
-                  <strong>You + Korben</strong>
-                </div>
-                <button onClick={() => setHomeChatOpen(false)} aria-label="Close conversation history">×</button>
-              </div>
-
-              <div className="home-chat-history">
-                {messages.map((message, index) => (
-                  <div
-                    className={`home-chat-history-message ${message.role}`}
-                    key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
-                  >
-                    <span>{message.role === "user" ? "You" : "Korben"}</span>
-                    <p>{message.text}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="home-chat-compose">
-                <input
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
-                      event.preventDefault();
-                      void sendMessage();
-                    }
-                  }}
-                  placeholder="Ask Korben…"
-                  aria-label="Ask Korben"
-                />
-                <button
-                  onClick={() => void sendMessage()}
-                  disabled={sending || !input.trim()}
-                  aria-label="Send to Korben"
-                >
-                  ↑
-                </button>
-              </div>
-            </aside>
-          </div>
-        )}
       </section>
     );
   };
@@ -3576,6 +3555,79 @@ export default function Home() {
       </section>
     );
   };
+
+  if (standaloneChat) {
+    return (
+      <main className="korben-chat-page">
+        <header className="korben-home-nav korben-chat-nav">
+          <button className="korben-home-wordmark" onClick={() => window.location.assign("/")}>KORBEN</button>
+          <div className="korben-chat-nav-copy">
+            <span>CONVERSATION</span>
+            <strong>You + Korben</strong>
+          </div>
+          <div className="korben-home-account">
+            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            <button className="account-trigger" onClick={() => window.location.assign("/")}>Home</button>
+          </div>
+        </header>
+
+        <section className="korben-chat-shell">
+          <div className="korben-chat-context-note">
+            <span>SMART CONTEXT</span>
+            <p>Your full chat history is saved, but Korben only sends a compact rolling summary plus the latest messages into each new response. History stays available without creating an ever-growing model context.</p>
+          </div>
+
+          <div className="korben-chat-thread">
+            {messages.map((message, index) => (
+              <article
+                className={`korben-chat-message ${message.role}`}
+                key={message.id || `${message.role}-${index}-${message.text.slice(0, 18)}`}
+              >
+                <span>{message.role === "user" ? "You" : "Korben"}</span>
+                <p>{message.text}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="korben-chat-composer">
+            <button
+              className={`zen-listener korben-chat-listener ${orbState} ${voiceMode ? "active" : ""}`}
+              onClick={toggleVoiceMode}
+              aria-label="Talk to Korben"
+            >
+              <span className="zen-ring zen-ring-outer">
+                <span className="zen-node zen-node-left" />
+                <span className="zen-node zen-node-right" />
+              </span>
+              <span className="zen-ring zen-ring-inner" />
+              <span className="zen-core"><span className="zen-core-glow" /></span>
+            </button>
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
+                  event.preventDefault();
+                  void sendMessage();
+                }
+              }}
+              placeholder="Message Korben…"
+              aria-label="Message Korben"
+            />
+            <button
+              className="korben-chat-send"
+              onClick={() => void sendMessage()}
+              disabled={sending || !input.trim()}
+              aria-label="Send to Korben"
+            >
+              ↑
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   if (calmMode) {
     return renderCalmMode();
