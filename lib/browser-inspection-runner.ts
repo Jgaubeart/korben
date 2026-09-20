@@ -68,6 +68,8 @@ async function signInToKorbenPreview(page: import("playwright-core").Page) {
   }
 
   const signInHeading = page.getByRole("heading", { name: "Sign in to Korben." });
+  await signInHeading.waitFor({ state: "visible", timeout: 8000 }).catch(() => undefined);
+
   const visible = await signInHeading.isVisible().catch(() => false);
   if (!visible) {
     return false;
@@ -99,6 +101,14 @@ export async function runBrowserInspection(
 ): Promise<BrowserInspectionResult> {
   const input: BrowserInspectionInput = validateInspectionInput(raw);
   const origins = normalizeOrigins(allowedOrigins);
+  const requestOrigins = new Set(origins);
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (supabaseUrl) {
+    const supabaseOrigin = new URL(supabaseUrl).origin;
+    await assertPublicHostname(new URL(supabaseOrigin));
+    requestOrigins.add(supabaseOrigin);
+  }
 
   if (!origins.length) {
     throw new Error("No browser origins are authorized for this project.");
@@ -121,12 +131,12 @@ export async function runBrowserInspection(
   });
 
   try {
+    const previewHeaders = await protectedPreviewHeaders();
     const context = await browser.newContext({
       acceptDownloads: false,
       serviceWorkers: "block",
       viewport: input.viewport,
       javaScriptEnabled: true,
-      extraHTTPHeaders: await protectedPreviewHeaders(),
     });
 
     context.setDefaultTimeout(8000);
@@ -146,12 +156,23 @@ export async function runBrowserInspection(
           return;
         }
 
-        if (!origins.includes(requestUrl.origin)) {
+        if (!requestOrigins.has(requestUrl.origin)) {
           await route.abort("blockedbyclient");
           return;
         }
 
         await assertPublicHostname(requestUrl);
+
+        if (origins.includes(requestUrl.origin)) {
+          await route.continue({
+            headers: {
+              ...route.request().headers(),
+              ...previewHeaders,
+            },
+          });
+          return;
+        }
+
         await route.continue();
       } catch {
         await route.abort("blockedbyclient");
