@@ -52,6 +52,7 @@ const readPairs = new Set([
 const l1Pairs = new Set([
   "github.write:create_branch",
   "github.write:update_file",
+  "github.write:replace_text",
   "github.write:sync_branch",
   "github.pr:create",
   "vercel.preview:deploy",
