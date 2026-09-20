@@ -278,6 +278,7 @@ export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
+  const [activeObjectiveId, setActiveObjectiveId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingState, setLoadingState] = useState("Connecting…");
@@ -451,6 +452,7 @@ export default function Home() {
 
       if (objective) {
         setActiveObjective(objective.title);
+        setActiveObjectiveId(objective.id);
         const { data: taskRows } = await supabase
           .from("tasks")
           .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
@@ -549,6 +551,7 @@ export default function Home() {
 
       if (cancelled) return;
       setActiveObjective(objective.title);
+      setActiveObjectiveId(objective.id);
       setTasks((taskRows || []) as Task[]);
       setRunEvents((eventRows || []) as RunEvent[]);
       setAgents((agentRows || []) as Agent[]);
@@ -1048,6 +1051,7 @@ export default function Home() {
     setConversationId(null);
     setTasks([]);
     setActiveObjective("No active objective");
+    setActiveObjectiveId(null);
     setMessages([fallbackGreeting]);
     setLoadingState("Switching workspace…");
   };
@@ -1237,7 +1241,8 @@ export default function Home() {
     createdTasks: Task[],
     plannedTasks: PlannedTask[],
     conversationIdForReport: string,
-    projectNameForReport: string
+    projectNameForReport: string,
+    objectiveIdForReport: string
   ) => {
     if (!createdTasks.length || taskQueueBusyRef.current) return;
 
@@ -1359,6 +1364,11 @@ export default function Home() {
       content: completionReport,
       input_mode: "system",
     });
+
+    window.localStorage.setItem(
+      `korben:objective-report:${objectiveIdForReport}:${blocked ? blocked.status : "complete"}`,
+      "1"
+    );
 
     setLoadingState(
       blocked?.status === "awaiting_approval"
@@ -1627,7 +1637,8 @@ export default function Home() {
         createdTasks,
         plan.tasks,
         resolvedConversationId,
-        executionProjectName
+        executionProjectName,
+        objective.id
       );
     }
 
@@ -1683,6 +1694,71 @@ export default function Home() {
   };
 
   sendMessageRef.current = sendMessage;
+
+  useEffect(() => {
+    if (!signedIn || !conversationId || !activeObjectiveId || !tasks.length) return;
+
+    const hasRunning = tasks.some((task) => task.status === "in_progress");
+    if (hasRunning) return;
+
+    const failedTask = [...tasks]
+      .sort((a, b) => a.sequence - b.sequence)
+      .find((task) => task.status === "failed");
+
+    const approvalTask = [...tasks]
+      .sort((a, b) => a.sequence - b.sequence)
+      .find((task) => task.status === "awaiting_approval");
+
+    const allComplete = tasks.every((task) => task.status === "complete");
+
+    const phase = failedTask
+      ? "failed"
+      : approvalTask
+        ? "awaiting_approval"
+        : allComplete
+          ? "complete"
+          : null;
+
+    if (!phase) return;
+
+    const storageKey = `korben:objective-report:${activeObjectiveId}:${phase}`;
+    if (window.localStorage.getItem(storageKey) === "1") return;
+
+    const report =
+      phase === "complete"
+        ? `Done. I finished “${activeObjective}.” All ${tasks.length} delegated step${tasks.length === 1 ? "" : "s"} are complete.`
+        : phase === "awaiting_approval"
+          ? `I’ve taken “${activeObjective}” as far as I can for now. I need your approval for “${approvalTask?.title || "the next protected step"}” before I continue.`
+          : `I hit a blocker while working on “${activeObjective}.” ${failedTask?.title || "A task"} did not complete. I left the details in Tasks and Delegation.`;
+
+    window.localStorage.setItem(storageKey, "1");
+
+    setMessages((current) => {
+      if (current.some((message) => message.role === "assistant" && message.text === report)) {
+        return current;
+      }
+      return [...current, { role: "assistant", text: report }];
+    });
+
+    void supabase.from("messages").insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content: report,
+      input_mode: "system",
+    });
+
+    if (voiceModeRef.current && "speechSynthesis" in window) {
+      void (async () => {
+        const utterance = new SpeechSynthesisUtterance(toSpokenReply(report));
+        utterance.rate = 0.98;
+        utterance.pitch = 0.9;
+        const voice = await resolveKorbenVoice();
+        if (voice) utterance.voice = voice;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      })();
+    }
+  }, [activeObjective, activeObjectiveId, conversationId, signedIn, supabase, tasks]);
 
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
@@ -2225,20 +2301,55 @@ export default function Home() {
       )}
 
       <div className="work-board">
-        {["queued", "in_progress", "complete"].map((status) => (
-          <div className="work-lane" key={status}>
+        {["queued", "in_progress", "awaiting_approval", "failed", "complete"].map((status) => (
+          <div className={`work-lane work-lane-${status}`} key={status}>
             <div className="work-lane-header">
-              <span>{status === "in_progress" ? "IN PROGRESS" : status.toUpperCase()}</span>
+              <span>
+                {status === "in_progress"
+                  ? "IN PROGRESS"
+                  : status === "awaiting_approval"
+                    ? "WAITING ON YOU"
+                    : status.toUpperCase()}
+              </span>
               <b>{tasks.filter((task) => task.status === status).length}</b>
             </div>
             <div className="work-lane-body">
               {tasks.filter((task) => task.status === status).map((task) => {
                 const owner = agentById(task.assigned_agent_id);
+                const latestEvent = runEvents.find((event) => event.task_id === task.id);
+                const statusCopy =
+                  task.status === "in_progress"
+                    ? latestEvent?.message || `${owner?.name || "Agent"} is working on this now.`
+                    : task.status === "complete"
+                      ? task.result_summary || latestEvent?.message || "Completed."
+                      : task.status === "awaiting_approval"
+                        ? "Korben is paused here until you approve the protected step."
+                        : task.status === "failed"
+                          ? task.result_summary || latestEvent?.message || "This task hit a blocker."
+                          : "Queued and waiting for the prior step to finish.";
+
                 return (
-                  <article className="task-card" key={task.id}>
-                    <span className="task-sequence">#{task.sequence}</span>
+                  <article className={`task-card task-card-${task.status}`} key={task.id}>
+                    <div className="task-card-topline">
+                      <span className="task-sequence">#{task.sequence}</span>
+                      <span className={`task-status-pill ${task.status}`}>
+                        {task.status === "in_progress"
+                          ? "Working"
+                          : task.status === "awaiting_approval"
+                            ? "Approval"
+                            : task.status === "complete"
+                              ? "Done"
+                              : task.status === "failed"
+                                ? "Blocked"
+                                : "Queued"}
+                      </span>
+                    </div>
                     <strong>{task.title}</strong>
                     <p>{task.description || "No description"}</p>
+                    <div className="task-live-update">
+                      <small>LATEST UPDATE</small>
+                      <span>{statusCopy}</span>
+                    </div>
                     <div className="task-owner">
                       <span>{owner ? owner.name.slice(0, 2).toUpperCase() : "—"}</span>
                       <div>
@@ -2246,6 +2357,12 @@ export default function Home() {
                         <b>{owner ? owner.name : "Unassigned"}</b>
                       </div>
                     </div>
+                    {(task.started_at || task.completed_at) && (
+                      <div className="task-timing">
+                        {task.started_at && <span>Started {new Date(task.started_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
+                        {task.completed_at && <span>Finished {new Date(task.completed_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
+                      </div>
+                    )}
                   </article>
                 );
               })}
