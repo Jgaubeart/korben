@@ -500,7 +500,7 @@ export default function Home() {
 
       const { data: objective } = await supabase
         .from("objectives")
-        .select("id,title,status,created_at")
+        .select("id,title,status,created_at,execution_mode,mission_summary,report_back")
         .eq("project_id", project.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -509,12 +509,17 @@ export default function Home() {
       if (objective) {
         setActiveObjective(objective.title);
         setActiveObjectiveId(objective.id);
+        setMissionSummary(objective.mission_summary || "");
+        setMissionExecutionMode(objective.execution_mode === "fleet" ? "fleet" : "sequential");
         const { data: taskRows } = await supabase
           .from("tasks")
-          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
+          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at,stage,parallel_group,progress_message,last_heartbeat_at")
           .eq("objective_id", objective.id)
           .order("sequence");
         setTasks(taskRows || []);
+      } else {
+        setMissionSummary("");
+        setMissionExecutionMode("sequential");
       }
 
       const { data: projectObjectives } = await supabase
@@ -544,6 +549,32 @@ export default function Home() {
         .limit(100);
 
       setRunEvents(eventRows || []);
+
+      const [{ data: loopRows }, { data: receiptRows }, { data: notificationRows }] = await Promise.all([
+        supabase
+          .from("open_loops")
+          .select("id,title,detail,status,waiting_on,due_at,created_at,resolved_at,resolution")
+          .eq("project_id", project.id)
+          .neq("status", "closed")
+          .order("created_at", { ascending: false })
+          .limit(30),
+        supabase
+          .from("action_receipts")
+          .select("id,objective_id,task_id,agent_id,tool_system_key,action,status,summary,evidence,created_at")
+          .eq("project_id", project.id)
+          .order("created_at", { ascending: false })
+          .limit(40),
+        supabase
+          .from("notifications")
+          .select("id,objective_id,kind,title,body,urgency,status,created_at")
+          .eq("project_id", project.id)
+          .order("created_at", { ascending: false })
+          .limit(40),
+      ]);
+
+      setOpenLoops((loopRows || []) as OpenLoop[]);
+      setActionReceipts((receiptRows || []) as ActionReceipt[]);
+      setNotifications((notificationRows || []) as NotificationRecord[]);
 
       const { data: sourceRows } = await supabase
         .from("knowledge_sources")
@@ -579,7 +610,7 @@ export default function Home() {
     const refreshWorkstream = async () => {
       const { data: objective } = await supabase
         .from("objectives")
-        .select("id,title")
+        .select("id,title,execution_mode,mission_summary,report_back")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -587,10 +618,17 @@ export default function Home() {
 
       if (cancelled || !objective) return;
 
-      const [{ data: taskRows }, { data: eventRows }, { data: agentRows }] = await Promise.all([
+      const [
+        { data: taskRows },
+        { data: eventRows },
+        { data: agentRows },
+        { data: loopRows },
+        { data: receiptRows },
+        { data: notificationRows },
+      ] = await Promise.all([
         supabase
           .from("tasks")
-          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
+          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at,stage,parallel_group,progress_message,last_heartbeat_at")
           .eq("objective_id", objective.id)
           .order("sequence"),
         supabase
@@ -603,14 +641,38 @@ export default function Home() {
           .from("agents")
           .select("id,name,role,status,system_key,department_id")
           .order("name"),
+        supabase
+          .from("open_loops")
+          .select("id,title,detail,status,waiting_on,due_at,created_at,resolved_at,resolution")
+          .eq("project_id", projectId)
+          .neq("status", "closed")
+          .order("created_at", { ascending: false })
+          .limit(30),
+        supabase
+          .from("action_receipts")
+          .select("id,objective_id,task_id,agent_id,tool_system_key,action,status,summary,evidence,created_at")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(40),
+        supabase
+          .from("notifications")
+          .select("id,objective_id,kind,title,body,urgency,status,created_at")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(40),
       ]);
 
       if (cancelled) return;
       setActiveObjective(objective.title);
       setActiveObjectiveId(objective.id);
+      setMissionSummary(objective.mission_summary || "");
+      setMissionExecutionMode(objective.execution_mode === "fleet" ? "fleet" : "sequential");
       setTasks((taskRows || []) as Task[]);
       setRunEvents((eventRows || []) as RunEvent[]);
       setAgents((agentRows || []) as Agent[]);
+      setOpenLoops((loopRows || []) as OpenLoop[]);
+      setActionReceipts((receiptRows || []) as ActionReceipt[]);
+      setNotifications((notificationRows || []) as NotificationRecord[]);
     };
 
     void refreshWorkstream();
