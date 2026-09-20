@@ -2122,12 +2122,32 @@ export default function Home() {
     if (plan.tasks.length > 0 && !["conversation", "question"].includes(plan.intent)) {
       const { data: runningObjectives } = await supabase
         .from("objectives")
-        .select("id,status")
+        .select("id,status,created_at")
         .eq("project_id", executionProjectId)
         .in("status", ["planned", "in_progress"])
-        .limit(1);
+        .order("created_at", { ascending: false })
+        .limit(20);
 
-      objectiveQueued = Boolean(runningObjectives?.length);
+      const runningIds = (runningObjectives || []).map((item) => item.id);
+      const { data: activeTaskRows } = runningIds.length
+        ? await supabase
+            .from("tasks")
+            .select("objective_id")
+            .in("objective_id", runningIds)
+            .eq("status", "in_progress")
+        : { data: [] as { objective_id: string }[] };
+
+      const activeTaskObjectiveIds = new Set(
+        (activeTaskRows || []).map((item) => item.objective_id)
+      );
+      const startupWindow = Date.now() - 5 * 60_000;
+
+      objectiveQueued = (runningObjectives || []).some(
+        (item) =>
+          activeTaskObjectiveIds.has(item.id) ||
+          (item.status === "planned" &&
+            new Date(item.created_at).getTime() >= startupWindow)
+      );
 
       const { data: createdObjective } = await supabase
         .from("objectives")
