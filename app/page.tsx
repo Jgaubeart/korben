@@ -1113,6 +1113,11 @@ export default function Home() {
     setSignedIn(false);
     setMessages([fallbackGreeting]);
     setTasks([]);
+    setOpenLoops([]);
+    setActionReceipts([]);
+    setNotifications([]);
+    setMissionSummary("");
+    setMissionExecutionMode("sequential");
     setProjectId(null);
     setConversationId(null);
     setActiveObjective("No active objective");
@@ -1443,6 +1448,11 @@ export default function Home() {
     setProjectId(null);
     setConversationId(null);
     setTasks([]);
+    setOpenLoops([]);
+    setActionReceipts([]);
+    setNotifications([]);
+    setMissionSummary("");
+    setMissionExecutionMode("sequential");
     setActiveObjective("No active objective");
     setActiveObjectiveId(null);
     setMessages([fallbackGreeting]);
