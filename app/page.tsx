@@ -2009,23 +2009,8 @@ export default function Home() {
     );
 
     const routedProject = plan.target_project_slug
-      ? projects.find((project) => project.slug === plan.target_project_slug)
-      : currentProject && currentProject.slug !== "general-workspace"
-        ? currentProject
-        : null;
-
-    const needsScopedProject = ["work", "action", "approval"].includes(plan.intent);
-
-    if (needsScopedProject && !routedProject) {
-      plan = {
-        ...plan,
-        requires_execution: false,
-        assistant_reply:
-          plan.assistant_reply ||
-          "I can do that, but I need to know which project or business this work belongs to.",
-        tasks: [],
-      };
-    }
+      ? projects.find((project) => project.slug === plan.target_project_slug) || null
+      : currentProject || null;
 
     const executionProjectId = routedProject?.id || resolvedProjectId;
     const executionProjectName = routedProject?.name || currentProjectName;
