@@ -38,6 +38,7 @@ Execution rules:
 2a. A direct request to delegate work to a sub-agent is itself a work request and must create at least one real task assigned to a specialist agent unless the request is unsafe or impossible. For a harmless sample delegation, use general-workspace, approval_level 0, and assign a lightweight review/analysis task to a non-orchestrator agent.
 3. Never invent or assume business-specific context.
 4. Preserve every explicit execution step the user asked for. If the user asks to create a branch, add a file, open a PR, and create a preview, the plan must contain tasks that actually perform all four requested outcomes. Do not replace requested execution steps with a generic verification or reporting task.
+4a. Preserve explicit durable identifiers verbatim in the relevant task description and/or acceptance criteria. This includes full URLs, repository names, branch names, commit SHAs, deployment IDs, PR numbers, file paths, and exact environment names. Never replace a literal identifier with phrases such as "the specified preview", "the branch", or "the deployment".
 5. Put tasks in dependency order.
 6. Assign exactly one primary role to each task.
 7. Use approval_level 0 for read/plan/test.
@@ -178,6 +179,13 @@ const PLAN_SCHEMA = {
 
 
 function normalizePlan(plan: any, requestText: string) {
+  const explicitUrls = Array.from(
+    new Set(
+      (requestText.match(/https:\/\/[^\s<>"')\]]+/gi) || []).map((value) =>
+        value.replace(/[.,;:!?]+$/, "")
+      )
+    )
+  );
   const explicitNoMerge = /\b(do not|don't|never)\s+merge\b/i.test(requestText);
   const explicitNoProduction =
     /\b(do not|don't|never)\s+(deploy|ship|release).*(production|prod)\b/i.test(requestText) ||
@@ -227,9 +235,32 @@ function normalizePlan(plan: any, requestText: string) {
               ? "devops_engineer"
               : task?.agent_system_key;
 
+          const exactBrowserUrl =
+            needsBrowserVerification && explicitUrls.length === 1
+              ? explicitUrls[0]
+              : "";
+          const description = exactBrowserUrl && !String(task?.description || "").includes(exactBrowserUrl)
+            ? `${String(task?.description || "").trim()} Inspect this exact URL and do not substitute another deployment: ${exactBrowserUrl}`.trim()
+            : task?.description;
+          const acceptanceCriteria = Array.isArray(task?.acceptance_criteria)
+            ? [...task.acceptance_criteria]
+            : [];
+          if (
+            exactBrowserUrl &&
+            !acceptanceCriteria.some((criterion: any) =>
+              String(criterion || "").includes(exactBrowserUrl)
+            )
+          ) {
+            acceptanceCriteria.unshift(
+              `browser.inspect targets exactly ${exactBrowserUrl}; do not replace it with the newest, production, or another deployment URL.`
+            );
+          }
+
           if (isPullRequestCreation || isPreview) {
             return {
               ...task,
+              description,
+              acceptance_criteria: acceptanceCriteria,
               agent_system_key: normalizedAgent,
               approval_level: Math.min(Number(task.approval_level ?? 1), 1),
               stage: String(task?.stage || (isPreview ? "Release" : "Build")),
@@ -239,6 +270,8 @@ function normalizePlan(plan: any, requestText: string) {
 
           return {
             ...task,
+            description,
+            acceptance_criteria: acceptanceCriteria,
             agent_system_key: normalizedAgent,
             stage: String(task?.stage || "Operate"),
             parallel_group: Math.max(0, Number(task?.parallel_group || 0)),
