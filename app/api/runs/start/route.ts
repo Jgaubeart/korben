@@ -43,10 +43,103 @@ function safeJson(value: any, max = 30000) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+const READ_ONLY_TOOLS = new Set([
+  "github.read",
+  "vercel.read",
+  "supabase.read",
+  "knowledge.search",
+  "browser.inspect",
+]);
+
+async function executeToolRequestWithRetry(
+  url: string,
+  token: string,
+  body: Record<string, any>,
+  retryable: boolean
+) {
+  const maxAttempts = retryable ? 3 : 1;
+  let lastStatus = 500;
+  let lastResult: any = { error: "Tool request failed." };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const raw = await response.text();
+      let result: any;
+
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch {
+        result = {
+          error: raw
+            ? `Tool returned a non-JSON response: ${raw.slice(0, 1200)}`
+            : "Tool returned an empty response.",
+        };
+      }
+
+      lastStatus = response.status;
+      lastResult = result;
+
+      if (response.ok || response.status === 409) {
+        return {
+          response,
+          result,
+          attempts: attempt,
+        };
+      }
+
+      const shouldRetry =
+        retryable &&
+        (response.status === 408 ||
+          response.status === 429 ||
+          response.status >= 500);
+
+      if (!shouldRetry || attempt === maxAttempts) {
+        return {
+          response,
+          result,
+          attempts: attempt,
+        };
+      }
+    } catch (error) {
+      lastStatus = 503;
+      lastResult = {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Tool request could not be completed.",
+      };
+
+      if (!retryable || attempt === maxAttempts) {
+        const response = new Response(JSON.stringify(lastResult), {
+          status: lastStatus,
+          headers: { "Content-Type": "application/json" },
+        });
+        return { response, result: lastResult, attempts: attempt };
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+  }
+
+  const response = new Response(JSON.stringify(lastResult), {
+    status: lastStatus,
+    headers: { "Content-Type": "application/json" },
+  });
+  return { response, result: lastResult, attempts: maxAttempts };
+}
 
 const TOOL_ACTION_GUIDE: Record<string, string> = {
   "github.read":
-    "Valid actions: repo, file, branch, pull_request, commit, compare, workflow_runs, workflow_run, workflow_jobs. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Use workflow_runs with {head_sha} to discover Actions runs tied to the exact commit under review; then use workflow_run with {run_id} to verify SHA/status/conclusion and workflow_jobs with {run_id} to verify job and step conclusions. Never use create/update/merge here.",
+    "Valid actions: repo, file, branch, branches, pull_request, pull_requests, commit, compare, workflow_runs, workflow_run, workflow_jobs. file accepts {path,ref?,start_line?,end_line?} and returns decoded UTF-8 content in bounded line windows. Use branches and pull_requests when an identifier was not supplied. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Use workflow_runs with {head_sha} to discover Actions runs tied to the exact commit under review; then use workflow_run with {run_id} to verify SHA/status/conclusion and workflow_jobs with {run_id} to verify job and step conclusions. Never use create/update/merge here.",
   "github.write":
     "Valid actions: create_branch, update_file, sync_branch. sync_branch may only merge main/master into an existing feature branch; it must never target main/master or force-reset history.",
   "github.pr":
@@ -426,6 +519,7 @@ export async function POST(request: Request) {
     "GitHub writes must use a feature branch, never main or master.",
     "If a required tool is unavailable or an approval is required, clearly state the blocker and stop.",
     "Recoverable exploratory misses such as a file path returning Not Found do not by themselves mean the task failed; continue if you can still satisfy the acceptance criteria.",
+    "Transient read failures are not blockers. The runtime automatically retries read-only tool calls on 408, 429, 5xx, empty, or unreadable responses. If a read still fails, try another valid read path such as repo, branches, pull_requests, commit, compare, or a smaller file line window before declaring BLOCKED.",
     "Your final response MUST begin with exactly one status line: TASK_STATUS: COMPLETE, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED.",
     "Use COMPLETE only when the acceptance criteria are satisfied. Use BLOCKED when required access, data, approval, or a required verification capability is unavailable. Use FAILED only when a non-recoverable execution error prevents completion.",
     "After the status line, return a concise completion summary including what changed and any remaining risk.",
@@ -587,30 +681,25 @@ export async function POST(request: Request) {
           }),
         ]);
 
-        const toolResponse = await fetch(
+        const {
+          response: toolResponse,
+          result,
+          attempts: toolAttempts,
+        } = await executeToolRequestWithRetry(
           `${new URL(request.url).origin}/api/tools/execute`,
+          token,
           {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              tool_system_key: toolKey,
-              agent_system_key: agent.system_key,
-              project_id: project.id,
-              task_id: task.id,
-              run_id: runId,
-              approval_id: approvalId,
-              action,
-              params,
-            }),
-          }
+            tool_system_key: toolKey,
+            agent_system_key: agent.system_key,
+            project_id: project.id,
+            task_id: task.id,
+            run_id: runId,
+            approval_id: approvalId,
+            action,
+            params,
+          },
+          READ_ONLY_TOOLS.has(toolKey)
         );
-
-        const result = await toolResponse.json().catch(() => ({
-          error: "Tool returned an unreadable response.",
-        }));
 
         if (!toolResponse.ok) {
           if (toolResponse.status === 409) {
@@ -627,6 +716,11 @@ export async function POST(request: Request) {
             ok: toolResponse.ok,
             status: toolResponse.status,
             result,
+            attempts: toolAttempts,
+            retry_exhausted:
+              !toolResponse.ok &&
+              READ_ONLY_TOOLS.has(toolKey) &&
+              toolAttempts >= 3,
           }),
         });
       }
