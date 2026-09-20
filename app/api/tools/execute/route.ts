@@ -919,6 +919,18 @@ export async function POST(request: Request) {
     }
   }
 
+  let receiptObjectiveId: string | null = null;
+
+  if (body.task_id) {
+    const { data: taskScope } = await supabase
+      .from("tasks")
+      .select("objective_id")
+      .eq("id", body.task_id)
+      .maybeSingle();
+
+    receiptObjectiveId = taskScope?.objective_id || null;
+  }
+
   const eventBase = {
     run_id: body.run_id || null,
     project_id: projectId,
@@ -993,7 +1005,7 @@ export async function POST(request: Request) {
       }),
       supabase.from("action_receipts").insert({
         project_id: projectId,
-        objective_id: null,
+        objective_id: receiptObjectiveId,
         task_id: body.task_id || null,
         run_id: body.run_id || null,
         agent_id: agent.id,
@@ -1020,7 +1032,7 @@ export async function POST(request: Request) {
       }),
       supabase.from("action_receipts").insert({
         project_id: projectId,
-        objective_id: null,
+        objective_id: receiptObjectiveId,
         task_id: body.task_id || null,
         run_id: body.run_id || null,
         agent_id: agent.id,
