@@ -2113,7 +2113,7 @@ export default function Home() {
               <section className="home-delegation-feed" aria-label="Delegation activity">
                 <div className="home-delegation-header">
                   <div>
-                    <span>DELEGATION</span>
+                    <span>{missionExecutionMode === "fleet" ? "FLEET MISSION" : "DELEGATION"}</span>
                     <strong>{activeObjective}</strong>
                   </div>
                   <button onClick={() => setActiveView("workstream")}>View all</button>
@@ -2124,11 +2124,11 @@ export default function Home() {
                     const agent = agentById(task.assigned_agent_id);
                     const taskEvent = runEvents.find((event) => event.task_id === task.id);
                     const statusText =
-                      task.status === "in_progress" ? "Working" :
+                      task.status === "in_progress" ? `${task.stage || "Working"}` :
                       task.status === "awaiting_approval" ? "Waiting on you" :
                       task.status === "complete" ? "Complete" :
                       task.status === "failed" ? "Needs attention" :
-                      "Queued";
+                      task.stage || "Queued";
 
                     return (
                       <button
@@ -2144,9 +2144,10 @@ export default function Home() {
                             <strong>{agent?.name || "Korben agent"}</strong>
                             <small>{statusText}</small>
                           </span>
-                          <p>{task.status === "complete"
-                            ? task.result_summary || taskEvent?.message || task.title
-                            : taskEvent?.message || task.title}
+                          <p>{task.progress_message ||
+                            (task.status === "complete"
+                              ? task.result_summary || taskEvent?.message || task.title
+                              : taskEvent?.message || task.title)}
                           </p>
                         </span>
                         <i className={task.status} />
@@ -2155,6 +2156,37 @@ export default function Home() {
                   })}
                 </div>
               </section>
+            )}
+
+            {openLoops.length > 0 && (
+              <section className="home-open-loops" aria-label="Open loops">
+                <div className="home-delegation-header">
+                  <div>
+                    <span>OPEN LOOPS</span>
+                    <strong>{openLoops.length} still unresolved</strong>
+                  </div>
+                  <button onClick={() => setActiveView("work")}>Review</button>
+                </div>
+                <div className="home-loop-list">
+                  {openLoops.slice(0, 3).map((loop) => (
+                    <div className="home-loop-row" key={loop.id}>
+                      <i className={loop.status} />
+                      <div>
+                        <strong>{loop.title}</strong>
+                        <small>{loop.waiting_on ? `Waiting on ${loop.waiting_on}` : loop.detail || "Open"}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {actionReceipts.length > 0 && (
+              <button className="home-latest-receipt" onClick={() => setActiveView("work")}>
+                <span>PROOF OF WORK</span>
+                <strong>{actionReceipts[0].summary}</strong>
+                <small>{new Date(actionReceipts[0].created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small>
+              </button>
             )}
           </aside>
         </main>
