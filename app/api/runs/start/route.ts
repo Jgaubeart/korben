@@ -141,7 +141,7 @@ const TOOL_ACTION_GUIDE: Record<string, string> = {
   "github.read":
     "Valid actions: repo, file, branch, branches, pull_request, pull_requests, commit, compare, workflow_runs, workflow_run, workflow_jobs. file accepts {path,ref?,start_line?,end_line?} and returns decoded UTF-8 content in bounded line windows. Use branches and pull_requests when an identifier was not supplied. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Use workflow_runs with {head_sha} to discover Actions runs tied to the exact commit under review; then use workflow_run with {run_id} to verify SHA/status/conclusion and workflow_jobs with {run_id} to verify job and step conclusions. Never use create/update/merge here.",
   "github.write":
-    "Valid actions: create_branch, update_file, sync_branch. sync_branch may only merge main/master into an existing feature branch; it must never target main/master or force-reset history.",
+    "Valid actions: create_branch, replace_text, update_file, sync_branch. Prefer replace_text for focused edits to existing files: provide {path,branch,search,replacement,expected_count?,message?}. update_file is for new files or deliberate full-file rewrites and is guarded against stale SHAs and suspicious large deletions. sync_branch may only merge main/master into an existing feature branch; it must never target main/master or force-reset history.",
   "github.pr":
     "Valid action: create only. Use this only to open a pull request; do not use it to list/read PRs.",
   "github.merge":
@@ -517,6 +517,7 @@ export async function POST(request: Request) {
       : "",
     "Never attempt to bypass an approval boundary.",
     "GitHub writes must use a feature branch, never main or master.",
+    "For existing files, prefer github.write:replace_text over full-file update_file. This prevents truncated or partial agent output from corrupting large files.",
     "If a required tool is unavailable or an approval is required, clearly state the blocker and stop.",
     "Recoverable exploratory misses such as a file path returning Not Found do not by themselves mean the task failed; continue if you can still satisfy the acceptance criteria.",
     "Transient read failures are not blockers. The runtime automatically retries read-only tool calls on 408, 429, 5xx, empty, or unreadable responses. If a read still fails, try another valid read path such as repo, branches, pull_requests, commit, compare, or a smaller file line window before declaring BLOCKED.",
