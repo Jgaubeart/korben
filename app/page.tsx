@@ -3536,7 +3536,7 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="zen-page-wrap">
+      <section className="zen-page-wrap zen-page-wrap-with-korben">
         <div className="zen-page-kicker">
           <button onClick={() => setActiveView("command")}>← Home</button>
           <span>{currentProjectName}</span>
@@ -3553,6 +3553,84 @@ export default function Home() {
         {activeView === "brain" && renderBrainGalaxy()}
         {["sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
       </section>
+
+      <aside className="korben-persistent-rail" aria-label="Talk to Korben">
+        <div className="korben-rail-presence">
+          <button
+            className={`zen-listener korben-rail-listener ${orbState} ${voiceMode ? "active" : ""}`}
+            onClick={toggleVoiceMode}
+            aria-label="Talk to Korben"
+          >
+            <span className="zen-ring zen-ring-outer">
+              <span className="zen-node zen-node-left" />
+              <span className="zen-node zen-node-right" />
+            </span>
+            <span className="zen-ring zen-ring-inner" />
+            <span className="zen-core">
+              <span className="zen-core-glow" />
+            </span>
+          </button>
+
+          <div className="korben-rail-listening">
+            <strong>
+              {voiceState === "listening"
+                ? "Listening"
+                : voiceState === "thinking"
+                  ? "Thinking"
+                  : voiceState === "speaking"
+                    ? "Speaking"
+                    : "Korben"}
+            </strong>
+            <span>{voiceMode ? "Keep talking." : "Tap to talk."}</span>
+          </div>
+        </div>
+
+        <div className="korben-rail-conversation" aria-live="polite">
+          {messages.slice(-6).map((message, index) => (
+            <div
+              className={`korben-rail-message ${message.role}`}
+              key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
+            >
+              <span>{message.role === "user" ? "You" : "Korben"}</span>
+              <p>{message.text}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="korben-rail-input">
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
+                event.preventDefault();
+                void sendMessage();
+              }
+            }}
+            placeholder="Ask Korben…"
+            aria-label="Ask Korben"
+          />
+          <button
+            onClick={() => void sendMessage()}
+            disabled={sending || !input.trim()}
+            aria-label="Send to Korben"
+          >
+            ↑
+          </button>
+        </div>
+
+        {tasks.some((task) => ["in_progress", "awaiting_approval"].includes(task.status)) && (
+          <button className="korben-rail-work-status" onClick={() => setActiveView("workstream")}>
+            <i className={tasks.some((task) => task.status === "in_progress") ? "working" : "attention"} />
+            <span>
+              {tasks.some((task) => task.status === "in_progress")
+                ? "Agents are working"
+                : "Approval waiting"}
+            </span>
+            <small>View delegation</small>
+          </button>
+        )}
+      </aside>
     </main>
   );
 }
