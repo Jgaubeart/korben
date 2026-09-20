@@ -1825,40 +1825,6 @@ export default function Home() {
         await supabase.from("approvals").insert(approvals);
       }
 
-      if (plan.open_loops?.length) {
-        const loopRows = plan.open_loops.slice(0, 8).map((loop) => ({
-          project_id: executionProjectId,
-          conversation_id:
-            executionProjectId === resolvedProjectId ? resolvedConversationId : null,
-          source_message_id:
-            executionProjectId === resolvedProjectId ? insertedMessage?.id || null : null,
-          title: loop.title,
-          detail: loop.detail || null,
-          status: loop.waiting_on ? "waiting" : "open",
-          waiting_on: loop.waiting_on || null,
-        }));
-
-        await supabase.from("open_loops").insert(loopRows);
-      }
-
-      if (plan.resolved_loop_ids?.length) {
-        const validLoopIds = openLoops
-          .filter((loop) => plan.resolved_loop_ids.includes(loop.id))
-          .map((loop) => loop.id);
-
-        if (validLoopIds.length) {
-          await supabase
-            .from("open_loops")
-            .update({
-              status: "closed",
-              resolved_at: new Date().toISOString(),
-              resolution: `Resolved from conversation: ${text.slice(0, 500)}`,
-              updated_at: new Date().toISOString(),
-            })
-            .in("id", validLoopIds);
-        }
-      }
-
       const orchestrator = agents.find((agent) => agent.system_key === "orchestrator");
       await supabase.from("agent_runs").insert({
         agent_id: orchestrator?.id || null,
@@ -1877,6 +1843,51 @@ export default function Home() {
         started_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
       });
+    }
+
+    if (plan.open_loops?.length) {
+      const existingTitles = new Set(
+        openLoops
+          .filter((loop) => loop.status !== "closed")
+          .map((loop) => loop.title.trim().toLowerCase())
+      );
+
+      const loopRows = plan.open_loops
+        .slice(0, 8)
+        .filter((loop) => !existingTitles.has(loop.title.trim().toLowerCase()))
+        .map((loop) => ({
+          project_id: executionProjectId,
+          conversation_id:
+            executionProjectId === resolvedProjectId ? resolvedConversationId : null,
+          source_message_id:
+            executionProjectId === resolvedProjectId ? insertedMessage?.id || null : null,
+          title: loop.title,
+          detail: loop.detail || null,
+          status: loop.waiting_on ? "waiting" : "open",
+          waiting_on: loop.waiting_on || null,
+        }));
+
+      if (loopRows.length) {
+        await supabase.from("open_loops").insert(loopRows);
+      }
+    }
+
+    if (plan.resolved_loop_ids?.length) {
+      const validLoopIds = openLoops
+        .filter((loop) => plan.resolved_loop_ids.includes(loop.id))
+        .map((loop) => loop.id);
+
+      if (validLoopIds.length) {
+        await supabase
+          .from("open_loops")
+          .update({
+            status: "closed",
+            resolved_at: new Date().toISOString(),
+            resolution: `Resolved from conversation: ${text.slice(0, 500)}`,
+            updated_at: new Date().toISOString(),
+          })
+          .in("id", validLoopIds);
+      }
     }
 
     await supabase
