@@ -158,6 +158,16 @@ type OrchestrationPlan = {
   tasks: PlannedTask[];
 };
 
+type MissionRecord = {
+  id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  execution_mode: "sequential" | "fleet";
+  mission_summary: string | null;
+  report_back: string | null;
+};
+
 type Task = {
   id: string;
   title: string;
@@ -430,6 +440,7 @@ export default function Home() {
   const [openLoops, setOpenLoops] = useState<OpenLoop[]>([]);
   const [actionReceipts, setActionReceipts] = useState<ActionReceipt[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const [missions, setMissions] = useState<MissionRecord[]>([]);
   const [missionSummary, setMissionSummary] = useState("");
   const [missionExecutionMode, setMissionExecutionMode] = useState<"sequential" | "fleet">("sequential");
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
