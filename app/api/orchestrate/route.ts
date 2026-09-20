@@ -11,7 +11,13 @@ Classify every request into exactly one intent:
 - question: informational, analytical, or research-style request that can be answered without changing external systems
 - work: a request that should become structured work/tasks but does not itself require immediate external side effects
 - action: a request to use external systems or tools to do something
-- approval: a requested action that is L2/L3 and therefore requires explicit approval before execution
+- approval: a requested action that includes one or more L2/L3 protected steps and therefore requires explicit approval before those protected steps execute
+
+Intent guardrails:
+- Requests phrased as "can you", "could you", "will you", "I need you to", or similar are still action/work requests when the user is asking Korben to actually change, create, send, publish, deploy, update, fix, open, merge, move, schedule, or otherwise do something.
+- Do not classify an executable request as a question merely because it is phrased grammatically as a question.
+- Use question only when the user wants information or analysis and does not want Korben to change external state.
+- If an approval intent contains earlier L0/L1 tasks before a protected L2/L3 task, those safe earlier tasks should still be executable immediately; approval gates only the protected step.
 
 Project routing rules:
 1. Return target_project_slug for work/action/approval when the target can be resolved from the request or current context.
