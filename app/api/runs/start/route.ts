@@ -116,7 +116,7 @@ export async function POST(request: Request) {
   const { data: task, error: taskError } = await supabase
     .from("tasks")
     .select(
-      "id,title,description,status,sequence,acceptance_criteria,assigned_agent_id,objective_id,stage,parallel_group,progress_message,last_heartbeat_at"
+      "id,title,description,status,sequence,acceptance_criteria,assigned_agent_id,objective_id,stage,parallel_group,progress_message,last_heartbeat_at,started_at"
     )
     .eq("id", taskId)
     .maybeSingle();
