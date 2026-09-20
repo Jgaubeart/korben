@@ -438,6 +438,7 @@ export default function Home() {
   const [presenceState, setPresenceState] = useState<"present" | "idle" | "away">("present");
   const [screenAware, setScreenAware] = useState(false);
   const [screenSummary, setScreenSummary] = useState("");
+  const [homeChatOpen, setHomeChatOpen] = useState(false);
   const recognitionRef = useRef<any>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const conversationRailRef = useRef<HTMLDivElement | null>(null);
@@ -2516,8 +2517,16 @@ export default function Home() {
     </button>
   );
 
-  const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
-  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+  const latestUserIndex = [...messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find(({ message }) => message.role === "user")?.index ?? -1;
+
+  const latestUserMessage = latestUserIndex >= 0 ? messages[latestUserIndex] : undefined;
+  const latestAssistantMessage =
+    latestUserIndex >= 0
+      ? messages.slice(latestUserIndex + 1).find((message) => message.role === "assistant")
+      : [...messages].reverse().find((message) => message.role === "assistant");
 
   const toggleTheme = () => {
     const root = document.documentElement;
@@ -2633,7 +2642,11 @@ export default function Home() {
             )}
 
             {latestUserMessage && (
-              <div className="korben-live-transcript" aria-live="polite">
+              <section className="korben-live-transcript" aria-live="polite">
+                <div className="home-chat-header">
+                  <span>CONVERSATION</span>
+                  <button onClick={() => setHomeChatOpen(true)}>Open</button>
+                </div>
                 <div className="transcript-line user">
                   <span>You</span>
                   <p>{latestUserMessage.text}</p>
@@ -2644,7 +2657,7 @@ export default function Home() {
                     <p>{latestAssistantMessage.text}</p>
                   </div>
                 )}
-              </div>
+              </section>
             )}
 
             {homeDelegationItems.length > 0 && (
@@ -2742,6 +2755,55 @@ export default function Home() {
           <i />
           <span>{ambientClock.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
         </div>
+
+        {homeChatOpen && (
+          <div className="home-chat-overlay" role="dialog" aria-modal="true" aria-label="Korben conversation history">
+            <button className="home-chat-backdrop" onClick={() => setHomeChatOpen(false)} aria-label="Close conversation history" />
+            <aside className="home-chat-drawer">
+              <div className="home-chat-drawer-head">
+                <div>
+                  <span>CONVERSATION</span>
+                  <strong>You + Korben</strong>
+                </div>
+                <button onClick={() => setHomeChatOpen(false)} aria-label="Close conversation history">×</button>
+              </div>
+
+              <div className="home-chat-history">
+                {messages.map((message, index) => (
+                  <div
+                    className={`home-chat-history-message ${message.role}`}
+                    key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
+                  >
+                    <span>{message.role === "user" ? "You" : "Korben"}</span>
+                    <p>{message.text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="home-chat-compose">
+                <input
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
+                      event.preventDefault();
+                      void sendMessage();
+                    }
+                  }}
+                  placeholder="Ask Korben…"
+                  aria-label="Ask Korben"
+                />
+                <button
+                  onClick={() => void sendMessage()}
+                  disabled={sending || !input.trim()}
+                  aria-label="Send to Korben"
+                >
+                  ↑
+                </button>
+              </div>
+            </aside>
+          </div>
+        )}
       </section>
     );
   };
