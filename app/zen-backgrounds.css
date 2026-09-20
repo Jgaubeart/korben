@@ -1696,6 +1696,7 @@ html[data-theme="light"] .zen-app-page .brain-galaxy {
   border-color: color-mix(in srgb, #c49a60 40%, var(--korben-line));
 }
 
+.zen-app-page .work-lane-blocked,
 .zen-app-page .work-lane-failed {
   border-color: color-mix(in srgb, #b26f62 40%, var(--korben-line));
 }
@@ -1732,6 +1733,7 @@ html[data-theme="light"] .zen-app-page .brain-galaxy {
   color: #b98b52;
 }
 
+.task-status-pill.blocked,
 .task-status-pill.failed {
   color: #b26f62;
 }
