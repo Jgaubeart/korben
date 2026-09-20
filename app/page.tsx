@@ -2570,252 +2570,25 @@ export default function Home() {
       window.location.assign("/projects");
       return;
     }
-
     if (!projects.some((project) => project.slug === slug)) return;
-
     window.localStorage.setItem("korben:selected-project", slug);
     setSelectedProjectSlug(slug);
-    setActiveObjective("No active objective");
-    setActiveObjectiveId(null);
-    setTasks([]);
-    setApprovals([]);
-    setRunEvents([]);
-    setOpenLoops([]);
-    setActionReceipts([]);
-    setNotifications([]);
   };
 
-  const refreshProjects = async () => {
-    const { data } = await supabase
-      .from("projects")
-      .select("id,name,slug,github_repo,vercel_project_id,setup_instructions")
-      .eq("status", "active")
-      .order("name");
-
-    setProjects((data || []) as ProjectRecord[]);
-    return (data || []) as ProjectRecord[];
-  };
-
-  const resetProjectForm = () => {
-    setEditingProjectId(null);
-    setProjectNameDraft("");
-    setProjectInstructionsDraft("");
-    setProjectGithubDraft("");
-    setProjectVercelDraft("");
-    setProjectError("");
-  };
-
-  const saveProject = async () => {
-    const name = projectNameDraft.trim();
-    if (!name) {
-      setProjectError("Give the project a name.");
-      return;
-    }
-
-    setProjectBusy(true);
-    setProjectError("");
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error("Sign in again to manage projects.");
-
-      const response = await fetch("/api/projects", {
-        method: editingProjectId ? "PATCH" : "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: editingProjectId,
-          name,
-          setup_instructions: projectInstructionsDraft,
-          github_repo: projectGithubDraft,
-          vercel_project_id: projectVercelDraft,
-        }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.error || "Could not save project.");
-
-      const updated = await refreshProjects();
-      const saved = payload?.project as ProjectRecord | undefined;
-      if (saved && !editingProjectId) {
-        window.localStorage.setItem("korben:selected-project", saved.slug);
-        setSelectedProjectSlug(saved.slug);
-      } else if (saved?.slug === selectedProjectSlug) {
-        setCurrentProjectName(saved.name);
-      }
-      resetProjectForm();
-
-      if (!updated.some((project) => project.slug === selectedProjectSlug) && saved) {
-        setSelectedProjectSlug(saved.slug);
-      }
-    } catch (error) {
-      setProjectError(error instanceof Error ? error.message : "Could not save project.");
-    } finally {
-      setProjectBusy(false);
-    }
-  };
-
-  const editProject = (project: ProjectRecord) => {
-    setEditingProjectId(project.id);
-    setProjectNameDraft(project.name);
-    setProjectInstructionsDraft(project.setup_instructions || "");
-    setProjectGithubDraft(project.github_repo || "");
-    setProjectVercelDraft(project.vercel_project_id || "");
-    setProjectError("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const deleteProject = async (project: ProjectRecord) => {
-    if (["general-workspace", "korben-os"].includes(project.slug)) return;
-
-    const confirmed = window.confirm(
-      `Delete ${project.name}? Its Korben conversations, missions, receipts, and project-scoped history will also be removed.`
-    );
-    if (!confirmed) return;
-
-    setProjectBusy(true);
-    setProjectError("");
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error("Sign in again to manage projects.");
-
-      const response = await fetch("/api/projects", {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ id: project.id }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.error || "Could not delete project.");
-
-      await refreshProjects();
-
-      if (selectedProjectSlug === project.slug) {
-        window.localStorage.setItem("korben:selected-project", "general-workspace");
-        setSelectedProjectSlug("general-workspace");
-      }
-
-      if (editingProjectId === project.id) resetProjectForm();
-    } catch (error) {
-      setProjectError(error instanceof Error ? error.message : "Could not delete project.");
-    } finally {
-      setProjectBusy(false);
-    }
-  };
-
-  const renderAccountControls = () => (
-    <div className="korben-home-account">
-      <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-      <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-      <label className="project-switcher-wrap">
-        <span>Project</span>
-        <select
-          value={selectedProjectSlug}
-          onChange={(event) => switchProject(event.target.value)}
-          aria-label="Choose active project"
-        >
-          {projects.map((project) => (
-            <option value={project.slug} key={project.id}>{project.name}</option>
-          ))}
-          <option value="__manage__">Manage projects…</option>
-        </select>
-      </label>
-      <button className="account-trigger" onClick={signOut} title="Sign out">
-        Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
-      </button>
-    </div>
-  );
-
-  const renderPersistentRail = () => (
-    <aside className="korben-persistent-rail" aria-label="Talk to Korben">
-      <div className="korben-rail-presence">
-        <button
-          className={`zen-listener korben-rail-listener ${orbState} ${voiceMode ? "active" : ""}`}
-          onClick={toggleVoiceMode}
-          aria-label="Talk to Korben"
-        >
-          <span className="zen-ring zen-ring-outer">
-            <span className="zen-node zen-node-left" />
-            <span className="zen-node zen-node-right" />
-          </span>
-          <span className="zen-ring zen-ring-inner" />
-          <span className="zen-core">
-            <span className="zen-core-glow" />
-          </span>
-        </button>
-
-        <div className="korben-rail-listening">
-          <strong>
-            {voiceState === "listening"
-              ? "Listening"
-              : voiceState === "thinking"
-                ? "Thinking"
-                : voiceState === "speaking"
-                  ? "Speaking"
-                  : "Korben"}
-          </strong>
-          <span>{voiceMode ? "Keep talking." : "Tap to talk."}</span>
-        </div>
-      </div>
-
-      <div
-        className="korben-rail-conversation"
-        aria-live="polite"
-        ref={conversationRailRef}
+  const renderProjectSwitcher = () => (
+    <label className="project-switcher-wrap">
+      <span>Project</span>
+      <select
+        value={selectedProjectSlug}
+        onChange={(event) => switchProject(event.target.value)}
+        aria-label="Choose active project"
       >
-        {messages.map((message, index) => (
-          <div
-            className={`korben-rail-message ${message.role}`}
-            key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
-          >
-            <span>{message.role === "user" ? "You" : "Korben"}</span>
-            <p>{message.text}</p>
-          </div>
+        {projects.map((project) => (
+          <option value={project.slug} key={project.id}>{project.name}</option>
         ))}
-      </div>
-
-      <div className="korben-rail-input">
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
-              event.preventDefault();
-              void sendMessage();
-            }
-          }}
-          placeholder="Ask Korben…"
-          aria-label="Ask Korben"
-        />
-        <button
-          onClick={() => void sendMessage()}
-          disabled={sending || !input.trim()}
-          aria-label="Send to Korben"
-        >
-          ↑
-        </button>
-      </div>
-
-      {tasks.some((task) => ["in_progress", "awaiting_approval"].includes(task.status)) && (
-        <button className="korben-rail-work-status" onClick={() => setActiveView("workstream")}>
-          <i className={tasks.some((task) => task.status === "in_progress") ? "working" : "attention"} />
-          <span>
-            {tasks.some((task) => task.status === "in_progress")
-              ? "Agents are working"
-              : "Approval waiting"}
-          </span>
-          <small>View delegation</small>
-        </button>
-      )}
-    </aside>
+        <option value="__manage__">Manage projects…</option>
+      </select>
+    </label>
   );
 
   const renderCommandCenter = () => {
@@ -2852,7 +2625,12 @@ export default function Home() {
             <button onClick={() => setActiveView("brain")}>Library</button>
           </nav>
 
-          {renderAccountControls()}
+          <div className="korben-home-account">
+            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            {renderProjectSwitcher()}
+            <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
+          </div>
         </header>
 
         <main className="korben-home-stage korben-home-stage-split">
@@ -3806,166 +3584,6 @@ export default function Home() {
     );
   };
 
-  const renderProjectsPage = () => (
-    <main className="zen-app-page project-manager-page">
-      <header className="korben-home-nav zen-app-nav">
-        <button className="korben-home-wordmark" onClick={() => window.location.assign("/")}>KORBEN</button>
-
-        <nav className="korben-home-links zen-app-links" aria-label="Primary navigation">
-          <button onClick={() => window.location.assign("/")}>Home</button>
-          <button onClick={() => { window.location.assign("/"); }}>Tasks</button>
-          <button className="active">Projects</button>
-        </nav>
-
-        {renderAccountControls()}
-      </header>
-
-      <section className="zen-page-wrap zen-page-wrap-with-korben project-manager-wrap">
-        <div className="zen-page-kicker">
-          <button onClick={() => window.location.assign("/")}>← Home</button>
-          <span>Workspace</span>
-          <i />
-          <strong>Projects</strong>
-        </div>
-
-        <section className="project-manager-heading">
-          <div>
-            <span className="eyebrow">PROJECT CONTROL</span>
-            <h1>Projects</h1>
-            <p>Projects are the boundaries Korben uses for instructions, repositories, deployments, conversations, missions, and tool access.</p>
-          </div>
-          <div className="project-manager-current">
-            <small>ACTIVE PROJECT</small>
-            <strong>{currentProjectName}</strong>
-          </div>
-        </section>
-
-        <div className="project-manager-grid">
-          <section className="project-list-panel">
-            <div className="project-panel-head">
-              <div>
-                <span className="eyebrow">CONFIGURED</span>
-                <h2>{projects.length} project{projects.length === 1 ? "" : "s"}</h2>
-              </div>
-              <button onClick={resetProjectForm}>+ Add project</button>
-            </div>
-
-            <div className="project-card-list">
-              {projects.map((project) => {
-                const isDefault = ["general-workspace", "korben-os"].includes(project.slug);
-                const isActive = project.slug === selectedProjectSlug;
-                return (
-                  <article className={`project-card ${isActive ? "active" : ""}`} key={project.id}>
-                    <div className="project-card-top">
-                      <div>
-                        <span className="project-card-kicker">
-                          {isDefault ? "DEFAULT" : "PROJECT"} {isActive ? "· ACTIVE" : ""}
-                        </span>
-                        <h3>{project.name}</h3>
-                      </div>
-                      <div className="project-card-actions">
-                        {!isActive && (
-                          <button onClick={() => switchProject(project.slug)}>Use</button>
-                        )}
-                        <button onClick={() => editProject(project)}>Edit</button>
-                        {!isDefault && (
-                          <button className="danger" onClick={() => void deleteProject(project)}>Delete</button>
-                        )}
-                      </div>
-                    </div>
-
-                    <p>{project.setup_instructions || "No setup instructions yet."}</p>
-
-                    <div className="project-connection-row">
-                      <span className={project.github_repo ? "connected" : ""}>
-                        GitHub · {project.github_repo || "Not connected"}
-                      </span>
-                      <span className={project.vercel_project_id ? "connected" : ""}>
-                        Vercel · {project.vercel_project_id || "Not connected"}
-                      </span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="project-editor-panel">
-            <div className="project-panel-head">
-              <div>
-                <span className="eyebrow">{editingProjectId ? "EDIT PROJECT" : "NEW PROJECT"}</span>
-                <h2>{editingProjectId ? "Update workspace" : "Add a project"}</h2>
-              </div>
-              {editingProjectId && <button onClick={resetProjectForm}>Cancel</button>}
-            </div>
-
-            <label className="project-field">
-              <span>Project name</span>
-              <input
-                value={projectNameDraft}
-                onChange={(event) => setProjectNameDraft(event.target.value)}
-                placeholder="Example: Cabinet Genies Portal"
-              />
-            </label>
-
-            <label className="project-field">
-              <span>Setup instructions</span>
-              <textarea
-                value={projectInstructionsDraft}
-                onChange={(event) => setProjectInstructionsDraft(event.target.value)}
-                placeholder="Explain what this project is, what Korben may control, important boundaries, repository expectations, deployment rules, and anything agents need to know."
-                rows={8}
-              />
-              <small>Korben receives these instructions whenever it routes work into this project.</small>
-            </label>
-
-            <label className="project-field">
-              <span>GitHub repository</span>
-              <input
-                value={projectGithubDraft}
-                onChange={(event) => setProjectGithubDraft(event.target.value)}
-                placeholder="owner/repository"
-                disabled={projects.find((project) => project.id === editingProjectId)?.slug === "general-workspace"}
-              />
-            </label>
-
-            <label className="project-field">
-              <span>Vercel project ID</span>
-              <input
-                value={projectVercelDraft}
-                onChange={(event) => setProjectVercelDraft(event.target.value)}
-                placeholder="prj_..."
-                disabled={projects.find((project) => project.id === editingProjectId)?.slug === "general-workspace"}
-              />
-            </label>
-
-            {projects.find((project) => project.id === editingProjectId)?.slug === "general-workspace" && (
-              <div className="project-boundary-note">
-                General Workspace intentionally has no GitHub or Vercel target. It is the neutral workspace for project-agnostic assistant work.
-              </div>
-            )}
-
-            {projectError && <div className="project-form-error">{projectError}</div>}
-
-            <button
-              className="project-save-button"
-              onClick={() => void saveProject()}
-              disabled={projectBusy || !projectNameDraft.trim()}
-            >
-              {projectBusy ? "Saving…" : editingProjectId ? "Save changes" : "Create project"}
-            </button>
-          </section>
-        </div>
-      </section>
-
-      {renderPersistentRail()}
-    </main>
-  );
-
-  if (standaloneProjects) {
-    return renderProjectsPage();
-  }
-
   if (standaloneChat) {
     return (
       <main className="korben-chat-page">
@@ -3975,7 +3593,12 @@ export default function Home() {
             <span>CONVERSATION</span>
             <strong>You + Korben</strong>
           </div>
-          {renderAccountControls()}
+          <div className="korben-home-account">
+            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            {renderProjectSwitcher()}
+            <button className="account-trigger" onClick={() => window.location.assign("/")}>Home</button>
+          </div>
         </header>
 
         <section className="korben-chat-shell">
@@ -4057,7 +3680,14 @@ export default function Home() {
           <button className={["brain","sops","tools","integrations"].includes(activeView) ? "active" : ""} onClick={() => setActiveView("brain")}>Library</button>
         </nav>
 
-        {renderAccountControls()}
+        <div className="korben-home-account">
+          <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+          <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+          {renderProjectSwitcher()}
+          <button className="account-trigger" onClick={signOut} title="Sign out">
+            Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
+          </button>
+        </div>
       </header>
 
       <section className="zen-page-wrap zen-page-wrap-with-korben">
@@ -4078,7 +3708,87 @@ export default function Home() {
         {["sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
       </section>
 
-      {renderPersistentRail()}
+      <aside className="korben-persistent-rail" aria-label="Talk to Korben">
+        <div className="korben-rail-presence">
+          <button
+            className={`zen-listener korben-rail-listener ${orbState} ${voiceMode ? "active" : ""}`}
+            onClick={toggleVoiceMode}
+            aria-label="Talk to Korben"
+          >
+            <span className="zen-ring zen-ring-outer">
+              <span className="zen-node zen-node-left" />
+              <span className="zen-node zen-node-right" />
+            </span>
+            <span className="zen-ring zen-ring-inner" />
+            <span className="zen-core">
+              <span className="zen-core-glow" />
+            </span>
+          </button>
+
+          <div className="korben-rail-listening">
+            <strong>
+              {voiceState === "listening"
+                ? "Listening"
+                : voiceState === "thinking"
+                  ? "Thinking"
+                  : voiceState === "speaking"
+                    ? "Speaking"
+                    : "Korben"}
+            </strong>
+            <span>{voiceMode ? "Keep talking." : "Tap to talk."}</span>
+          </div>
+        </div>
+
+        <div
+          className="korben-rail-conversation"
+          aria-live="polite"
+          ref={conversationRailRef}
+        >
+          {messages.map((message, index) => (
+            <div
+              className={`korben-rail-message ${message.role}`}
+              key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
+            >
+              <span>{message.role === "user" ? "You" : "Korben"}</span>
+              <p>{message.text}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="korben-rail-input">
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
+                event.preventDefault();
+                void sendMessage();
+              }
+            }}
+            placeholder="Ask Korben…"
+            aria-label="Ask Korben"
+          />
+          <button
+            onClick={() => void sendMessage()}
+            disabled={sending || !input.trim()}
+            aria-label="Send to Korben"
+          >
+            ↑
+          </button>
+        </div>
+
+        {tasks.some((task) => ["in_progress", "awaiting_approval"].includes(task.status)) && (
+          <button className="korben-rail-work-status" onClick={() => setActiveView("workstream")}>
+            <i className={tasks.some((task) => task.status === "in_progress") ? "working" : "attention"} />
+            <span>
+              {tasks.some((task) => task.status === "in_progress")
+                ? "Agents are working"
+                : "Approval waiting"}
+            </span>
+            <small>View delegation</small>
+          </button>
+        )}
+      </aside>
     </main>
   );
 }
