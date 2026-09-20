@@ -805,7 +805,7 @@ export default function Home() {
       if (currentConversationId) {
         const { data: history } = await supabase
           .from("messages")
-          .select("id,role,content,input_mode,created_at")
+          .select("id,role,content,input_mode,created_at,message_attachments(id,file_name,mime_type,size_bytes,storage_path,openai_file_id,openai_input_type)")
           .eq("conversation_id", currentConversationId)
           .in("role", ["user", "assistant"])
           .order("created_at", { ascending: true });
@@ -817,6 +817,7 @@ export default function Home() {
               role: row.role as "user" | "assistant",
               text: row.content,
               inputMode: row.input_mode === "voice" ? "voice" : "text",
+              attachments: (row.message_attachments || []) as ChatAttachment[],
             }))
           );
         }
@@ -1062,7 +1063,7 @@ export default function Home() {
       if (conversationId) {
         const { data: messageRows } = await supabase
           .from("messages")
-          .select("id,role,content,input_mode,created_at")
+          .select("id,role,content,input_mode,created_at,message_attachments(id,file_name,mime_type,size_bytes,storage_path,openai_file_id,openai_input_type)")
           .eq("conversation_id", conversationId)
           .in("role", ["user", "assistant"])
           .order("created_at", { ascending: true });
@@ -1074,6 +1075,7 @@ export default function Home() {
               role: row.role as "user" | "assistant",
               text: row.content,
               inputMode: row.input_mode === "voice" ? "voice" : "text",
+              attachments: (row.message_attachments || []) as ChatAttachment[],
             }))
           );
         }
