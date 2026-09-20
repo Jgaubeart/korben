@@ -2734,6 +2734,90 @@ export default function Home() {
     </div>
   );
 
+  const renderPersistentRail = () => (
+    <aside className="korben-persistent-rail" aria-label="Talk to Korben">
+      <div className="korben-rail-presence">
+        <button
+          className={`zen-listener korben-rail-listener ${orbState} ${voiceMode ? "active" : ""}`}
+          onClick={toggleVoiceMode}
+          aria-label="Talk to Korben"
+        >
+          <span className="zen-ring zen-ring-outer">
+            <span className="zen-node zen-node-left" />
+            <span className="zen-node zen-node-right" />
+          </span>
+          <span className="zen-ring zen-ring-inner" />
+          <span className="zen-core">
+            <span className="zen-core-glow" />
+          </span>
+        </button>
+
+        <div className="korben-rail-listening">
+          <strong>
+            {voiceState === "listening"
+              ? "Listening"
+              : voiceState === "thinking"
+                ? "Thinking"
+                : voiceState === "speaking"
+                  ? "Speaking"
+                  : "Korben"}
+          </strong>
+          <span>{voiceMode ? "Keep talking." : "Tap to talk."}</span>
+        </div>
+      </div>
+
+      <div
+        className="korben-rail-conversation"
+        aria-live="polite"
+        ref={conversationRailRef}
+      >
+        {messages.map((message, index) => (
+          <div
+            className={`korben-rail-message ${message.role}`}
+            key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
+          >
+            <span>{message.role === "user" ? "You" : "Korben"}</span>
+            <p>{message.text}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="korben-rail-input">
+        <input
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
+              event.preventDefault();
+              void sendMessage();
+            }
+          }}
+          placeholder="Ask Korben…"
+          aria-label="Ask Korben"
+        />
+        <button
+          onClick={() => void sendMessage()}
+          disabled={sending || !input.trim()}
+          aria-label="Send to Korben"
+        >
+          ↑
+        </button>
+      </div>
+
+      {tasks.some((task) => ["in_progress", "awaiting_approval"].includes(task.status)) && (
+        <button className="korben-rail-work-status" onClick={() => setActiveView("workstream")}>
+          <i className={tasks.some((task) => task.status === "in_progress") ? "working" : "attention"} />
+          <span>
+            {tasks.some((task) => task.status === "in_progress")
+              ? "Agents are working"
+              : "Approval waiting"}
+          </span>
+          <small>View delegation</small>
+        </button>
+      )}
+    </aside>
+  );
+
   const renderCommandCenter = () => {
     const pendingApprovalCount = approvals.filter((approval) => approval.status === "pending").length;
     const homeStatus = pendingApprovalCount
@@ -2768,11 +2852,7 @@ export default function Home() {
             <button onClick={() => setActiveView("brain")}>Library</button>
           </nav>
 
-          <div className="korben-home-account">
-            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-            <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
-          </div>
+          {renderAccountControls()}
         </header>
 
         <main className="korben-home-stage korben-home-stage-split">
@@ -3735,11 +3815,7 @@ export default function Home() {
             <span>CONVERSATION</span>
             <strong>You + Korben</strong>
           </div>
-          <div className="korben-home-account">
-            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-            <button className="account-trigger" onClick={() => window.location.assign("/")}>Home</button>
-          </div>
+          {renderAccountControls()}
         </header>
 
         <section className="korben-chat-shell">
@@ -3821,13 +3897,7 @@ export default function Home() {
           <button className={["brain","sops","tools","integrations"].includes(activeView) ? "active" : ""} onClick={() => setActiveView("brain")}>Library</button>
         </nav>
 
-        <div className="korben-home-account">
-          <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-          <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-          <button className="account-trigger" onClick={signOut} title="Sign out">
-            Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
-          </button>
-        </div>
+        {renderAccountControls()}
       </header>
 
       <section className="zen-page-wrap zen-page-wrap-with-korben">
@@ -3848,87 +3918,7 @@ export default function Home() {
         {["sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
       </section>
 
-      <aside className="korben-persistent-rail" aria-label="Talk to Korben">
-        <div className="korben-rail-presence">
-          <button
-            className={`zen-listener korben-rail-listener ${orbState} ${voiceMode ? "active" : ""}`}
-            onClick={toggleVoiceMode}
-            aria-label="Talk to Korben"
-          >
-            <span className="zen-ring zen-ring-outer">
-              <span className="zen-node zen-node-left" />
-              <span className="zen-node zen-node-right" />
-            </span>
-            <span className="zen-ring zen-ring-inner" />
-            <span className="zen-core">
-              <span className="zen-core-glow" />
-            </span>
-          </button>
-
-          <div className="korben-rail-listening">
-            <strong>
-              {voiceState === "listening"
-                ? "Listening"
-                : voiceState === "thinking"
-                  ? "Thinking"
-                  : voiceState === "speaking"
-                    ? "Speaking"
-                    : "Korben"}
-            </strong>
-            <span>{voiceMode ? "Keep talking." : "Tap to talk."}</span>
-          </div>
-        </div>
-
-        <div
-          className="korben-rail-conversation"
-          aria-live="polite"
-          ref={conversationRailRef}
-        >
-          {messages.map((message, index) => (
-            <div
-              className={`korben-rail-message ${message.role}`}
-              key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
-            >
-              <span>{message.role === "user" ? "You" : "Korben"}</span>
-              <p>{message.text}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="korben-rail-input">
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
-                event.preventDefault();
-                void sendMessage();
-              }
-            }}
-            placeholder="Ask Korben…"
-            aria-label="Ask Korben"
-          />
-          <button
-            onClick={() => void sendMessage()}
-            disabled={sending || !input.trim()}
-            aria-label="Send to Korben"
-          >
-            ↑
-          </button>
-        </div>
-
-        {tasks.some((task) => ["in_progress", "awaiting_approval"].includes(task.status)) && (
-          <button className="korben-rail-work-status" onClick={() => setActiveView("workstream")}>
-            <i className={tasks.some((task) => task.status === "in_progress") ? "working" : "attention"} />
-            <span>
-              {tasks.some((task) => task.status === "in_progress")
-                ? "Agents are working"
-                : "Approval waiting"}
-            </span>
-            <small>View delegation</small>
-          </button>
-        )}
-      </aside>
+      {renderPersistentRail()}
     </main>
   );
 }
