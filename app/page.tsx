@@ -150,6 +150,9 @@ type Task = {
   status: string;
   sequence: number;
   assigned_agent_id?: string | null;
+  result_summary?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
 };
 
 const normalizeKorbenName = (value: string) =>
@@ -243,7 +246,7 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
-  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
+  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "workstream" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [selectedProjectSlug, setSelectedProjectSlug] = useState(() => {
@@ -449,7 +452,7 @@ export default function Home() {
         setActiveObjective(objective.title);
         const { data: taskRows } = await supabase
           .from("tasks")
-          .select("id,title,description,status,sequence,assigned_agent_id")
+          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
           .eq("objective_id", objective.id)
           .order("sequence");
         setTasks(taskRows || []);
@@ -508,6 +511,56 @@ export default function Home() {
 
     bootstrap();
   }, [supabase, selectedProjectSlug]);
+
+  useEffect(() => {
+    if (!projectId || !signedIn) return;
+
+    let cancelled = false;
+
+    const refreshWorkstream = async () => {
+      const { data: objective } = await supabase
+        .from("objectives")
+        .select("id,title")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled || !objective) return;
+
+      const [{ data: taskRows }, { data: eventRows }, { data: agentRows }] = await Promise.all([
+        supabase
+          .from("tasks")
+          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
+          .eq("objective_id", objective.id)
+          .order("sequence"),
+        supabase
+          .from("run_events")
+          .select("id,run_id,task_id,agent_id,event_type,tool_system_key,status,message,created_at")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("agents")
+          .select("id,name,role,status,system_key,department_id")
+          .order("name"),
+      ]);
+
+      if (cancelled) return;
+      setActiveObjective(objective.title);
+      setTasks((taskRows || []) as Task[]);
+      setRunEvents((eventRows || []) as RunEvent[]);
+      setAgents((agentRows || []) as Agent[]);
+    };
+
+    void refreshWorkstream();
+    const interval = window.setInterval(refreshWorkstream, 3500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [projectId, signedIn, supabase]);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -1705,6 +1758,7 @@ export default function Home() {
     activeView === "command" ? "Command Center" :
     activeView === "network" ? "Agent Network" :
     activeView === "work" ? "Work Routing" :
+    activeView === "workstream" ? "Delegation Feed" :
     activeView === "runs" ? "Runs & Activity" :
     activeView === "brain" ? "Brain & Memory" :
     activeView === "sops" ? "SOP Library" :
@@ -1811,6 +1865,17 @@ export default function Home() {
         ? `${currentAgent?.name || "Korben"} is working quietly`
         : "Everything is quiet";
 
+    const homeDelegationItems = [...tasks]
+      .sort((a, b) => {
+        const priority = (status: string) =>
+          status === "in_progress" ? 0 :
+          status === "awaiting_approval" ? 1 :
+          status === "failed" ? 2 :
+          status === "queued" ? 3 : 4;
+        return priority(a.status) - priority(b.status) || a.sequence - b.sequence;
+      })
+      .slice(0, 4);
+
     const toggleTheme = () => {
       const root = document.documentElement;
       const current = root.dataset.theme;
@@ -1828,6 +1893,7 @@ export default function Home() {
           <nav className="korben-home-links" aria-label="Primary navigation">
             <button className="active" onClick={() => setActiveView("command")}>Home</button>
             <button onClick={() => setActiveView("work")}>Tasks</button>
+            <button onClick={() => setActiveView("workstream")}>Delegation</button>
             <button onClick={() => setActiveView("command")}>Calendar</button>
             <button onClick={() => setActiveView("command")}>Communications</button>
             <button onClick={() => setActiveView("focus")}>Focus</button>
@@ -1880,6 +1946,54 @@ export default function Home() {
                 </div>
               )}
             </div>
+          )}
+
+          {homeDelegationItems.length > 0 && (
+            <section className="home-delegation-feed" aria-label="Delegation activity">
+              <div className="home-delegation-header">
+                <div>
+                  <span>DELEGATION</span>
+                  <strong>{activeObjective}</strong>
+                </div>
+                <button onClick={() => setActiveView("workstream")}>View all</button>
+              </div>
+
+              <div className="home-delegation-list">
+                {homeDelegationItems.map((task) => {
+                  const agent = agentById(task.assigned_agent_id);
+                  const taskEvent = runEvents.find((event) => event.task_id === task.id);
+                  const statusText =
+                    task.status === "in_progress" ? "Working" :
+                    task.status === "awaiting_approval" ? "Waiting on you" :
+                    task.status === "complete" ? "Complete" :
+                    task.status === "failed" ? "Needs attention" :
+                    "Queued";
+
+                  return (
+                    <button
+                      key={task.id}
+                      className={`home-delegation-row ${task.status}`}
+                      onClick={() => setActiveView("workstream")}
+                    >
+                      <span className="home-agent-avatar">
+                        {agent ? agent.name.slice(0, 2).toUpperCase() : "AI"}
+                      </span>
+                      <span className="home-delegation-copy">
+                        <span>
+                          <strong>{agent?.name || "Korben agent"}</strong>
+                          <small>{statusText}</small>
+                        </span>
+                        <p>{task.status === "complete"
+                          ? task.result_summary || taskEvent?.message || task.title
+                          : taskEvent?.message || task.title}
+                        </p>
+                      </span>
+                      <i className={task.status} />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
           )}
 
           <button className="quiet-status" onClick={() => setActiveView(pendingApprovalCount ? "work" : "runs")}>
@@ -2093,6 +2207,141 @@ export default function Home() {
       </div>
     </section>
   );
+
+  const renderWorkstream = () => {
+    const sortedTasks = [...tasks].sort((a, b) => a.sequence - b.sequence);
+    const latestEventsByTask = new Map<string, RunEvent>();
+
+    [...runEvents]
+      .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+      .forEach((event) => {
+        if (event.task_id && !latestEventsByTask.has(event.task_id)) {
+          latestEventsByTask.set(event.task_id, event);
+        }
+      });
+
+    const completed = sortedTasks.filter((task) => task.status === "complete").length;
+    const working = sortedTasks.filter((task) => task.status === "in_progress").length;
+    const waiting = sortedTasks.filter((task) => task.status === "awaiting_approval").length;
+
+    return (
+      <section className="os-view delegation-view">
+        <div className="view-heading delegation-heading">
+          <div>
+            <span className="eyebrow">KORBEN WORKSTREAM</span>
+            <h1>Delegation</h1>
+            <p>See what Korben handed off, who is working on it, and what came back.</p>
+          </div>
+          <div className="delegation-summary">
+            <span><i className="queued" />{sortedTasks.length - completed - working - waiting} queued</span>
+            <span><i className="working" />{working} working</span>
+            <span><i className="complete" />{completed} complete</span>
+          </div>
+        </div>
+
+        <div className="delegation-thread">
+          <article className="delegation-message korben-message">
+            <div className="delegation-avatar korben-avatar">K</div>
+            <div className="delegation-bubble">
+              <div className="delegation-meta">
+                <strong>Korben</strong>
+                <span>Coordinator</span>
+              </div>
+              <p>
+                {sortedTasks.length
+                  ? `I broke “${activeObjective}” into ${sortedTasks.length} delegated step${sortedTasks.length === 1 ? "" : "s"}. I’ll keep this feed updated as the agents work.`
+                  : "Nothing is delegated right now. Give me a task and I’ll show the handoffs here."}
+              </p>
+            </div>
+          </article>
+
+          {sortedTasks.map((task) => {
+            const agent = agentById(task.assigned_agent_id);
+            const event = latestEventsByTask.get(task.id);
+            const stateLabel =
+              task.status === "in_progress"
+                ? "Working now"
+                : task.status === "complete"
+                  ? "Completed"
+                  : task.status === "awaiting_approval"
+                    ? "Waiting for you"
+                    : task.status === "failed"
+                      ? "Needs attention"
+                      : "Queued";
+
+            return (
+              <div className="delegation-step" key={task.id}>
+                <article className="delegation-message handoff-message">
+                  <div className="delegation-avatar korben-avatar">K</div>
+                  <div className="delegation-bubble">
+                    <div className="delegation-meta">
+                      <strong>Korben</strong>
+                      <span>Delegated to {agent?.name || "an agent"}</span>
+                    </div>
+                    <p>{task.title}</p>
+                    {task.description && <small>{task.description}</small>}
+                  </div>
+                </article>
+
+                <article className={`delegation-message agent-message ${task.status}`}>
+                  <div className="delegation-avatar agent-avatar">
+                    {agent ? agent.name.slice(0, 2).toUpperCase() : "AI"}
+                  </div>
+                  <div className="delegation-bubble">
+                    <div className="delegation-meta">
+                      <strong>{agent?.name || "Korben agent"}</strong>
+                      <span>{agent?.role || "Specialist"}</span>
+                      <b className={`delegation-state ${task.status}`}>{stateLabel}</b>
+                    </div>
+
+                    {task.status === "complete" ? (
+                      <>
+                        <p>{task.result_summary || event?.message || "Completed and reported back to Korben."}</p>
+                        <small>Korben has received this result.</small>
+                      </>
+                    ) : task.status === "in_progress" ? (
+                      <>
+                        <p>{event?.message || `Working on ${task.title.toLowerCase()}.`}</p>
+                        <small>Live status · updates automatically</small>
+                      </>
+                    ) : task.status === "awaiting_approval" ? (
+                      <>
+                        <p>I’m paused here until you approve the protected action.</p>
+                        <button className="delegation-review-button" onClick={() => setActiveView("work")}>Review approval</button>
+                      </>
+                    ) : task.status === "failed" ? (
+                      <>
+                        <p>{task.result_summary || event?.message || "I hit a blocker and could not finish this step."}</p>
+                        <small>Open Runs for technical details.</small>
+                      </>
+                    ) : (
+                      <>
+                        <p>Waiting for the prior step to finish.</p>
+                        <small>Queued by Korben</small>
+                      </>
+                    )}
+                  </div>
+                </article>
+              </div>
+            );
+          })}
+
+          {sortedTasks.length > 0 && completed === sortedTasks.length && (
+            <article className="delegation-message korben-message final-report">
+              <div className="delegation-avatar korben-avatar">K</div>
+              <div className="delegation-bubble">
+                <div className="delegation-meta">
+                  <strong>Korben</strong>
+                  <span>Report back</span>
+                </div>
+                <p>Done. All {completed} delegated steps are complete. The work is finished.</p>
+              </div>
+            </article>
+          )}
+        </div>
+      </section>
+    );
+  };
 
   const renderRuns = () => (
     <section className="os-view">
@@ -2447,6 +2696,7 @@ export default function Home() {
         <nav className="calm-nav">
           <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>⌂</i><span>Overview</span></button>
           <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}><i>☑</i><span>Tasks</span></button>
+          <button className={activeView === "workstream" ? "active" : ""} onClick={() => setActiveView("workstream")}><i>↗</i><span>Delegation</span></button>
           <button onClick={() => setActiveView("work")}><i>□</i><span>Projects</span></button>
           <button onClick={() => setActiveView("command")}><i>▣</i><span>Calendar</span></button>
           <button onClick={() => setActiveView("command")}><i>▢</i><span>Communications</span></button>
@@ -2481,6 +2731,7 @@ export default function Home() {
         {activeView === "command" && renderCommandCenter()}
         {activeView === "network" && renderNetwork()}
         {activeView === "work" && renderWork()}
+        {activeView === "workstream" && renderWorkstream()}
         {activeView === "runs" && renderRuns()}
         {activeView === "focus" && renderFocus()}
         {activeView === "preflight" && renderPreflight()}

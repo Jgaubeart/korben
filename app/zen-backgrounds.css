@@ -545,3 +545,402 @@ body {
     grid-template-columns: 48px minmax(0, 1fr);
   }
 }
+
+
+/* Delegation workstream — a readable chat-like view of Korben's internal handoffs. */
+.delegation-view {
+  width: min(980px, 100%);
+  margin: 0 auto;
+}
+
+.delegation-heading {
+  align-items: end;
+}
+
+.delegation-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px 16px;
+  color: var(--korben-muted);
+  font-size: 11px;
+}
+
+.delegation-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.delegation-summary i,
+.delegation-state::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.delegation-summary i.queued { color: #a69f92; }
+.delegation-summary i.working { color: #c79b5e; box-shadow: 0 0 10px rgba(199,155,94,.25); }
+.delegation-summary i.complete { color: #6f9e82; }
+
+.delegation-thread {
+  width: min(760px, 100%);
+  margin: 34px auto 80px;
+}
+
+.delegation-step {
+  position: relative;
+}
+
+.delegation-step::before {
+  content: "";
+  position: absolute;
+  left: 19px;
+  top: 44px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--korben-line);
+  opacity: .6;
+}
+
+.delegation-message {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+
+.delegation-message.agent-message {
+  margin-left: 34px;
+  grid-template-columns: 40px minmax(0, 1fr);
+}
+
+.delegation-avatar {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .04em;
+}
+
+.korben-avatar {
+  color: #f8f0e4;
+  background:
+    radial-gradient(circle at 34% 28%, #f8ead4 0 7%, #d5b17c 35%, #9f7750 100%);
+  box-shadow: 0 5px 18px rgba(120, 87, 51, .12);
+}
+
+.agent-avatar {
+  color: var(--korben-text);
+  border: 1px solid var(--korben-line);
+  background: color-mix(in srgb, var(--korben-surface) 88%, transparent);
+}
+
+.delegation-bubble {
+  min-width: 0;
+  padding: 15px 17px;
+  border: 1px solid var(--korben-line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--korben-surface) 78%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.korben-message .delegation-bubble {
+  background: color-mix(in srgb, var(--korben-surface) 64%, transparent);
+}
+
+.agent-message.in_progress .delegation-bubble {
+  border-color: color-mix(in srgb, var(--korben-gold) 38%, var(--korben-line));
+}
+
+.agent-message.complete .delegation-bubble {
+  border-color: color-mix(in srgb, #6f9e82 34%, var(--korben-line));
+}
+
+.agent-message.awaiting_approval .delegation-bubble,
+.agent-message.failed .delegation-bubble {
+  border-color: color-mix(in srgb, #b78a5f 40%, var(--korben-line));
+}
+
+.delegation-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+  min-width: 0;
+}
+
+.delegation-meta strong {
+  font-size: 13px;
+  font-weight: 620;
+  color: var(--korben-text);
+}
+
+.delegation-meta > span {
+  color: var(--korben-muted);
+  font-size: 10px;
+}
+
+.delegation-bubble p {
+  margin: 7px 0 0;
+  color: var(--korben-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.delegation-bubble small {
+  display: block;
+  margin-top: 7px;
+  color: var(--korben-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.delegation-state {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--korben-muted);
+  background: color-mix(in srgb, var(--korben-surface) 72%, transparent);
+}
+
+.delegation-state::before {
+  content: "";
+  flex: 0 0 auto;
+}
+
+.delegation-state.in_progress { color: var(--korben-gold); }
+.delegation-state.complete { color: #6f9e82; }
+.delegation-state.awaiting_approval { color: #b98b52; }
+.delegation-state.failed { color: #b26f62; }
+
+.delegation-review-button {
+  margin-top: 10px;
+  padding: 8px 11px;
+  border: 1px solid var(--korben-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--korben-text);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.final-report {
+  margin-top: 28px;
+}
+
+.final-report .delegation-bubble {
+  border-color: color-mix(in srgb, #6f9e82 40%, var(--korben-line));
+}
+
+@media (max-width: 760px) {
+  .delegation-heading {
+    align-items: start;
+  }
+
+  .delegation-summary {
+    justify-content: flex-start;
+  }
+
+  .delegation-message.agent-message {
+    margin-left: 12px;
+  }
+
+  .delegation-step::before {
+    display: none;
+  }
+
+  .delegation-state {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 3px;
+    justify-content: flex-start;
+  }
+}
+
+
+/* Compact delegation feed on the home dashboard. */
+.home-delegation-feed {
+  width: min(620px, 74vw);
+  margin-top: 18px;
+  padding: 14px 15px 10px;
+  border: 1px solid var(--korben-line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--korben-surface) 72%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  text-align: left;
+}
+
+.home-delegation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 1px 3px 10px;
+}
+
+.home-delegation-header > div {
+  min-width: 0;
+}
+
+.home-delegation-header span,
+.home-delegation-header strong {
+  display: block;
+}
+
+.home-delegation-header span {
+  color: var(--korben-gold);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .22em;
+}
+
+.home-delegation-header strong {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--korben-text);
+  font-size: 12px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-delegation-header button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--korben-muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.home-delegation-list {
+  display: grid;
+}
+
+.home-delegation-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 8px;
+  gap: 11px;
+  align-items: center;
+  padding: 9px 3px;
+  border: 0;
+  border-top: 1px solid var(--korben-line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-agent-avatar {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--korben-line);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--korben-surface) 86%, transparent);
+  color: var(--korben-text);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+.home-delegation-copy {
+  min-width: 0;
+}
+
+.home-delegation-copy > span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.home-delegation-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--korben-text);
+  font-size: 11px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-delegation-copy small {
+  flex: 0 0 auto;
+  color: var(--korben-muted);
+  font-size: 9px;
+}
+
+.home-delegation-copy p {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--korben-muted);
+  font-size: 10px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-delegation-row > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #a69f92;
+}
+
+.home-delegation-row > i.in_progress {
+  background: var(--korben-gold);
+  box-shadow: 0 0 10px rgba(199,155,94,.28);
+}
+
+.home-delegation-row > i.awaiting_approval {
+  background: #c49a60;
+}
+
+.home-delegation-row > i.complete {
+  background: #6f9e82;
+}
+
+.home-delegation-row > i.failed {
+  background: #b26f62;
+}
+
+.home-delegation-row:hover {
+  background: color-mix(in srgb, var(--korben-surface) 48%, transparent);
+}
+
+.home-delegation-feed + .quiet-status {
+  margin-top: 12px;
+}
+
+@media (max-width: 760px) {
+  .home-delegation-feed {
+    width: min(92vw, 620px);
+  }
+
+  .home-delegation-copy p {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+}
