@@ -65,6 +65,49 @@ function bearerToken(request: Request) {
   return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
 }
 
+function receiptEvidence(tool: string, action: string, result: any) {
+  if (!result || typeof result !== "object") {
+    return { action };
+  }
+
+  const safe: Record<string, any> = { action };
+
+  for (const key of [
+    "id",
+    "sha",
+    "ref",
+    "url",
+    "html_url",
+    "number",
+    "state",
+    "status",
+    "name",
+    "branch",
+    "target",
+    "readyState",
+  ]) {
+    if (key in result && ["string", "number", "boolean"].includes(typeof result[key])) {
+      safe[key] = result[key];
+    }
+  }
+
+  if (result.object && typeof result.object === "object" && result.object.sha) {
+    safe.object_sha = result.object.sha;
+  }
+
+  if (result.content && typeof result.content === "object") {
+    if (result.content.sha) safe.content_sha = result.content.sha;
+    if (result.content.path) safe.path = result.content.path;
+  }
+
+  if (Array.isArray(result)) {
+    safe.row_count = result.length;
+  }
+
+  safe.tool = tool;
+  return safe;
+}
+
 async function githubRequest(path: string, init?: RequestInit) {
   const token = process.env.KORBEN_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
 
@@ -940,26 +983,54 @@ export async function POST(request: Request) {
       throw new Error("This tool adapter is registered but not implemented yet.");
     }
 
-    await supabase.from("run_events").insert({
-      ...eventBase,
-      event_type: "tool_completed",
-      status: "complete",
-      message: `${tool}:${action} completed`,
-      payload: { action },
-    });
+    await Promise.all([
+      supabase.from("run_events").insert({
+        ...eventBase,
+        event_type: "tool_completed",
+        status: "complete",
+        message: `${tool}:${action} completed`,
+        payload: { action },
+      }),
+      supabase.from("action_receipts").insert({
+        project_id: projectId,
+        objective_id: null,
+        task_id: body.task_id || null,
+        run_id: body.run_id || null,
+        agent_id: agent.id,
+        tool_system_key: tool,
+        action,
+        status: "complete",
+        summary: `${agentKey} completed ${tool}:${action}`,
+        evidence: receiptEvidence(tool, action, result),
+      }),
+    ]);
 
     return NextResponse.json({ ok: true, tool, action, result });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Tool execution failed.";
 
-    await supabase.from("run_events").insert({
-      ...eventBase,
-      event_type: "tool_failed",
-      status: "error",
-      message,
-      payload: { action },
-    });
+    await Promise.all([
+      supabase.from("run_events").insert({
+        ...eventBase,
+        event_type: "tool_failed",
+        status: "error",
+        message,
+        payload: { action },
+      }),
+      supabase.from("action_receipts").insert({
+        project_id: projectId,
+        objective_id: null,
+        task_id: body.task_id || null,
+        run_id: body.run_id || null,
+        agent_id: agent.id,
+        tool_system_key: tool,
+        action,
+        status: "failed",
+        summary: message,
+        evidence: { tool, action },
+      }),
+    ]);
 
     return NextResponse.json({ error: message }, { status: 502 });
   }
