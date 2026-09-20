@@ -1,5 +1,6 @@
 import "./globals.css";
 import "./zen-backgrounds.css";
+import "./typography.css";
 
 export const metadata = {
   title: "Korben OS",
