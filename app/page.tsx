@@ -2428,6 +2428,12 @@ export default function Home() {
   }, [activeObjectiveId, conversationId, currentProjectName, signedIn, tasks]);
 
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
+  const queuedMissions = missions
+    .filter((mission) => mission.status === "queued")
+    .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+  const activeMissionCount = missions.filter((mission) =>
+    ["planned", "in_progress"].includes(mission.status)
+  ).length;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
   const focusClock = `${String(Math.floor(focusRemaining / 60)).padStart(2, "0")}:${String(
     focusRemaining % 60
@@ -3004,11 +3010,35 @@ export default function Home() {
           <p>See the mission outcome, the agents Korben delegated to, live stages, proof of action, and anything still open.</p>
         </div>
         <div className="metric-strip">
-          <div><strong>{tasks.length}</strong><span>Current tasks</span></div>
-          <div><strong>{tasks.filter((task) => task.status === "queued").length}</strong><span>Queued</span></div>
-          <div><strong>{tasks.filter((task) => task.status === "complete").length}</strong><span>Complete</span></div>
+          <div><strong>{activeMissionCount}</strong><span>Active mission</span></div>
+          <div><strong>{queuedMissions.length}</strong><span>Missions queued</span></div>
+          <div><strong>{tasks.filter((task) => task.status === "complete").length}</strong><span>Current steps done</span></div>
         </div>
       </div>
+
+      {queuedMissions.length > 0 && (
+        <section className="mission-queue-panel">
+          <div className="mission-queue-head">
+            <div>
+              <span className="eyebrow">MISSION QUEUE</span>
+              <h2>Up next</h2>
+            </div>
+            <b>{queuedMissions.length}</b>
+          </div>
+          <div className="mission-queue-list">
+            {queuedMissions.map((mission, index) => (
+              <article key={mission.id}>
+                <span className="mission-queue-position">{index + 1}</span>
+                <div>
+                  <strong>{mission.title}</strong>
+                  <p>{mission.mission_summary || "Queued behind the mission currently running."}</p>
+                </div>
+                <span className="mission-queue-status">Queued</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       {activeObjectiveId && (
         <section className="mission-banner">
