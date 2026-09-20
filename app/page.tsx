@@ -293,6 +293,7 @@ export default function Home() {
   const recognitionRef = useRef<any>(null);
   const heldShortcutRef = useRef(false);
   const sendingRef = useRef(false);
+  const taskQueueBusyRef = useRef(false);
   const voiceModeRef = useRef(false);
   const voiceSubmittedRef = useRef(false);
   const wakeDetectedRef = useRef(false);
@@ -1079,6 +1080,50 @@ export default function Home() {
     };
   };
 
+  useEffect(() => {
+    if (!signedIn || sending || !tasks.length || taskQueueBusyRef.current) return;
+    if (tasks.some((task) => task.status === "in_progress")) return;
+
+    const ordered = [...tasks].sort((a, b) => a.sequence - b.sequence);
+    const nextTask = ordered.find((task, index) => {
+      if (task.status !== "queued") return false;
+      const priorTasks = ordered.slice(0, index);
+      return priorTasks.every((prior) => prior.status === "complete");
+    });
+
+    if (!nextTask) return;
+
+    const approvalWaiting = approvals.some(
+      (approval) =>
+        approval.task_id === nextTask.id &&
+        approval.status === "pending"
+    );
+
+    if (approvalWaiting) return;
+
+    taskQueueBusyRef.current = true;
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === nextTask.id ? { ...item, status: "in_progress" } : item
+      )
+    );
+    setLoadingState("Agents working…");
+
+    void (async () => {
+      try {
+        const result = await runSingleTask(nextTask.id);
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === nextTask.id ? { ...item, status: result.status } : item
+          )
+        );
+      } finally {
+        taskQueueBusyRef.current = false;
+        setLoadingState("System online");
+      }
+    })();
+  }, [approvals, sending, signedIn, tasks]);
+
   const approveAction = async (approval: ApprovalRecord) => {
     const decidedAt = new Date().toISOString();
 
@@ -1194,13 +1239,14 @@ export default function Home() {
     conversationIdForReport: string,
     projectNameForReport: string
   ) => {
-    if (!createdTasks.length) return;
+    if (!createdTasks.length || taskQueueBusyRef.current) return;
 
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
 
     if (!token) return;
 
+    taskQueueBusyRef.current = true;
     setLoadingState("Agents working…");
 
     const outcomes: Array<{
@@ -1321,6 +1367,7 @@ export default function Home() {
           ? "Execution stopped"
           : "System online"
     );
+    taskQueueBusyRef.current = false;
   };
 
   const sendMessage = async (
@@ -1574,7 +1621,7 @@ export default function Home() {
       objective &&
       plan.requires_execution &&
       createdTasks.length > 0 &&
-      ["work", "action"].includes(plan.intent)
+      ["work", "action", "approval"].includes(plan.intent)
     ) {
       void executeTaskQueue(
         createdTasks,
