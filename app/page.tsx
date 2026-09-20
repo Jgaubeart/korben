@@ -836,6 +836,27 @@ export default function Home() {
       setOpenLoops((loopRows || []) as OpenLoop[]);
       setActionReceipts((receiptRows || []) as ActionReceipt[]);
       setNotifications((notificationRows || []) as NotificationRecord[]);
+
+      if (conversationId) {
+        const { data: messageRows } = await supabase
+          .from("messages")
+          .select("id,role,content,input_mode,created_at")
+          .eq("conversation_id", conversationId)
+          .in("role", ["user", "assistant"])
+          .order("created_at", { ascending: true })
+          .limit(120);
+
+        if (!cancelled && messageRows?.length) {
+          setMessages(
+            messageRows.map((row) => ({
+              id: row.id,
+              role: row.role as "user" | "assistant",
+              text: row.content,
+              inputMode: row.input_mode === "voice" ? "voice" : "text",
+            }))
+          );
+        }
+      }
     };
 
     void refreshWorkstream();
@@ -845,7 +866,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [projectId, signedIn, supabase]);
+  }, [conversationId, projectId, signedIn, supabase]);
 
   useEffect(() => {
     const SpeechRecognition =
