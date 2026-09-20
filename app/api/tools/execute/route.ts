@@ -116,26 +116,70 @@ async function githubRequest(path: string, init?: RequestInit) {
     throw new Error("GitHub runtime token is not configured.");
   }
 
-  const response = await fetch(`https://api.github.com${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  });
+  const method = String(init?.method || "GET").toUpperCase();
+  const retryableMethod = method === "GET" || method === "HEAD";
+  const maxAttempts = retryableMethod ? 3 : 1;
+  let lastError = "GitHub request failed.";
 
-  const payload = await response.json().catch(() => null);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-  if (!response.ok) {
-    throw new Error(
-      payload?.message || `GitHub request failed with status ${response.status}.`
-    );
+    try {
+      const response = await fetch(`https://api.github.com${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json",
+          ...(init?.headers || {}),
+        },
+      });
+
+      const raw = await response.text();
+      let payload: any = null;
+
+      if (raw) {
+        try {
+          payload = JSON.parse(raw);
+        } catch {
+          payload = { message: raw.slice(0, 2000) };
+        }
+      }
+
+      if (response.ok) {
+        return payload;
+      }
+
+      lastError =
+        payload?.message ||
+        `GitHub request failed with status ${response.status}.`;
+
+      const retryableStatus =
+        response.status === 408 ||
+        response.status === 429 ||
+        response.status >= 500;
+
+      if (!retryableMethod || !retryableStatus || attempt === maxAttempts) {
+        throw new Error(lastError);
+      }
+    } catch (error) {
+      lastError =
+        error instanceof Error ? error.message : "GitHub request failed.";
+
+      if (!retryableMethod || attempt === maxAttempts) {
+        throw new Error(lastError);
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
   }
 
-  return payload;
+  throw new Error(lastError);
 }
 
 async function executeGitHub(tool: string, action: string, params: Record<string, any>) {
@@ -153,10 +197,72 @@ async function executeGitHub(tool: string, action: string, params: Record<string
     }
 
     if (action === "file") {
-      const path = String(params.path || "");
+      const path = String(params.path || "").trim();
+
+      if (!path) {
+        throw new Error("path is required.");
+      }
+
       const ref = params.ref ? `?ref=${encodeURIComponent(String(params.ref))}` : "";
-      return githubRequest(
+      const payload = await githubRequest(
         `/repos/${owner}/${name}/contents/${path.split("/").map(encodeURIComponent).join("/")}${ref}`
+      );
+
+      if (Array.isArray(payload)) {
+        return payload.map((item: any) => ({
+          name: item?.name,
+          path: item?.path,
+          type: item?.type,
+          sha: item?.sha,
+        }));
+      }
+
+      const encoding = String(payload?.encoding || "");
+      const decoded =
+        encoding === "base64" && typeof payload?.content === "string"
+          ? Buffer.from(payload.content.replace(/\n/g, ""), "base64").toString("utf8")
+          : String(payload?.content || "");
+
+      const lines = decoded.split("\n");
+      const requestedStart = Number(params.start_line || 1);
+      const requestedEnd = Number(params.end_line || 0);
+      const startLine =
+        Number.isFinite(requestedStart) && requestedStart > 0
+          ? Math.min(Math.floor(requestedStart), Math.max(lines.length, 1))
+          : 1;
+      const endLine =
+        Number.isFinite(requestedEnd) && requestedEnd >= startLine
+          ? Math.min(Math.floor(requestedEnd), lines.length)
+          : Math.min(startLine + 399, lines.length);
+
+      return {
+        name: payload?.name,
+        path: payload?.path,
+        sha: payload?.sha,
+        size: payload?.size,
+        encoding: "utf-8",
+        line_count: lines.length,
+        start_line: startLine,
+        end_line: endLine,
+        truncated: endLine < lines.length,
+        content: lines.slice(startLine - 1, endLine).join("\n"),
+      };
+    }
+
+    if (action === "branches") {
+      const perPage = Math.min(Math.max(Number(params.limit || 50), 1), 100);
+      return githubRequest(
+        `/repos/${owner}/${name}/branches?per_page=${perPage}`
+      );
+    }
+
+    if (action === "pull_requests") {
+      const state = ["open", "closed", "all"].includes(String(params.state || "open"))
+        ? String(params.state || "open")
+        : "open";
+      const perPage = Math.min(Math.max(Number(params.limit || 50), 1), 100);
+      return githubRequest(
+        `/repos/${owner}/${name}/pulls?state=${encodeURIComponent(state)}&per_page=${perPage}`
       );
     }
 
