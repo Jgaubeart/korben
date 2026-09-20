@@ -3806,6 +3806,166 @@ export default function Home() {
     );
   };
 
+  const renderProjectsPage = () => (
+    <main className="zen-app-page project-manager-page">
+      <header className="korben-home-nav zen-app-nav">
+        <button className="korben-home-wordmark" onClick={() => window.location.assign("/")}>KORBEN</button>
+
+        <nav className="korben-home-links zen-app-links" aria-label="Primary navigation">
+          <button onClick={() => window.location.assign("/")}>Home</button>
+          <button onClick={() => { window.location.assign("/"); }}>Tasks</button>
+          <button className="active">Projects</button>
+        </nav>
+
+        {renderAccountControls()}
+      </header>
+
+      <section className="zen-page-wrap zen-page-wrap-with-korben project-manager-wrap">
+        <div className="zen-page-kicker">
+          <button onClick={() => window.location.assign("/")}>← Home</button>
+          <span>Workspace</span>
+          <i />
+          <strong>Projects</strong>
+        </div>
+
+        <section className="project-manager-heading">
+          <div>
+            <span className="eyebrow">PROJECT CONTROL</span>
+            <h1>Projects</h1>
+            <p>Projects are the boundaries Korben uses for instructions, repositories, deployments, conversations, missions, and tool access.</p>
+          </div>
+          <div className="project-manager-current">
+            <small>ACTIVE PROJECT</small>
+            <strong>{currentProjectName}</strong>
+          </div>
+        </section>
+
+        <div className="project-manager-grid">
+          <section className="project-list-panel">
+            <div className="project-panel-head">
+              <div>
+                <span className="eyebrow">CONFIGURED</span>
+                <h2>{projects.length} project{projects.length === 1 ? "" : "s"}</h2>
+              </div>
+              <button onClick={resetProjectForm}>+ Add project</button>
+            </div>
+
+            <div className="project-card-list">
+              {projects.map((project) => {
+                const isDefault = ["general-workspace", "korben-os"].includes(project.slug);
+                const isActive = project.slug === selectedProjectSlug;
+                return (
+                  <article className={`project-card ${isActive ? "active" : ""}`} key={project.id}>
+                    <div className="project-card-top">
+                      <div>
+                        <span className="project-card-kicker">
+                          {isDefault ? "DEFAULT" : "PROJECT"} {isActive ? "· ACTIVE" : ""}
+                        </span>
+                        <h3>{project.name}</h3>
+                      </div>
+                      <div className="project-card-actions">
+                        {!isActive && (
+                          <button onClick={() => switchProject(project.slug)}>Use</button>
+                        )}
+                        <button onClick={() => editProject(project)}>Edit</button>
+                        {!isDefault && (
+                          <button className="danger" onClick={() => void deleteProject(project)}>Delete</button>
+                        )}
+                      </div>
+                    </div>
+
+                    <p>{project.setup_instructions || "No setup instructions yet."}</p>
+
+                    <div className="project-connection-row">
+                      <span className={project.github_repo ? "connected" : ""}>
+                        GitHub · {project.github_repo || "Not connected"}
+                      </span>
+                      <span className={project.vercel_project_id ? "connected" : ""}>
+                        Vercel · {project.vercel_project_id || "Not connected"}
+                      </span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="project-editor-panel">
+            <div className="project-panel-head">
+              <div>
+                <span className="eyebrow">{editingProjectId ? "EDIT PROJECT" : "NEW PROJECT"}</span>
+                <h2>{editingProjectId ? "Update workspace" : "Add a project"}</h2>
+              </div>
+              {editingProjectId && <button onClick={resetProjectForm}>Cancel</button>}
+            </div>
+
+            <label className="project-field">
+              <span>Project name</span>
+              <input
+                value={projectNameDraft}
+                onChange={(event) => setProjectNameDraft(event.target.value)}
+                placeholder="Example: Cabinet Genies Portal"
+              />
+            </label>
+
+            <label className="project-field">
+              <span>Setup instructions</span>
+              <textarea
+                value={projectInstructionsDraft}
+                onChange={(event) => setProjectInstructionsDraft(event.target.value)}
+                placeholder="Explain what this project is, what Korben may control, important boundaries, repository expectations, deployment rules, and anything agents need to know."
+                rows={8}
+              />
+              <small>Korben receives these instructions whenever it routes work into this project.</small>
+            </label>
+
+            <label className="project-field">
+              <span>GitHub repository</span>
+              <input
+                value={projectGithubDraft}
+                onChange={(event) => setProjectGithubDraft(event.target.value)}
+                placeholder="owner/repository"
+                disabled={projects.find((project) => project.id === editingProjectId)?.slug === "general-workspace"}
+              />
+            </label>
+
+            <label className="project-field">
+              <span>Vercel project ID</span>
+              <input
+                value={projectVercelDraft}
+                onChange={(event) => setProjectVercelDraft(event.target.value)}
+                placeholder="prj_..."
+                disabled={projects.find((project) => project.id === editingProjectId)?.slug === "general-workspace"}
+              />
+            </label>
+
+            {projects.find((project) => project.id === editingProjectId)?.slug === "general-workspace" && (
+              <div className="project-boundary-note">
+                General Workspace intentionally has no GitHub or Vercel target. It is the neutral workspace for project-agnostic assistant work.
+              </div>
+            )}
+
+            {projectError && <div className="project-form-error">{projectError}</div>}
+
+            <button
+              className="project-save-button"
+              onClick={() => void saveProject()}
+              disabled={projectBusy || !projectNameDraft.trim()}
+            >
+              {projectBusy ? "Saving…" : editingProjectId ? "Save changes" : "Create project"}
+            </button>
+          </section>
+        </div>
+      </section>
+
+      {renderPersistentRail()}
+    </main>
+  );
+
+  if (standaloneProjects) {
+    return renderProjectsPage();
+  }
+
   if (standaloneChat) {
     return (
       <main className="korben-chat-page">
