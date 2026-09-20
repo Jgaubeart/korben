@@ -725,7 +725,9 @@ export async function POST(request: Request) {
                 : `Blocked · ${finalText.slice(0, 220)}`,
           last_heartbeat_at: new Date().toISOString(),
           completed_at:
-            finalStatus === "complete" ? new Date().toISOString() : null,
+            finalStatus === "complete" || finalStatus === "blocked"
+              ? new Date().toISOString()
+              : null,
         })
         .eq("id", task.id),
       supabase.from("agents").update({ status: "idle" }).eq("id", agent.id),
