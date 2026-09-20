@@ -65,9 +65,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Conversation does not match objective." }, { status: 409 });
   }
 
-  const idempotencyKey = resumeTaskId
-    ? `objective:${objectiveId}:resume:${resumeTaskId}:${reason}`
-    : `objective:${objectiveId}:initial`;
+  const idempotencyKey = [
+    "objective",
+    objectiveId,
+    reason,
+    resumeTaskId || "root",
+    crypto.randomUUID(),
+  ].join(":");
 
   const { messageId } = await send(
     "korben-work",
