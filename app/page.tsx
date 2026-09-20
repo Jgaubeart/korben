@@ -449,6 +449,17 @@ export default function Home() {
   }, [openLoops, projectId, signedIn, tasks]);
 
   useEffect(() => {
+    const unreadCount = notifications.filter((item) => item.status === "unread").length;
+    if (typeof (navigator as any).setAppBadge === "function") {
+      if (unreadCount > 0) {
+        void (navigator as any).setAppBadge(unreadCount);
+      } else if (typeof (navigator as any).clearAppBadge === "function") {
+        void (navigator as any).clearAppBadge();
+      }
+    }
+  }, [notifications]);
+
+  useEffect(() => {
     if (!signedIn || !notifications.length || notificationPermission !== "granted") return;
 
     const seenKey = "korben:browser-notification-seen";
@@ -2299,7 +2310,7 @@ export default function Home() {
 
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-            <span className="presence-dot" />
+            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
             <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
           </div>
         </header>
@@ -3274,7 +3285,7 @@ export default function Home() {
 
         <div className="korben-home-account">
           <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-          <span className="presence-dot" />
+          <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
           <button className="account-trigger" onClick={signOut} title="Sign out">
             Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
           </button>
