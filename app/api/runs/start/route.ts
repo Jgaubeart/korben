@@ -399,7 +399,7 @@ export async function POST(request: Request) {
               action: {
                 type: "string",
                 description:
-                  "Provider action. Examples: repo, file, branch, pull_request, commit, compare, workflow_runs, workflow_run, workflow_jobs, create_branch, update_file, sync_branch, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
+                  "Provider action. Examples: repo, file, branch, pull_request, commit, compare, workflow_runs, workflow_run, workflow_jobs, create_branch, update_file, sync_branch, create, merge, project, deployments, deployment, deploy, select, insert, update, search, inspect.",
               },
               params_json: {
                 type: "string",
@@ -419,6 +419,9 @@ export async function POST(request: Request) {
     "Use tools only when they are necessary and only through execute_tool.",
     "Use only the exact actions listed in the tool action contract. Never invent provider actions.",
     "For read-only verification, use read tools only. Do not probe a write tool with a read/list action.",
+    allowedToolKeys.includes("browser.inspect")
+      ? "For browser.inspect use action=inspect. params_json must include a configured Vercel deployment/domain URL. Optional fields: viewport {width,height}, text_scale_percent (100/125/150/175/200), screenshot boolean, and up to 16 safe steps of type click/fill/wait_for. Use browser.inspect to verify responsive layout, overflow, console errors, and viewport-specific acceptance criteria."
+      : "",
     "Never attempt to bypass an approval boundary.",
     "GitHub writes must use a feature branch, never main or master.",
     "If a required tool is unavailable or an approval is required, clearly state the blocker and stop.",

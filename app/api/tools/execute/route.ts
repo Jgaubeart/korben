@@ -7,6 +7,7 @@ import {
   type ProtectedAction,
   type VerifiedEffects,
 } from "../../../../lib/approval-policy";
+import { runBrowserInspection } from "../../../../lib/browser-inspection-runner";
 
 type ToolRequest = {
   tool_system_key?: string;
@@ -458,6 +459,62 @@ async function executeVercelPreview(
       },
     }),
   });
+}
+
+async function browserAllowedOrigins(
+  project: { vercel_project_id: string | null },
+  rawUrl: string
+) {
+  if (!project.vercel_project_id) {
+    throw new Error("The selected project does not have a Vercel project configured.");
+  }
+
+  const target = new URL(rawUrl);
+  const teamId =
+    process.env.KORBEN_VERCEL_TEAM_ID ||
+    process.env.VERCEL_TEAM_ID ||
+    "";
+  const teamSuffix = teamId ? `&teamId=${encodeURIComponent(teamId)}` : "";
+  const origins = new Set<string>();
+
+  const deployments = await vercelRequest(
+    `/v6/deployments?projectId=${encodeURIComponent(project.vercel_project_id)}${teamSuffix}&limit=100`
+  );
+
+  for (const deployment of deployments?.deployments || []) {
+    if (deployment?.url) {
+      origins.add(new URL(`https://${deployment.url}`).origin);
+    }
+
+    for (const alias of deployment?.alias || []) {
+      if (typeof alias === "string" && alias) {
+        origins.add(new URL(`https://${alias}`).origin);
+      }
+    }
+  }
+
+  try {
+    const domainQuery = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    const domains = await vercelRequest(
+      `/v9/projects/${encodeURIComponent(project.vercel_project_id)}/domains${domainQuery}`
+    );
+
+    for (const item of domains?.domains || []) {
+      if (item?.name) {
+        origins.add(new URL(`https://${item.name}`).origin);
+      }
+    }
+  } catch {
+    // Deployment origins are sufficient for preview inspection.
+  }
+
+  if (!origins.has(target.origin)) {
+    throw new Error(
+      "Browser inspection can only open a deployment or domain owned by the selected Vercel project."
+    );
+  }
+
+  return [...origins];
 }
 
 async function executeSupabaseRead(
@@ -991,6 +1048,22 @@ export async function POST(request: Request) {
         throw new Error("Unsupported knowledge action.");
       }
       result = await executeKnowledgeSearch(supabase, project, params);
+    } else if (tool === "browser.inspect") {
+      if (action !== "inspect") {
+        throw new Error("Unsupported browser inspection action.");
+      }
+
+      if (agent.system_key !== "qa_engineer") {
+        throw new Error("Browser inspection is restricted to Sentinel.");
+      }
+
+      const targetUrl = String(params.url || "").trim();
+      if (!targetUrl) {
+        throw new Error("A browser inspection URL is required.");
+      }
+
+      const allowedOrigins = await browserAllowedOrigins(project, targetUrl);
+      result = await runBrowserInspection(params, allowedOrigins);
     } else {
       throw new Error("This tool adapter is registered but not implemented yet.");
     }

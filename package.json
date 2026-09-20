@@ -6,14 +6,16 @@
     "dev": "next dev",
     "build": "npm test && next build",
     "start": "next start",
-    "test": "node --experimental-strip-types lib/approval-policy.test.ts"
+    "test": "node --experimental-strip-types --test lib/approval-policy.test.ts lib/browser-inspection.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@vercel/queue": "^0.5.1"
+    "@vercel/queue": "^0.5.1",
+    "@sparticuz/chromium": "^138.0.2",
+    "playwright-core": "^1.55.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
