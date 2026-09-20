@@ -59,6 +59,40 @@ async function protectedPreviewHeaders() {
   return headers;
 }
 
+async function signInToKorbenPreview(page: import("playwright-core").Page) {
+  const email = process.env.KORBEN_QA_EMAIL;
+  const password = process.env.KORBEN_QA_PASSWORD;
+
+  if (!email || !password) {
+    return false;
+  }
+
+  const signInHeading = page.getByRole("heading", { name: "Sign in to Korben." });
+  const visible = await signInHeading.isVisible().catch(() => false);
+  if (!visible) {
+    return false;
+  }
+
+  await page.locator('input[type="email"]').fill(email);
+  await page.locator('input[type="password"]').fill(password);
+  await page.getByRole("button", { name: "Enter Korben" }).click();
+
+  await signInHeading
+    .waitFor({ state: "hidden", timeout: 10_000 })
+    .catch(() => undefined);
+
+  if (await signInHeading.isVisible().catch(() => false)) {
+    const authError = await page
+      .locator(".auth-error")
+      .innerText()
+      .catch(() => "QA sign-in did not complete.");
+    throw new Error(`Korben QA sign-in failed: ${authError.slice(0, 500)}`);
+  }
+
+  await page.waitForTimeout(500);
+  return true;
+}
+
 export async function runBrowserInspection(
   raw: unknown,
   allowedOrigins: string[]
@@ -155,6 +189,7 @@ export async function runBrowserInspection(
     }
 
     await assertPublicHostname(finalUrl);
+    await signInToKorbenPreview(page);
 
     if ((input.text_scale_percent || 100) !== 100) {
       const scale = (input.text_scale_percent || 100) / 100;
