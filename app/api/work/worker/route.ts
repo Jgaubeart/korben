@@ -542,11 +542,12 @@ export const POST = handleCallback(async (rawMessage) => {
     return;
   }
 
+  const blocked = tasks.find((task) => task.status === "blocked");
   const failed = tasks.find((task) => task.status === "failed");
   const rejected = tasks.find((task) => task.status === "rejected");
 
-  if (failed || rejected) {
-    const blockedTask = failed || rejected;
+  if (blocked || failed || rejected) {
+    const blockedTask = blocked || failed || rejected;
 
     await supabase
       .from("objectives")
