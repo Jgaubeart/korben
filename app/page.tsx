@@ -2488,9 +2488,9 @@ export default function Home() {
   const queuedMissions = missions
     .filter((mission) => mission.status === "queued")
     .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
-  const activeMissionCount = missions.filter((mission) =>
-    ["planned", "in_progress"].includes(mission.status)
-  ).length;
+  const selectedMission = missions.find((mission) => mission.id === activeObjectiveId);
+  const activeMissionCount =
+    selectedMission && ["planned", "in_progress"].includes(selectedMission.status) ? 1 : 0;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
   const focusClock = `${String(Math.floor(focusRemaining / 60)).padStart(2, "0")}:${String(
     focusRemaining % 60
