@@ -35,6 +35,7 @@ type ProjectRecord = {
   slug: string;
   github_repo: string | null;
   vercel_project_id: string | null;
+  setup_instructions: string | null;
 };
 
 type ToolRecord = {
@@ -376,6 +377,7 @@ const fallbackGreeting: Message = {
 export default function Home() {
   const pathname = usePathname();
   const standaloneChat = pathname === "/chat";
+  const standaloneProjects = pathname === "/projects";
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [input, setInput] = useState("");
   const [authReady, setAuthReady] = useState(false);
@@ -388,6 +390,13 @@ export default function Home() {
   const [activeView, setActiveView] = useState<"command" | "network" | "work" | "workstream" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [projectNameDraft, setProjectNameDraft] = useState("");
+  const [projectInstructionsDraft, setProjectInstructionsDraft] = useState("");
+  const [projectGithubDraft, setProjectGithubDraft] = useState("");
+  const [projectVercelDraft, setProjectVercelDraft] = useState("");
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectError, setProjectError] = useState("");
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [selectedProjectSlug, setSelectedProjectSlug] = useState(() => {
     if (typeof window === "undefined") return "general-workspace";
     return window.localStorage.getItem("korben:selected-project") || "general-workspace";
@@ -650,21 +659,27 @@ export default function Home() {
 
       const { data: projectRows } = await supabase
         .from("projects")
-        .select("id,name,slug,github_repo,vercel_project_id")
+        .select("id,name,slug,github_repo,vercel_project_id,setup_instructions")
         .eq("status", "active")
         .order("name");
 
-      setProjects(projectRows || []);
+      const activeProjects = (projectRows || []) as ProjectRecord[];
+      setProjects(activeProjects);
 
-      const { data: project } = await supabase
-        .from("projects")
-        .select("id,name,slug,github_repo,vercel_project_id")
-        .eq("slug", selectedProjectSlug)
-        .single();
+      const project =
+        activeProjects.find((item) => item.slug === selectedProjectSlug) ||
+        activeProjects.find((item) => item.slug === "general-workspace") ||
+        activeProjects[0] ||
+        null;
 
       if (!project) {
-        setLoadingState("Project not found");
+        setLoadingState("No projects configured");
         return;
+      }
+
+      if (project.slug !== selectedProjectSlug) {
+        setSelectedProjectSlug(project.slug);
+        window.localStorage.setItem("korben:selected-project", project.slug);
       }
 
       setProjectId(project.id);
@@ -2586,6 +2601,27 @@ export default function Home() {
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
             <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            <label className="project-switcher-wrap">
+              <span>Project</span>
+              <select
+                value={selectedProjectSlug}
+                onChange={(event) => {
+                  const slug = event.target.value;
+                  if (slug === "__manage__") {
+                    window.location.assign("/projects");
+                    return;
+                  }
+                  window.localStorage.setItem("korben:selected-project", slug);
+                  setSelectedProjectSlug(slug);
+                }}
+                aria-label="Choose active project"
+              >
+                {projects.map((project) => (
+                  <option value={project.slug} key={project.id}>{project.name}</option>
+                ))}
+                <option value="__manage__">Manage projects…</option>
+              </select>
+            </label>
             <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
           </div>
         </header>
@@ -3553,6 +3589,27 @@ export default function Home() {
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
             <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            <label className="project-switcher-wrap">
+              <span>Project</span>
+              <select
+                value={selectedProjectSlug}
+                onChange={(event) => {
+                  const slug = event.target.value;
+                  if (slug === "__manage__") {
+                    window.location.assign("/projects");
+                    return;
+                  }
+                  window.localStorage.setItem("korben:selected-project", slug);
+                  setSelectedProjectSlug(slug);
+                }}
+                aria-label="Choose active project"
+              >
+                {projects.map((project) => (
+                  <option value={project.slug} key={project.id}>{project.name}</option>
+                ))}
+                <option value="__manage__">Manage projects…</option>
+              </select>
+            </label>
             <button className="account-trigger" onClick={() => window.location.assign("/")}>Home</button>
           </div>
         </header>
@@ -3639,6 +3696,27 @@ export default function Home() {
         <div className="korben-home-account">
           <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
           <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+          <label className="project-switcher-wrap">
+            <span>Project</span>
+            <select
+              value={selectedProjectSlug}
+              onChange={(event) => {
+                const slug = event.target.value;
+                if (slug === "__manage__") {
+                  window.location.assign("/projects");
+                  return;
+                }
+                window.localStorage.setItem("korben:selected-project", slug);
+                setSelectedProjectSlug(slug);
+              }}
+              aria-label="Choose active project"
+            >
+              {projects.map((project) => (
+                <option value={project.slug} key={project.id}>{project.name}</option>
+              ))}
+              <option value="__manage__">Manage projects…</option>
+            </select>
+          </label>
           <button className="account-trigger" onClick={signOut} title="Sign out">
             Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
           </button>
