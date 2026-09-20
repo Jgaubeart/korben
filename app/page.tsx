@@ -349,7 +349,14 @@ export default function Home() {
   const [speechSupported, setSpeechSupported] = useState(true);
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const [ambientClock, setAmbientClock] = useState(() => new Date());
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [dailyBriefing, setDailyBriefing] = useState("");
+  const [presenceState, setPresenceState] = useState<"present" | "idle" | "away">("present");
+  const [screenAware, setScreenAware] = useState(false);
+  const [screenSummary, setScreenSummary] = useState("");
   const recognitionRef = useRef<any>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const lastPresenceActivityRef = useRef(Date.now());
   const heldShortcutRef = useRef(false);
   const sendingRef = useRef(false);
   const voiceModeRef = useRef(false);
@@ -373,6 +380,161 @@ export default function Home() {
     const interval = window.setInterval(resolveAmbientClock, 60_000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if ("Notification" in window) {
+      setNotificationPermission(Notification.permission);
+    }
+
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    const markPresent = () => {
+      lastPresenceActivityRef.current = Date.now();
+      setPresenceState(document.hidden ? "away" : "present");
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        setPresenceState("away");
+      } else {
+        markPresent();
+      }
+    };
+
+    window.addEventListener("pointerdown", markPresent);
+    window.addEventListener("keydown", markPresent);
+    window.addEventListener("mousemove", markPresent, { passive: true });
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    const interval = window.setInterval(() => {
+      if (document.hidden) {
+        setPresenceState("away");
+        return;
+      }
+
+      const idleFor = Date.now() - lastPresenceActivityRef.current;
+      setPresenceState(idleFor > 5 * 60_000 ? "idle" : "present");
+    }, 15_000);
+
+    return () => {
+      window.removeEventListener("pointerdown", markPresent);
+      window.removeEventListener("keydown", markPresent);
+      window.removeEventListener("mousemove", markPresent);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!signedIn || !projectId) return;
+
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const storageKey = `korben:daily-briefing:${projectId}:${dayKey}`;
+    if (window.localStorage.getItem(storageKey) === "1") return;
+
+    const activeCount = tasks.filter((task) => ["queued", "in_progress", "awaiting_approval"].includes(task.status)).length;
+    const waitingCount = openLoops.filter((loop) => loop.status === "waiting").length;
+    const parts = [
+      openLoops.length ? `${openLoops.length} open loop${openLoops.length === 1 ? "" : "s"}` : "no open loops",
+      activeCount ? `${activeCount} active mission step${activeCount === 1 ? "" : "s"}` : "no active mission steps",
+      waitingCount ? `${waitingCount} waiting on someone else` : "",
+    ].filter(Boolean);
+
+    setDailyBriefing(`Today: ${parts.join(" · ")}.`);
+    window.localStorage.setItem(storageKey, "1");
+  }, [openLoops, projectId, signedIn, tasks]);
+
+  useEffect(() => {
+    if (!signedIn || !notifications.length || notificationPermission !== "granted") return;
+
+    const seenKey = "korben:browser-notification-seen";
+    const seen = new Set<string>(
+      JSON.parse(window.localStorage.getItem(seenKey) || "[]")
+    );
+
+    const fresh = notifications
+      .filter((item) => item.status === "unread" && !seen.has(item.id))
+      .slice(0, 5);
+
+    for (const item of fresh) {
+      new Notification(item.title, {
+        body: item.body,
+        icon: "/icon.svg",
+        tag: item.id,
+      });
+      seen.add(item.id);
+    }
+
+    window.localStorage.setItem(seenKey, JSON.stringify([...seen].slice(-200)));
+  }, [notificationPermission, notifications, signedIn]);
+
+  useEffect(() => {
+    if (!screenAware || !screenStreamRef.current) return;
+
+    let cancelled = false;
+
+    const capture = async () => {
+      const stream = screenStreamRef.current;
+      const track = stream?.getVideoTracks()[0];
+      if (!stream || !track || track.readyState !== "live" || cancelled) return;
+
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+
+      try {
+        await video.play();
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+
+        const width = Math.min(1280, video.videoWidth || 1280);
+        const scale = width / Math.max(video.videoWidth || width, 1);
+        const height = Math.max(1, Math.round((video.videoHeight || 720) * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(video, 0, 0, width, height);
+        const image = canvas.toDataURL("image/jpeg", 0.55);
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+
+        const response = await fetch("/api/awareness/screen", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ image }),
+        });
+
+        if (response.ok) {
+          const payload = await response.json();
+          if (payload?.summary) setScreenSummary(String(payload.summary));
+        }
+      } catch {
+        // Screen awareness is intentionally best-effort.
+      } finally {
+        video.pause();
+        video.srcObject = null;
+      }
+    };
+
+    void capture();
+    const interval = window.setInterval(capture, 12_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [screenAware, supabase]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -1069,6 +1231,41 @@ export default function Home() {
     }
   };
 
+  const enableNotifications = async () => {
+    if (!("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+  };
+
+  const toggleScreenAwareness = async () => {
+    if (screenAware) {
+      screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
+      setScreenAware(false);
+      setScreenSummary("");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      screenStreamRef.current = stream;
+      setScreenAware(true);
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        screenStreamRef.current = null;
+        setScreenAware(false);
+        setScreenSummary("");
+      });
+    } catch {
+      setScreenAware(false);
+    }
+  };
+
   const toggleVoiceMode = () => {
     const next = !voiceMode;
     voiceModeRef.current = next;
@@ -1474,6 +1671,11 @@ export default function Home() {
               detail: loop.detail,
               waiting_on: loop.waiting_on,
             })),
+          ambientContext: {
+            presence: presenceState,
+            screen_summary: screenAware ? screenSummary : "",
+            focus_active: focusRunning && !focusPaused,
+          },
         }),
       });
 
