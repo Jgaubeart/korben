@@ -378,6 +378,32 @@ async function executeGitHub(tool: string, action: string, params: Record<string
         throw new Error("L1 GitHub writes cannot target main or master. Use a feature branch.");
       }
 
+      if (params.sha) {
+        const current = await githubRequest(
+          `/repos/${owner}/${name}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch)}`
+        );
+        const currentContent =
+          current?.encoding === "base64" && typeof current?.content === "string"
+            ? Buffer.from(current.content.replace(/\n/g, ""), "base64").toString("utf8")
+            : "";
+
+        if (current?.sha && String(params.sha) !== String(current.sha)) {
+          throw new Error(
+            "File changed since it was read. Re-read the file and retry with the current SHA."
+          );
+        }
+
+        if (
+          currentContent.length >= 2000 &&
+          content.length < currentContent.length * 0.55 &&
+          !Boolean(params.allow_large_rewrite)
+        ) {
+          throw new Error(
+            "Suspicious destructive rewrite blocked. Re-read the complete file or use replace_text for a focused edit."
+          );
+        }
+      }
+
       return githubRequest(
         `/repos/${owner}/${name}/contents/${path.split("/").map(encodeURIComponent).join("/")}`,
         {
@@ -387,6 +413,70 @@ async function executeGitHub(tool: string, action: string, params: Record<string
             content: Buffer.from(content, "utf8").toString("base64"),
             branch,
             ...(params.sha ? { sha: String(params.sha) } : {}),
+          }),
+        }
+      );
+    }
+
+    if (action === "replace_text") {
+      const path = String(params.path || "").trim();
+      const branch = String(params.branch || "").trim();
+      const search = String(params.search ?? "");
+      const replacementText = String(params.replacement ?? "");
+      const message = String(params.message || "Apply focused edit via Korben");
+      const expectedCount = Number(params.expected_count || 1);
+
+      if (!path || !branch || !search) {
+        throw new Error("path, branch, and search are required.");
+      }
+
+      if (["main", "master"].includes(branch.toLowerCase())) {
+        throw new Error("L1 GitHub writes cannot target main or master. Use a feature branch.");
+      }
+
+      if (
+        !Number.isInteger(expectedCount) ||
+        expectedCount < 1 ||
+        expectedCount > 20
+      ) {
+        throw new Error("expected_count must be an integer between 1 and 20.");
+      }
+
+      const current = await githubRequest(
+        `/repos/${owner}/${name}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(branch)}`
+      );
+
+      if (
+        current?.encoding !== "base64" ||
+        typeof current?.content !== "string" ||
+        !current?.sha
+      ) {
+        throw new Error("Focused edits require a readable text file.");
+      }
+
+      const currentContent = Buffer.from(
+        current.content.replace(/\n/g, ""),
+        "base64"
+      ).toString("utf8");
+      const actualCount = currentContent.split(search).length - 1;
+
+      if (actualCount !== expectedCount) {
+        throw new Error(
+          `Focused edit expected ${expectedCount} exact match(es) but found ${actualCount}. Re-read the file before retrying.`
+        );
+      }
+
+      const nextContent = currentContent.split(search).join(replacementText);
+
+      return githubRequest(
+        `/repos/${owner}/${name}/contents/${path.split("/").map(encodeURIComponent).join("/")}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            message,
+            content: Buffer.from(nextContent, "utf8").toString("base64"),
+            branch,
+            sha: current.sha,
           }),
         }
       );
