@@ -2003,9 +2003,7 @@ export default function Home() {
       .insert({
         conversation_id: resolvedConversationId,
         role: "user",
-        content: filesForMessage.length
-          ? `${text}\n\n[Attached: ${filesForMessage.map((file) => file.name).join(", ")}]`
-          : text,
+        content: text,
         input_mode: currentInputMode,
       })
       .select("id")
