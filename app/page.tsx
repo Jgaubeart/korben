@@ -1742,6 +1742,29 @@ export default function Home() {
       )
     );
 
+    const { data: otherActiveObjectives } = await supabase
+      .from("objectives")
+      .select("id")
+      .eq("project_id", projectId)
+      .in("status", ["planned", "in_progress"])
+      .neq("id", approval.objective_id)
+      .limit(1);
+
+    if (otherActiveObjectives?.length) {
+      await supabase
+        .from("objectives")
+        .update({ status: "queued" })
+        .eq("id", approval.objective_id);
+
+      setLoadingState("Approved · queued behind current mission");
+      return;
+    }
+
+    await supabase
+      .from("objectives")
+      .update({ status: "planned" })
+      .eq("id", approval.objective_id);
+
     await enqueueObjectiveWork({
       objectiveId: approval.objective_id,
       conversationIdForWork: conversationId,
