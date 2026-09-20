@@ -212,6 +212,39 @@ const normalizeKorbenName = (value: string) =>
     match[0] === match[0]?.toUpperCase() ? "Korben" : "korben"
   );
 
+type KorbenView = "command" | "network" | "work" | "workstream" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight";
+
+const parseInternalNavigationRequest = (value: string): { view: KorbenView; label: string } | null => {
+  const normalized = value
+    .toLowerCase()
+    .replace(/\bkorben\b/g, " ")
+    .replace(/\bplease\b/g, " ")
+    .replace(/[?.!,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const hasNavigationVerb =
+    /\b(open|show|go to|navigate to|take me to|switch to|view|bring up|pull up)\b/.test(normalized);
+
+  if (!hasNavigationVerb) return null;
+
+  const routes: Array<{ pattern: RegExp; view: KorbenView; label: string }> = [
+    { pattern: /\b(home|home page|dashboard|overview)\b/, view: "command", label: "Home" },
+    { pattern: /\b(tasks?|task page|mission control|missions?)\b/, view: "work", label: "Tasks" },
+    { pattern: /\b(delegation|delegation feed|workstream|agent activity)\b/, view: "workstream", label: "Delegation" },
+    { pattern: /\b(agents?|agent network|network)\b/, view: "network", label: "Agents" },
+    { pattern: /\b(runs?|run history|activity log|execution history)\b/, view: "runs", label: "Runs" },
+    { pattern: /\b(focus|focus mode)\b/, view: "focus", label: "Focus" },
+    { pattern: /\b(knowledge|library|brain)\b/, view: "brain", label: "Library" },
+    { pattern: /\b(sops?|standard operating procedures?)\b/, view: "sops", label: "SOPs" },
+    { pattern: /\b(tools?|tool registry)\b/, view: "tools", label: "Tools" },
+    { pattern: /\b(integrations?|settings)\b/, view: "integrations", label: "Integrations" },
+    { pattern: /\b(preflight|system check|health check)\b/, view: "preflight", label: "Preflight" },
+  ];
+
+  return routes.find((route) => route.pattern.test(normalized)) || null;
+};
+
 const parseBrowserOpenRequest = (value: string) => {
   const match = value.match(
     /^\s*(?:korben[,\s]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?(?:open(?:\s+up)?|go\s+to|navigate\s+to|launch|take\s+me\s+to)\s+(.+?)(?:\s+for\s+me)?\s*[.!]?\s*$/i
@@ -1704,7 +1737,8 @@ export default function Home() {
     const userMessage: Message = { role: "user", text, inputMode: currentInputMode };
     setMessages((current) => [...current, userMessage]);
 
-    const browserOpenRequest = parseBrowserOpenRequest(text);
+    const internalNavigationRequest = parseInternalNavigationRequest(text);
+    const browserOpenRequest = internalNavigationRequest ? null : parseBrowserOpenRequest(text);
     const openedBrowserWindow = browserOpenRequest
       ? window.open(browserOpenRequest.url, "_blank")
       : null;
@@ -1745,6 +1779,70 @@ export default function Home() {
       })
       .select("id")
       .single();
+
+    if (internalNavigationRequest) {
+      const reply = `Opening ${internalNavigationRequest.label}.`;
+      setActiveView(internalNavigationRequest.view);
+      setMessages((current) => [...current, { role: "assistant", text: reply }]);
+
+      await Promise.all([
+        supabase.from("messages").insert({
+          conversation_id: resolvedConversationId,
+          role: "assistant",
+          content: reply,
+          input_mode: "system",
+        }),
+        supabase.from("activity_events").insert({
+          project_id: resolvedProjectId,
+          objective_id: null,
+          event_type: "internal_navigation",
+          message: reply,
+          metadata: {
+            view: internalNavigationRequest.view,
+            input_mode: currentInputMode,
+            message_id: insertedMessage?.id || null,
+          },
+        }),
+      ]);
+
+      setInputMode("text");
+      setLoadingState("System online");
+      sendingRef.current = false;
+      setSending(false);
+      voiceSubmittedRef.current = false;
+
+      if (voiceModeRef.current && "speechSynthesis" in window) {
+        setVoiceState("speaking");
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(reply);
+        utterance.rate = 0.98;
+        utterance.pitch = 0.9;
+        const preferredVoice = await resolveKorbenVoice();
+        if (preferredVoice) utterance.voice = preferredVoice;
+        utterance.onend = () => {
+          if (conversationActiveRef.current) {
+            setVoiceState("listening");
+            armConversationTimeout();
+            window.setTimeout(() => {
+              try {
+                recognitionRef.current?.start();
+              } catch {}
+            }, 350);
+          } else {
+            returnToWakeStandby();
+          }
+        };
+        utterance.onerror = utterance.onend;
+        window.speechSynthesis.speak(utterance);
+      } else if (conversationActiveRef.current) {
+        setVoiceState("listening");
+        armConversationTimeout();
+      } else {
+        returnToWakeStandby();
+      }
+
+      return;
+    }
 
     if (browserOpenRequest) {
       const reply = `Opening ${browserOpenRequest.label}.`;
