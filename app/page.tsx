@@ -1907,99 +1907,103 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="korben-home-stage">
+        <main className="korben-home-stage korben-home-stage-split">
           <div className="korben-home-copy">
             <h1>{getGreetingForHour(ambientClock.getHours())}, Jordan.</h1>
             <p>A CALMER, BRIGHTER YOU.</p>
           </div>
 
-          <button
-            className={`zen-listener ${orbState} ${voiceMode ? "active" : ""}`}
-            onClick={toggleVoiceMode}
-            aria-label="Talk to Korben"
-          >
-            <span className="zen-ring zen-ring-outer">
-              <span className="zen-node zen-node-left" />
-              <span className="zen-node zen-node-right" />
-            </span>
-            <span className="zen-ring zen-ring-inner" />
-            <span className="zen-core">
-              <span className="zen-core-glow" />
-            </span>
-          </button>
+          <div className="korben-presence-center">
+            <button
+              className={`zen-listener ${orbState} ${voiceMode ? "active" : ""}`}
+              onClick={toggleVoiceMode}
+              aria-label="Talk to Korben"
+            >
+              <span className="zen-ring zen-ring-outer">
+                <span className="zen-node zen-node-left" />
+                <span className="zen-node zen-node-right" />
+              </span>
+              <span className="zen-ring zen-ring-inner" />
+              <span className="zen-core">
+                <span className="zen-core-glow" />
+              </span>
+            </button>
 
-          <div className="korben-home-listening">
-            <strong>{voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "speaking" ? "Speaking" : "Listening"}</strong>
-            <span>{voiceMode ? "Just speak to Korben." : "Tap Korben and speak."}</span>
+            <div className="korben-home-listening">
+              <strong>{voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "speaking" ? "Speaking" : "Listening"}</strong>
+              <span>{voiceMode ? "Just speak to Korben." : "Tap Korben and speak."}</span>
+            </div>
+
+            <button className="quiet-status" onClick={() => setActiveView(pendingApprovalCount ? "work" : "runs")}>
+              <i className={pendingApprovalCount ? "attention" : ""} />
+              {homeStatus}
+            </button>
           </div>
 
-          {latestUserMessage && (
-            <div className="korben-live-transcript" aria-live="polite">
-              <div className="transcript-line user">
-                <span>You</span>
-                <p>{latestUserMessage.text}</p>
-              </div>
-              {latestAssistantMessage && (
-                <div className="transcript-line assistant">
-                  <span>Korben</span>
-                  <p>{latestAssistantMessage.text}</p>
+          <aside className="korben-home-sidecar" aria-label="Korben conversation and delegation">
+            {latestUserMessage && (
+              <div className="korben-live-transcript" aria-live="polite">
+                <div className="transcript-line user">
+                  <span>You</span>
+                  <p>{latestUserMessage.text}</p>
                 </div>
-              )}
-            </div>
-          )}
-
-          {homeDelegationItems.length > 0 && (
-            <section className="home-delegation-feed" aria-label="Delegation activity">
-              <div className="home-delegation-header">
-                <div>
-                  <span>DELEGATION</span>
-                  <strong>{activeObjective}</strong>
-                </div>
-                <button onClick={() => setActiveView("workstream")}>View all</button>
+                {latestAssistantMessage && (
+                  <div className="transcript-line assistant">
+                    <span>Korben</span>
+                    <p>{latestAssistantMessage.text}</p>
+                  </div>
+                )}
               </div>
+            )}
 
-              <div className="home-delegation-list">
-                {homeDelegationItems.map((task) => {
-                  const agent = agentById(task.assigned_agent_id);
-                  const taskEvent = runEvents.find((event) => event.task_id === task.id);
-                  const statusText =
-                    task.status === "in_progress" ? "Working" :
-                    task.status === "awaiting_approval" ? "Waiting on you" :
-                    task.status === "complete" ? "Complete" :
-                    task.status === "failed" ? "Needs attention" :
-                    "Queued";
+            {homeDelegationItems.length > 0 && (
+              <section className="home-delegation-feed" aria-label="Delegation activity">
+                <div className="home-delegation-header">
+                  <div>
+                    <span>DELEGATION</span>
+                    <strong>{activeObjective}</strong>
+                  </div>
+                  <button onClick={() => setActiveView("workstream")}>View all</button>
+                </div>
 
-                  return (
-                    <button
-                      key={task.id}
-                      className={`home-delegation-row ${task.status}`}
-                      onClick={() => setActiveView("workstream")}
-                    >
-                      <span className="home-agent-avatar">
-                        {agent ? agent.name.slice(0, 2).toUpperCase() : "AI"}
-                      </span>
-                      <span className="home-delegation-copy">
-                        <span>
-                          <strong>{agent?.name || "Korben agent"}</strong>
-                          <small>{statusText}</small>
+                <div className="home-delegation-list">
+                  {homeDelegationItems.map((task) => {
+                    const agent = agentById(task.assigned_agent_id);
+                    const taskEvent = runEvents.find((event) => event.task_id === task.id);
+                    const statusText =
+                      task.status === "in_progress" ? "Working" :
+                      task.status === "awaiting_approval" ? "Waiting on you" :
+                      task.status === "complete" ? "Complete" :
+                      task.status === "failed" ? "Needs attention" :
+                      "Queued";
+
+                    return (
+                      <button
+                        key={task.id}
+                        className={`home-delegation-row ${task.status}`}
+                        onClick={() => setActiveView("workstream")}
+                      >
+                        <span className="home-agent-avatar">
+                          {agent ? agent.name.slice(0, 2).toUpperCase() : "AI"}
                         </span>
-                        <p>{task.status === "complete"
-                          ? task.result_summary || taskEvent?.message || task.title
-                          : taskEvent?.message || task.title}
-                        </p>
-                      </span>
-                      <i className={task.status} />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          <button className="quiet-status" onClick={() => setActiveView(pendingApprovalCount ? "work" : "runs")}>
-            <i className={pendingApprovalCount ? "attention" : ""} />
-            {homeStatus}
-          </button>
+                        <span className="home-delegation-copy">
+                          <span>
+                            <strong>{agent?.name || "Korben agent"}</strong>
+                            <small>{statusText}</small>
+                          </span>
+                          <p>{task.status === "complete"
+                            ? task.result_summary || taskEvent?.message || task.title
+                            : taskEvent?.message || task.title}
+                          </p>
+                        </span>
+                        <i className={task.status} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </aside>
         </main>
 
         <div className="korben-home-corner corner-left">
