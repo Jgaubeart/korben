@@ -294,7 +294,6 @@ export default function Home() {
   const recognitionRef = useRef<any>(null);
   const heldShortcutRef = useRef(false);
   const sendingRef = useRef(false);
-  const taskQueueBusyRef = useRef(false);
   const voiceModeRef = useRef(false);
   const voiceSubmittedRef = useRef(false);
   const wakeDetectedRef = useRef(false);
@@ -1056,77 +1055,53 @@ export default function Home() {
     setLoadingState("Switching workspace…");
   };
 
-  const runSingleTask = async (taskId: string) => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
+  const enqueueObjectiveWork = async ({
+    objectiveId,
+    conversationIdForWork,
+    projectName,
+    reason = "initial",
+    resumeTaskId = null,
+  }: {
+    objectiveId: string;
+    conversationIdForWork: string;
+    projectName: string;
+    reason?: string;
+    resumeTaskId?: string | null;
+  }) => {
+    const { data: refreshedSession } = await supabase.auth.refreshSession();
+    const token =
+      refreshedSession.session?.access_token ||
+      (await supabase.auth.getSession()).data.session?.access_token;
 
     if (!token) {
-      return { status: "failed" };
+      setLoadingState("Sign in required");
+      return false;
     }
 
-    const response = await fetch("/api/runs/start", {
+    const response = await fetch("/api/work/enqueue", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ task_id: taskId }),
+      body: JSON.stringify({
+        objective_id: objectiveId,
+        conversation_id: conversationIdForWork,
+        project_name: projectName,
+        reason,
+        resume_task_id: resumeTaskId,
+      }),
     });
 
-    const result = await response.json().catch(() => ({}));
-    return {
-      status:
-        response.ok && result.status === "complete"
-          ? "complete"
-          : result.status === "waiting_approval"
-            ? "awaiting_approval"
-            : "failed",
-    };
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      setLoadingState(result?.error || "Could not queue background work");
+      return false;
+    }
+
+    setLoadingState("Agents working in background…");
+    return true;
   };
-
-  useEffect(() => {
-    if (!signedIn || sending || !tasks.length || taskQueueBusyRef.current) return;
-    if (tasks.some((task) => task.status === "in_progress")) return;
-
-    const ordered = [...tasks].sort((a, b) => a.sequence - b.sequence);
-    const nextTask = ordered.find((task, index) => {
-      if (task.status !== "queued") return false;
-      const priorTasks = ordered.slice(0, index);
-      return priorTasks.every((prior) => prior.status === "complete");
-    });
-
-    if (!nextTask) return;
-
-    const approvalWaiting = approvals.some(
-      (approval) =>
-        approval.task_id === nextTask.id &&
-        approval.status === "pending"
-    );
-
-    if (approvalWaiting) return;
-
-    taskQueueBusyRef.current = true;
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === nextTask.id ? { ...item, status: "in_progress" } : item
-      )
-    );
-    setLoadingState("Agents working…");
-
-    void (async () => {
-      try {
-        const result = await runSingleTask(nextTask.id);
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === nextTask.id ? { ...item, status: result.status } : item
-          )
-        );
-      } finally {
-        taskQueueBusyRef.current = false;
-        setLoadingState("System online");
-      }
-    })();
-  }, [approvals, sending, signedIn, tasks]);
 
   const approveAction = async (approval: ApprovalRecord) => {
     const decidedAt = new Date().toISOString();
@@ -1148,7 +1123,7 @@ export default function Home() {
       )
     );
 
-    if (!approval.task_id) return;
+    if (!approval.task_id || !approval.objective_id || !conversationId) return;
 
     await supabase
       .from("tasks")
@@ -1157,54 +1132,17 @@ export default function Home() {
 
     setTasks((current) =>
       current.map((item) =>
-        item.id === approval.task_id ? { ...item, status: "in_progress" } : item
+        item.id === approval.task_id ? { ...item, status: "queued" } : item
       )
     );
 
-    setLoadingState("Approved task running…");
-    const result = await runSingleTask(approval.task_id);
-
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === approval.task_id ? { ...item, status: result.status } : item
-      )
-    );
-
-    if (result.status === "complete") {
-      const approvedTask = tasks.find((task) => task.id === approval.task_id);
-      const remaining = tasks
-        .filter((task) =>
-          approvedTask ? task.sequence > approvedTask.sequence : false
-        )
-        .sort((a, b) => a.sequence - b.sequence);
-
-      for (const nextTask of remaining) {
-        const pendingApproval = approvals.some(
-          (item) => item.task_id === nextTask.id && item.status === "pending"
-        );
-
-        if (pendingApproval) break;
-        if (!["queued", "failed"].includes(nextTask.status)) continue;
-
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === nextTask.id ? { ...item, status: "in_progress" } : item
-          )
-        );
-
-        const nextResult = await runSingleTask(nextTask.id);
-
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === nextTask.id ? { ...item, status: nextResult.status } : item
-          )
-        );
-
-        if (nextResult.status !== "complete") break;
-      }
-    }
-
-    setLoadingState("System online");
+    await enqueueObjectiveWork({
+      objectiveId: approval.objective_id,
+      conversationIdForWork: conversationId,
+      projectName: currentProjectName,
+      reason: `approval:${approval.id}:${decidedAt}`,
+      resumeTaskId: approval.task_id,
+    });
   };
 
   const rejectAction = async (approval: ApprovalRecord) => {
@@ -1239,147 +1177,28 @@ export default function Home() {
 
   const executeTaskQueue = async (
     createdTasks: Task[],
-    plannedTasks: PlannedTask[],
-    conversationIdForReport: string,
-    projectNameForReport: string,
-    objectiveIdForReport: string
+    _plannedTasks: PlannedTask[],
+    conversationIdForWork: string,
+    projectNameForWork: string,
+    objectiveIdForWork: string
   ) => {
-    if (!createdTasks.length || taskQueueBusyRef.current) return;
+    if (!createdTasks.length) return;
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
+    const queued = await enqueueObjectiveWork({
+      objectiveId: objectiveIdForWork,
+      conversationIdForWork,
+      projectName: projectNameForWork,
+    });
 
-    if (!token) return;
-
-    taskQueueBusyRef.current = true;
-    setLoadingState("Agents working…");
-
-    const outcomes: Array<{
-      title: string;
-      status: string;
-      summary: string;
-    }> = [];
-
-    for (let index = 0; index < createdTasks.length; index += 1) {
-      const task = createdTasks[index];
-      const planned = plannedTasks[index];
-
-      if (!planned) continue;
-
-      if (planned.approval_level >= 2) {
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id ? { ...item, status: "awaiting_approval" } : item
-          )
-        );
-        outcomes.push({
-          title: task.title,
-          status: "awaiting_approval",
-          summary: `Waiting for L${planned.approval_level} approval.`,
-        });
-        break;
-      }
-
-      setTasks((current) =>
-        current.map((item) =>
-          item.id === task.id ? { ...item, status: "in_progress" } : item
-        )
-      );
-
-      try {
-        const response = await fetch("/api/runs/start", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ task_id: task.id }),
-        });
-
-        const result = await response.json().catch(() => ({}));
-        const nextStatus =
-          response.ok && result.status === "complete"
-            ? "complete"
-            : result.status === "waiting_approval"
-              ? "awaiting_approval"
-              : "failed";
-
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id ? { ...item, status: nextStatus } : item
-          )
-        );
-
-        outcomes.push({
-          title: task.title,
-          status: nextStatus,
-          summary:
-            typeof result.summary === "string" && result.summary.trim()
-              ? result.summary.trim()
-              : nextStatus === "complete"
-                ? "Completed."
-                : nextStatus === "awaiting_approval"
-                  ? "Waiting for approval."
-                  : result.error || "Task failed.",
-        });
-
-        if (nextStatus !== "complete") break;
-      } catch (error) {
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id ? { ...item, status: "failed" } : item
-          )
-        );
-        outcomes.push({
-          title: task.title,
-          status: "failed",
-          summary:
-            error instanceof Error ? error.message : "Task failed unexpectedly.",
-        });
-        break;
-      }
-    }
-
-    const completedCount = outcomes.filter(
-      (outcome) => outcome.status === "complete"
-    ).length;
-    const blocked = outcomes.find(
-      (outcome) => outcome.status !== "complete"
-    );
-
-    const completionReport = blocked
-      ? blocked.status === "awaiting_approval"
-        ? `I finished ${completedCount} step${completedCount === 1 ? "" : "s"} and need your approval before I continue. You can review it in Tasks.`
-        : `I finished ${completedCount} step${completedCount === 1 ? "" : "s"}, but I hit a problem with ${blocked.title}. I left the details in Tasks so you can see exactly what happened.`
-      : `Done. I completed all ${completedCount} step${completedCount === 1 ? "" : "s"} in ${projectNameForReport}.`;
-
-    const reportPhase = blocked ? blocked.status : "complete";
-    const reportKey = `korben:objective-report:${objectiveIdForReport}:${reportPhase}`;
-
-    if (window.localStorage.getItem(reportKey) !== "1") {
-      window.localStorage.setItem(reportKey, "1");
-
+    if (!queued) {
       setMessages((current) => [
         ...current,
-        { role: "assistant", text: completionReport },
+        {
+          role: "assistant",
+          text: "I created the work, but the background worker could not start. I left the tasks queued so they can be resumed safely.",
+        },
       ]);
-
-      await supabase.from("messages").insert({
-        conversation_id: conversationIdForReport,
-        role: "assistant",
-        content: completionReport,
-        input_mode: "system",
-      });
     }
-
-    setLoadingState(
-      blocked?.status === "awaiting_approval"
-        ? "Approval required"
-        : blocked
-          ? "Execution stopped"
-          : "System online"
-    );
-    taskQueueBusyRef.current = false;
   };
 
   const sendMessage = async (
@@ -1700,68 +1519,27 @@ export default function Home() {
 
   useEffect(() => {
     if (!signedIn || !conversationId || !activeObjectiveId || !tasks.length) return;
+    if (tasks.some((task) => task.status === "in_progress")) return;
 
-    const hasRunning = tasks.some((task) => task.status === "in_progress");
-    if (hasRunning) return;
+    const ordered = [...tasks].sort((a, b) => a.sequence - b.sequence);
+    const hasRunnableQueuedTask = ordered.some((task, index) =>
+      task.status === "queued" &&
+      ordered.slice(0, index).every((prior) => prior.status === "complete")
+    );
 
-    const failedTask = [...tasks]
-      .sort((a, b) => a.sequence - b.sequence)
-      .find((task) => task.status === "failed");
+    if (!hasRunnableQueuedTask) return;
 
-    const approvalTask = [...tasks]
-      .sort((a, b) => a.sequence - b.sequence)
-      .find((task) => task.status === "awaiting_approval");
+    const recoveryKey = `korben:background-recovery:${activeObjectiveId}`;
+    if (window.sessionStorage.getItem(recoveryKey) === "1") return;
+    window.sessionStorage.setItem(recoveryKey, "1");
 
-    const allComplete = tasks.every((task) => task.status === "complete");
-
-    const phase = failedTask
-      ? "failed"
-      : approvalTask
-        ? "awaiting_approval"
-        : allComplete
-          ? "complete"
-          : null;
-
-    if (!phase) return;
-
-    const storageKey = `korben:objective-report:${activeObjectiveId}:${phase}`;
-    if (window.localStorage.getItem(storageKey) === "1") return;
-
-    const report =
-      phase === "complete"
-        ? `Done. I finished “${activeObjective}.” All ${tasks.length} delegated step${tasks.length === 1 ? "" : "s"} are complete.`
-        : phase === "awaiting_approval"
-          ? `I’ve taken “${activeObjective}” as far as I can for now. I need your approval for “${approvalTask?.title || "the next protected step"}” before I continue.`
-          : `I hit a blocker while working on “${activeObjective}.” ${failedTask?.title || "A task"} did not complete. I left the details in Tasks and Delegation.`;
-
-    window.localStorage.setItem(storageKey, "1");
-
-    setMessages((current) => {
-      if (current.some((message) => message.role === "assistant" && message.text === report)) {
-        return current;
-      }
-      return [...current, { role: "assistant", text: report }];
+    void enqueueObjectiveWork({
+      objectiveId: activeObjectiveId,
+      conversationIdForWork: conversationId,
+      projectName: currentProjectName,
+      reason: "browser-recovery",
     });
-
-    void supabase.from("messages").insert({
-      conversation_id: conversationId,
-      role: "assistant",
-      content: report,
-      input_mode: "system",
-    });
-
-    if (voiceModeRef.current && "speechSynthesis" in window) {
-      void (async () => {
-        const utterance = new SpeechSynthesisUtterance(toSpokenReply(report));
-        utterance.rate = 0.98;
-        utterance.pitch = 0.9;
-        const voice = await resolveKorbenVoice();
-        if (voice) utterance.voice = voice;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
-      })();
-    }
-  }, [activeObjective, activeObjectiveId, conversationId, signedIn, supabase, tasks]);
+  }, [activeObjectiveId, conversationId, currentProjectName, signedIn, tasks]);
 
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
