@@ -818,9 +818,28 @@ export default function Home() {
       const projectMissions = (objectiveRows || []) as MissionRecord[];
       setMissions(projectMissions);
 
+      const candidateIds = projectMissions
+        .filter((item) => ["planned", "in_progress"].includes(item.status))
+        .map((item) => item.id);
+      const { data: activeTaskRows } = candidateIds.length
+        ? await supabase
+            .from("tasks")
+            .select("objective_id")
+            .in("objective_id", candidateIds)
+            .eq("status", "in_progress")
+        : { data: [] as { objective_id: string }[] };
+      const activeTaskObjectiveIds = new Set(
+        (activeTaskRows || []).map((item) => item.objective_id)
+      );
+      const startupWindow = Date.now() - 5 * 60_000;
+
       const objective =
-        projectMissions.find((item) => item.status === "in_progress") ||
-        projectMissions.find((item) => item.status === "planned") ||
+        projectMissions.find((item) => activeTaskObjectiveIds.has(item.id)) ||
+        projectMissions.find(
+          (item) =>
+            item.status === "planned" &&
+            new Date(item.created_at).getTime() >= startupWindow
+        ) ||
         [...projectMissions].reverse().find((item) => item.status === "queued") ||
         projectMissions[0] ||
         null;
@@ -936,9 +955,27 @@ export default function Home() {
         .limit(40);
 
       const projectMissions = (objectiveRows || []) as MissionRecord[];
+      const candidateIds = projectMissions
+        .filter((item) => ["planned", "in_progress"].includes(item.status))
+        .map((item) => item.id);
+      const { data: activeTaskRows } = candidateIds.length
+        ? await supabase
+            .from("tasks")
+            .select("objective_id")
+            .in("objective_id", candidateIds)
+            .eq("status", "in_progress")
+        : { data: [] as { objective_id: string }[] };
+      const activeTaskObjectiveIds = new Set(
+        (activeTaskRows || []).map((item) => item.objective_id)
+      );
+      const startupWindow = Date.now() - 5 * 60_000;
       const objective =
-        projectMissions.find((item) => item.status === "in_progress") ||
-        projectMissions.find((item) => item.status === "planned") ||
+        projectMissions.find((item) => activeTaskObjectiveIds.has(item.id)) ||
+        projectMissions.find(
+          (item) =>
+            item.status === "planned" &&
+            new Date(item.created_at).getTime() >= startupWindow
+        ) ||
         [...projectMissions].reverse().find((item) => item.status === "queued") ||
         projectMissions[0] ||
         null;
