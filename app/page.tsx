@@ -247,26 +247,28 @@ const parseInternalNavigationRequest = (value: string): { view: KorbenView; labe
     .replace(/\s+/g, " ")
     .trim();
 
-  const hasNavigationVerb =
-    /\b(open|show|go to|navigate to|take me to|switch to|view|bring up|pull up)\b/.test(normalized);
+  const navigationPrefix =
+    /^(?:open|show|go to|navigate to|take me to|switch to|view|bring up|pull up)\s+(?:the\s+|my\s+)?/;
 
-  if (!hasNavigationVerb) return null;
+  if (!navigationPrefix.test(normalized)) return null;
+
+  const target = normalized.replace(navigationPrefix, "").trim();
 
   const routes: Array<{ pattern: RegExp; view: KorbenView; label: string }> = [
-    { pattern: /\b(home|home page|dashboard|overview)\b/, view: "command", label: "Home" },
-    { pattern: /\b(tasks?|task page|mission control|missions?)\b/, view: "work", label: "Tasks" },
-    { pattern: /\b(delegation|delegation feed|workstream|agent activity)\b/, view: "workstream", label: "Delegation" },
-    { pattern: /\b(agents?|agent network|network)\b/, view: "network", label: "Agents" },
-    { pattern: /\b(runs?|run history|activity log|execution history)\b/, view: "runs", label: "Runs" },
-    { pattern: /\b(focus|focus mode)\b/, view: "focus", label: "Focus" },
-    { pattern: /\b(knowledge|library|brain)\b/, view: "brain", label: "Library" },
-    { pattern: /\b(sops?|standard operating procedures?)\b/, view: "sops", label: "SOPs" },
-    { pattern: /\b(tools?|tool registry)\b/, view: "tools", label: "Tools" },
-    { pattern: /\b(integrations?|settings)\b/, view: "integrations", label: "Integrations" },
-    { pattern: /\b(preflight|system check|health check)\b/, view: "preflight", label: "Preflight" },
+    { pattern: /^(?:home|home page|dashboard|overview)$/, view: "command", label: "Home" },
+    { pattern: /^(?:tasks?|tasks? page|mission control|missions?)$/, view: "work", label: "Tasks" },
+    { pattern: /^(?:delegation|delegation feed|workstream|agent activity)$/, view: "workstream", label: "Delegation" },
+    { pattern: /^(?:agents?|agent network|network)$/, view: "network", label: "Agents" },
+    { pattern: /^(?:runs?|run history|activity log|execution history)$/, view: "runs", label: "Runs" },
+    { pattern: /^(?:focus|focus mode)$/, view: "focus", label: "Focus" },
+    { pattern: /^(?:knowledge|library|brain)$/, view: "brain", label: "Library" },
+    { pattern: /^(?:sops?|standard operating procedures?)$/, view: "sops", label: "SOPs" },
+    { pattern: /^(?:tools?|tool registry)$/, view: "tools", label: "Tools" },
+    { pattern: /^(?:integrations?|settings)$/, view: "integrations", label: "Integrations" },
+    { pattern: /^(?:preflight|system check|health check)$/, view: "preflight", label: "Preflight" },
   ];
 
-  return routes.find((route) => route.pattern.test(normalized)) || null;
+  return routes.find((route) => route.pattern.test(target)) || null;
 };
 
 const parseBrowserOpenRequest = (value: string) => {
