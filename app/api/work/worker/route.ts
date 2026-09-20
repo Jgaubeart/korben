@@ -230,6 +230,83 @@ async function queueCoordinator(
   );
 }
 
+async function startNextQueuedObjective(
+  supabase: ReturnType<typeof supabaseFor>,
+  message: WorkMessage,
+  projectId: string,
+  releasedByObjectiveId: string
+) {
+  const { data: nextObjective } = await supabase
+    .from("objectives")
+    .select("id,title,conversation_id")
+    .eq("project_id", projectId)
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!nextObjective) return;
+
+  const { data: claimed } = await supabase
+    .from("objectives")
+    .update({ status: "planned" })
+    .eq("id", nextObjective.id)
+    .eq("status", "queued")
+    .select("id")
+    .maybeSingle();
+
+  if (!claimed) return;
+
+  let conversationId = nextObjective.conversation_id as string | null;
+
+  if (!conversationId) {
+    const { data: conversation } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("project_id", projectId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    conversationId = conversation?.id || null;
+  }
+
+  if (!conversationId) {
+    await supabase
+      .from("objectives")
+      .update({ status: "queued" })
+      .eq("id", nextObjective.id);
+    return;
+  }
+
+  await send(
+    "korben-work",
+    {
+      ...message,
+      objective_id: nextObjective.id,
+      conversation_id: conversationId,
+      target_task_id: null,
+      reason: `project-queue:after:${releasedByObjectiveId}`,
+      enqueued_at: new Date().toISOString(),
+    },
+    {
+      idempotencyKey: `objective:${nextObjective.id}:project-queue:after:${releasedByObjectiveId}`,
+      retentionSeconds: 604800,
+    }
+  );
+
+  await supabase.from("activity_events").insert({
+    project_id: projectId,
+    objective_id: nextObjective.id,
+    event_type: "mission_dequeued",
+    message: `Korben started the next queued mission: ${nextObjective.title}`,
+    metadata: {
+      released_by_objective_id: releasedByObjectiveId,
+      source: "project_mission_queue",
+    },
+  });
+}
+
 export const POST = handleCallback(async (rawMessage) => {
   const message = rawMessage as WorkMessage;
 
@@ -279,6 +356,11 @@ export const POST = handleCallback(async (rawMessage) => {
   let tasks = await loadTasks();
 
   if (!tasks.length) {
+    await supabase
+      .from("objectives")
+      .update({ status: "blocked" })
+      .eq("id", objective.id);
+
     await addReport(
       supabase,
       message,
@@ -287,6 +369,7 @@ export const POST = handleCallback(async (rawMessage) => {
       "blocked",
       objective.mission_summary || objective.title
     );
+    await startNextQueuedObjective(supabase, message, objective.project_id, objective.id);
     return;
   }
 
@@ -443,6 +526,7 @@ export const POST = handleCallback(async (rawMessage) => {
         "blocked",
         objective.mission_summary || objective.title
       );
+      await startNextQueuedObjective(supabase, message, objective.project_id, objective.id);
       return;
     }
 
@@ -477,6 +561,7 @@ export const POST = handleCallback(async (rawMessage) => {
       "blocked",
       objective.mission_summary || objective.title
     );
+    await startNextQueuedObjective(supabase, message, objective.project_id, objective.id);
     return;
   }
 
@@ -525,6 +610,7 @@ export const POST = handleCallback(async (rawMessage) => {
       "complete",
       objective.mission_summary || objective.title
     );
+    await startNextQueuedObjective(supabase, message, objective.project_id, objective.id);
     return;
   }
 
@@ -552,6 +638,11 @@ export const POST = handleCallback(async (rawMessage) => {
       return;
     }
 
+    await supabase
+      .from("objectives")
+      .update({ status: "blocked" })
+      .eq("id", objective.id);
+
     await addReport(
       supabase,
       message,
@@ -560,6 +651,7 @@ export const POST = handleCallback(async (rawMessage) => {
       "blocked",
       objective.mission_summary || objective.title
     );
+    await startNextQueuedObjective(supabase, message, objective.project_id, objective.id);
     return;
   }
 

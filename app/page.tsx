@@ -158,6 +158,16 @@ type OrchestrationPlan = {
   tasks: PlannedTask[];
 };
 
+type MissionRecord = {
+  id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  execution_mode: "sequential" | "fleet";
+  mission_summary: string | null;
+  report_back: string | null;
+};
+
 type Task = {
   id: string;
   title: string;
@@ -430,6 +440,7 @@ export default function Home() {
   const [openLoops, setOpenLoops] = useState<OpenLoop[]>([]);
   const [actionReceipts, setActionReceipts] = useState<ActionReceipt[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const [missions, setMissions] = useState<MissionRecord[]>([]);
   const [missionSummary, setMissionSummary] = useState("");
   const [missionExecutionMode, setMissionExecutionMode] = useState<"sequential" | "fleet">("sequential");
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
@@ -797,13 +808,41 @@ export default function Home() {
         }
       }
 
-      const { data: objective } = await supabase
+      const { data: objectiveRows } = await supabase
         .from("objectives")
         .select("id,title,status,created_at,execution_mode,mission_summary,report_back")
         .eq("project_id", project.id)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(40);
+
+      const projectMissions = (objectiveRows || []) as MissionRecord[];
+      setMissions(projectMissions);
+
+      const candidateIds = projectMissions
+        .filter((item) => ["planned", "in_progress"].includes(item.status))
+        .map((item) => item.id);
+      const { data: activeTaskRows } = candidateIds.length
+        ? await supabase
+            .from("tasks")
+            .select("objective_id")
+            .in("objective_id", candidateIds)
+            .eq("status", "in_progress")
+        : { data: [] as { objective_id: string }[] };
+      const activeTaskObjectiveIds = new Set(
+        (activeTaskRows || []).map((item) => item.objective_id)
+      );
+      const startupWindow = Date.now() - 5 * 60_000;
+
+      const objective =
+        projectMissions.find((item) => activeTaskObjectiveIds.has(item.id)) ||
+        projectMissions.find(
+          (item) =>
+            item.status === "planned" &&
+            new Date(item.created_at).getTime() >= startupWindow
+        ) ||
+        [...projectMissions].reverse().find((item) => item.status === "queued") ||
+        projectMissions[0] ||
+        null;
 
       if (objective) {
         setActiveObjective(objective.title);
@@ -817,6 +856,7 @@ export default function Home() {
           .order("sequence");
         setTasks(taskRows || []);
       } else {
+        setTasks([]);
         setMissionSummary("");
         setMissionExecutionMode("sequential");
       }
@@ -907,15 +947,47 @@ export default function Home() {
     let cancelled = false;
 
     const refreshWorkstream = async () => {
-      const { data: objective } = await supabase
+      const { data: objectiveRows } = await supabase
         .from("objectives")
-        .select("id,title,execution_mode,mission_summary,report_back")
+        .select("id,title,status,created_at,execution_mode,mission_summary,report_back")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(40);
 
-      if (cancelled || !objective) return;
+      const projectMissions = (objectiveRows || []) as MissionRecord[];
+      const candidateIds = projectMissions
+        .filter((item) => ["planned", "in_progress"].includes(item.status))
+        .map((item) => item.id);
+      const { data: activeTaskRows } = candidateIds.length
+        ? await supabase
+            .from("tasks")
+            .select("objective_id")
+            .in("objective_id", candidateIds)
+            .eq("status", "in_progress")
+        : { data: [] as { objective_id: string }[] };
+      const activeTaskObjectiveIds = new Set(
+        (activeTaskRows || []).map((item) => item.objective_id)
+      );
+      const startupWindow = Date.now() - 5 * 60_000;
+      const objective =
+        projectMissions.find((item) => activeTaskObjectiveIds.has(item.id)) ||
+        projectMissions.find(
+          (item) =>
+            item.status === "planned" &&
+            new Date(item.created_at).getTime() >= startupWindow
+        ) ||
+        [...projectMissions].reverse().find((item) => item.status === "queued") ||
+        projectMissions[0] ||
+        null;
+
+      if (cancelled) return;
+      setMissions(projectMissions);
+      if (!objective) {
+        setTasks([]);
+        setActiveObjective("No active objective");
+        setActiveObjectiveId(null);
+        return;
+      }
 
       const [
         { data: taskRows },
@@ -1279,6 +1351,7 @@ export default function Home() {
     setSignedIn(false);
     setMessages([fallbackGreeting]);
     setTasks([]);
+    setMissions([]);
     setOpenLoops([]);
     setActionReceipts([]);
     setNotifications([]);
@@ -1706,6 +1779,29 @@ export default function Home() {
       )
     );
 
+    const { data: otherActiveObjectives } = await supabase
+      .from("objectives")
+      .select("id")
+      .eq("project_id", projectId)
+      .in("status", ["planned", "in_progress"])
+      .neq("id", approval.objective_id)
+      .limit(1);
+
+    if (otherActiveObjectives?.length) {
+      await supabase
+        .from("objectives")
+        .update({ status: "queued" })
+        .eq("id", approval.objective_id);
+
+      setLoadingState("Approved · queued behind current mission");
+      return;
+    }
+
+    await supabase
+      .from("objectives")
+      .update({ status: "planned" })
+      .eq("id", approval.objective_id);
+
     await enqueueObjectiveWork({
       objectiveId: approval.objective_id,
       conversationIdForWork: conversationId,
@@ -2058,8 +2154,38 @@ export default function Home() {
 
     let objective: { id: string; title: string } | null = null;
     let createdTasks: Task[] = [];
+    let objectiveQueued = false;
 
     if (plan.tasks.length > 0 && !["conversation", "question"].includes(plan.intent)) {
+      const { data: runningObjectives } = await supabase
+        .from("objectives")
+        .select("id,status,created_at")
+        .eq("project_id", executionProjectId)
+        .in("status", ["planned", "in_progress"])
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      const runningIds = (runningObjectives || []).map((item) => item.id);
+      const { data: activeTaskRows } = runningIds.length
+        ? await supabase
+            .from("tasks")
+            .select("objective_id")
+            .in("objective_id", runningIds)
+            .eq("status", "in_progress")
+        : { data: [] as { objective_id: string }[] };
+
+      const activeTaskObjectiveIds = new Set(
+        (activeTaskRows || []).map((item) => item.objective_id)
+      );
+      const startupWindow = Date.now() - 5 * 60_000;
+
+      objectiveQueued = (runningObjectives || []).some(
+        (item) =>
+          activeTaskObjectiveIds.has(item.id) ||
+          (item.status === "planned" &&
+            new Date(item.created_at).getTime() >= startupWindow)
+      );
+
       const { data: createdObjective } = await supabase
         .from("objectives")
         .insert({
@@ -2068,7 +2194,7 @@ export default function Home() {
             executionProjectId === resolvedProjectId ? resolvedConversationId : null,
           title: plan.title,
           description: plan.summary || text,
-          status: "planned",
+          status: objectiveQueued ? "queued" : "planned",
           priority: "normal",
           execution_mode: plan.execution_mode || "sequential",
           mission_summary: plan.mission_summary || plan.summary || text,
@@ -2080,10 +2206,12 @@ export default function Home() {
     }
 
     if (objective) {
-      setActiveObjective(objective.title);
-      setActiveObjectiveId(objective.id);
-      setMissionSummary(plan.mission_summary || plan.summary || "");
-      setMissionExecutionMode(plan.execution_mode === "fleet" ? "fleet" : "sequential");
+      if (!objectiveQueued) {
+        setActiveObjective(objective.title);
+        setActiveObjectiveId(objective.id);
+        setMissionSummary(plan.mission_summary || plan.summary || "");
+        setMissionExecutionMode(plan.execution_mode === "fleet" ? "fleet" : "sequential");
+      }
 
       const taskRows = plan.tasks.map((task, index) => ({
         objective_id: objective.id,
@@ -2106,7 +2234,9 @@ export default function Home() {
         .order("sequence");
 
       createdTasks = data || [];
-      setTasks(createdTasks);
+      if (!objectiveQueued) {
+        setTasks(createdTasks);
+      }
 
       const approvals = plan.tasks.flatMap((task, index) => {
         const createdTask = createdTasks[index];
@@ -2204,7 +2334,10 @@ export default function Home() {
       .update({ updated_at: new Date().toISOString() })
       .eq("id", resolvedConversationId);
 
-    const reply = plan.assistant_reply;
+    const reply =
+      objective && objectiveQueued
+        ? `${plan.assistant_reply} I queued this behind the mission already in progress.`
+        : plan.assistant_reply;
     const assistantMessage: Message = { role: "assistant", text: reply };
     setMessages((current) => [...current, assistantMessage]);
 
@@ -2226,6 +2359,7 @@ export default function Home() {
           input_mode: currentInputMode,
           message_id: insertedMessage?.id || null,
           target_project_slug: routedProject?.slug || null,
+          queued_behind_active_mission: objectiveQueued,
         },
       },
       {
@@ -2255,7 +2389,8 @@ export default function Home() {
       objective &&
       plan.requires_execution &&
       createdTasks.length > 0 &&
-      ["work", "action", "approval"].includes(plan.intent)
+      ["work", "action", "approval"].includes(plan.intent) &&
+      !objectiveQueued
     ) {
       void executeTaskQueue(
         createdTasks,
@@ -2350,6 +2485,12 @@ export default function Home() {
   }, [activeObjectiveId, conversationId, currentProjectName, signedIn, tasks]);
 
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
+  const queuedMissions = missions
+    .filter((mission) => mission.status === "queued")
+    .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+  const selectedMission = missions.find((mission) => mission.id === activeObjectiveId);
+  const activeMissionCount =
+    selectedMission && ["planned", "in_progress"].includes(selectedMission.status) ? 1 : 0;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
   const focusClock = `${String(Math.floor(focusRemaining / 60)).padStart(2, "0")}:${String(
     focusRemaining % 60
@@ -2926,11 +3067,35 @@ export default function Home() {
           <p>See the mission outcome, the agents Korben delegated to, live stages, proof of action, and anything still open.</p>
         </div>
         <div className="metric-strip">
-          <div><strong>{tasks.length}</strong><span>Current tasks</span></div>
-          <div><strong>{tasks.filter((task) => task.status === "queued").length}</strong><span>Queued</span></div>
-          <div><strong>{tasks.filter((task) => task.status === "complete").length}</strong><span>Complete</span></div>
+          <div><strong>{activeMissionCount}</strong><span>Active mission</span></div>
+          <div><strong>{queuedMissions.length}</strong><span>Missions queued</span></div>
+          <div><strong>{tasks.filter((task) => task.status === "complete").length}</strong><span>Current steps done</span></div>
         </div>
       </div>
+
+      {queuedMissions.length > 0 && (
+        <section className="mission-queue-panel">
+          <div className="mission-queue-head">
+            <div>
+              <span className="eyebrow">MISSION QUEUE</span>
+              <h2>Up next</h2>
+            </div>
+            <b>{queuedMissions.length}</b>
+          </div>
+          <div className="mission-queue-list">
+            {queuedMissions.map((mission, index) => (
+              <article key={mission.id}>
+                <span className="mission-queue-position">{index + 1}</span>
+                <div>
+                  <strong>{mission.title}</strong>
+                  <p>{mission.mission_summary || "Queued behind the mission currently running."}</p>
+                </div>
+                <span className="mission-queue-status">Queued</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       {activeObjectiveId && (
         <section className="mission-banner">

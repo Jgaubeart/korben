@@ -3583,3 +3583,111 @@ html[data-theme="light"] .site-navbar {
     display: none;
   }
 }
+
+
+/* =========================================================
+   Mission queue
+   ========================================================= */
+
+.mission-queue-panel {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--korben-line);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--korben-surface) 58%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.mission-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.mission-queue-head h2 {
+  margin: 2px 0 0;
+  color: var(--korben-text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.mission-queue-head > b {
+  min-width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--korben-line);
+  border-radius: 999px;
+  color: var(--korben-text);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.mission-queue-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mission-queue-list article {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--korben-line) 84%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--korben-surface) 42%, transparent);
+}
+
+.mission-queue-position {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--korben-gold) 10%, transparent);
+  color: var(--korben-gold);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.mission-queue-list article strong {
+  display: block;
+  color: var(--korben-text);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.mission-queue-list article p {
+  margin: 3px 0 0;
+  color: var(--korben-muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.mission-queue-status {
+  padding: 5px 8px;
+  border: 1px solid var(--korben-line);
+  border-radius: 999px;
+  color: var(--korben-muted);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 620px) {
+  .mission-queue-list article {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .mission-queue-status {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
