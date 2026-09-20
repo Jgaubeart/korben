@@ -95,7 +95,7 @@ export async function runBrowserInspection(
       extraHTTPHeaders: await protectedPreviewHeaders(),
     });
 
-    context.setDefaultTimeout(3000);
+    context.setDefaultTimeout(8000);
     context.setDefaultNavigationTimeout(BROWSER_LIMITS.timeoutMs);
 
     await context.route("**/*", async (route) => {
@@ -234,17 +234,22 @@ export async function runBrowserInspection(
     let screenshotBase64: string | null = null;
 
     if (input.screenshot) {
-      const screenshot = await page.screenshot({
-        type: "png",
-        fullPage: false,
-        animations: "disabled",
-      });
+      try {
+        const screenshot = await page.screenshot({
+          type: "png",
+          fullPage: false,
+          animations: "disabled",
+          timeout: 8000,
+        });
 
-      if (screenshot.byteLength > BROWSER_LIMITS.maxScreenshotBytes) {
-        throw new Error("Screenshot exceeds the browser artifact limit.");
+        if (screenshot.byteLength <= BROWSER_LIMITS.maxScreenshotBytes) {
+          screenshotBase64 = screenshot.toString("base64");
+        }
+      } catch {
+        // Screenshot capture is best-effort. Preserve DOM/layout/console findings
+        // instead of failing the entire inspection on a slow visual artifact.
+        screenshotBase64 = null;
       }
-
-      screenshotBase64 = screenshot.toString("base64");
     }
 
     return {
