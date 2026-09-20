@@ -2094,8 +2094,18 @@ export default function Home() {
 
     let objective: { id: string; title: string } | null = null;
     let createdTasks: Task[] = [];
+    let objectiveQueued = false;
 
     if (plan.tasks.length > 0 && !["conversation", "question"].includes(plan.intent)) {
+      const { data: runningObjectives } = await supabase
+        .from("objectives")
+        .select("id,status")
+        .eq("project_id", executionProjectId)
+        .in("status", ["planned", "in_progress"])
+        .limit(1);
+
+      objectiveQueued = Boolean(runningObjectives?.length);
+
       const { data: createdObjective } = await supabase
         .from("objectives")
         .insert({
@@ -2104,7 +2114,7 @@ export default function Home() {
             executionProjectId === resolvedProjectId ? resolvedConversationId : null,
           title: plan.title,
           description: plan.summary || text,
-          status: "planned",
+          status: objectiveQueued ? "queued" : "planned",
           priority: "normal",
           execution_mode: plan.execution_mode || "sequential",
           mission_summary: plan.mission_summary || plan.summary || text,
@@ -2116,10 +2126,12 @@ export default function Home() {
     }
 
     if (objective) {
-      setActiveObjective(objective.title);
-      setActiveObjectiveId(objective.id);
-      setMissionSummary(plan.mission_summary || plan.summary || "");
-      setMissionExecutionMode(plan.execution_mode === "fleet" ? "fleet" : "sequential");
+      if (!objectiveQueued) {
+        setActiveObjective(objective.title);
+        setActiveObjectiveId(objective.id);
+        setMissionSummary(plan.mission_summary || plan.summary || "");
+        setMissionExecutionMode(plan.execution_mode === "fleet" ? "fleet" : "sequential");
+      }
 
       const taskRows = plan.tasks.map((task, index) => ({
         objective_id: objective.id,
@@ -2142,7 +2154,9 @@ export default function Home() {
         .order("sequence");
 
       createdTasks = data || [];
-      setTasks(createdTasks);
+      if (!objectiveQueued) {
+        setTasks(createdTasks);
+      }
 
       const approvals = plan.tasks.flatMap((task, index) => {
         const createdTask = createdTasks[index];
@@ -2240,7 +2254,10 @@ export default function Home() {
       .update({ updated_at: new Date().toISOString() })
       .eq("id", resolvedConversationId);
 
-    const reply = plan.assistant_reply;
+    const reply =
+      objective && objectiveQueued
+        ? `${plan.assistant_reply} I queued this behind the mission already in progress.`
+        : plan.assistant_reply;
     const assistantMessage: Message = { role: "assistant", text: reply };
     setMessages((current) => [...current, assistantMessage]);
 
@@ -2262,6 +2279,7 @@ export default function Home() {
           input_mode: currentInputMode,
           message_id: insertedMessage?.id || null,
           target_project_slug: routedProject?.slug || null,
+          queued_behind_active_mission: objectiveQueued,
         },
       },
       {
@@ -2291,7 +2309,8 @@ export default function Home() {
       objective &&
       plan.requires_execution &&
       createdTasks.length > 0 &&
-      ["work", "action", "approval"].includes(plan.intent)
+      ["work", "action", "approval"].includes(plan.intent) &&
+      !objectiveQueued
     ) {
       void executeTaskQueue(
         createdTasks,
