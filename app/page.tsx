@@ -1865,6 +1865,17 @@ export default function Home() {
         ? `${currentAgent?.name || "Korben"} is working quietly`
         : "Everything is quiet";
 
+    const homeDelegationItems = [...tasks]
+      .sort((a, b) => {
+        const priority = (status: string) =>
+          status === "in_progress" ? 0 :
+          status === "awaiting_approval" ? 1 :
+          status === "failed" ? 2 :
+          status === "queued" ? 3 : 4;
+        return priority(a.status) - priority(b.status) || a.sequence - b.sequence;
+      })
+      .slice(0, 4);
+
     const toggleTheme = () => {
       const root = document.documentElement;
       const current = root.dataset.theme;
@@ -1935,6 +1946,54 @@ export default function Home() {
                 </div>
               )}
             </div>
+          )}
+
+          {homeDelegationItems.length > 0 && (
+            <section className="home-delegation-feed" aria-label="Delegation activity">
+              <div className="home-delegation-header">
+                <div>
+                  <span>DELEGATION</span>
+                  <strong>{activeObjective}</strong>
+                </div>
+                <button onClick={() => setActiveView("workstream")}>View all</button>
+              </div>
+
+              <div className="home-delegation-list">
+                {homeDelegationItems.map((task) => {
+                  const agent = agentById(task.assigned_agent_id);
+                  const taskEvent = runEvents.find((event) => event.task_id === task.id);
+                  const statusText =
+                    task.status === "in_progress" ? "Working" :
+                    task.status === "awaiting_approval" ? "Waiting on you" :
+                    task.status === "complete" ? "Complete" :
+                    task.status === "failed" ? "Needs attention" :
+                    "Queued";
+
+                  return (
+                    <button
+                      key={task.id}
+                      className={`home-delegation-row ${task.status}`}
+                      onClick={() => setActiveView("workstream")}
+                    >
+                      <span className="home-agent-avatar">
+                        {agent ? agent.name.slice(0, 2).toUpperCase() : "AI"}
+                      </span>
+                      <span className="home-delegation-copy">
+                        <span>
+                          <strong>{agent?.name || "Korben agent"}</strong>
+                          <small>{statusText}</small>
+                        </span>
+                        <p>{task.status === "complete"
+                          ? task.result_summary || taskEvent?.message || task.title
+                          : taskEvent?.message || task.title}
+                        </p>
+                      </span>
+                      <i className={task.status} />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
           )}
 
           <button className="quiet-status" onClick={() => setActiveView(pendingApprovalCount ? "work" : "runs")}>
