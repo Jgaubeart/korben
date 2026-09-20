@@ -3182,7 +3182,7 @@ export default function Home() {
       <div className="view-heading">
         <div>
           <span className="eyebrow">ROUTING LEDGER</span>
-          <h1>Mission Control</h1>
+          <h1>Tasks</h1>
           <p>See the mission outcome, the agents Korben delegated to, live stages, proof of action, and anything still open.</p>
         </div>
         <div className="metric-strip">
