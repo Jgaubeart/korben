@@ -22,7 +22,7 @@ Intent guardrails:
 Project routing rules:
 1. Return target_project_slug for work/action/approval when a specific project target is actually relevant.
 2. If the user explicitly names a project, business, app, repository, or workspace that matches an available project, route to that project automatically.
-3. Examples: "Korben OS", "KorbenOS", or "Korben" when clearly referring to building the product -> korben-os. "Cabinet Genies Portal" -> cabinet-genies-portal.
+3. Examples: "Korben OS", "KorbenOS", or "Korben" when clearly referring to building the product -> korben-os. Never assume a project exists unless it appears in Available projects.
 4. General Workspace is a valid execution workspace for project-agnostic personal-assistant work, generic delegated tasks, harmless sample/test tasks, research/review work, and requests that are about Korben's own assistant behavior rather than a specific product repository.
 5. Do not ask the user to choose a project for a request like "delegate a sample task to a sub-agent", "research this", "review this", "summarize this", "test delegation", or similar project-agnostic work. Route it to general-workspace and create the appropriate agent task.
 6. Ask for a project only when the requested action materially depends on a specific project/repository/business target and neither the newest request nor current context identifies which one.
@@ -370,6 +370,7 @@ export async function POST(request: Request) {
           slug: String(project?.slug ?? ""),
           has_github: Boolean(project?.github_repo),
           has_vercel: Boolean(project?.vercel_project_id),
+          setup_instructions: String(project?.setup_instructions ?? "").slice(0, 6000),
         }))
         .filter((project: any) => project.name && project.slug)
     : [];
@@ -391,6 +392,7 @@ export async function POST(request: Request) {
       input: [
         `Current Command Center context: ${currentProjectName} (${currentProjectSlug})`,
         `Available projects: ${JSON.stringify(availableProjects)}`,
+        "Project setup_instructions are authoritative workspace guidance for routing and execution. Do not invent access to systems that are not configured on the selected project.",
         conversationSummary
           ? `Rolling conversation summary: ${conversationSummary}`
           : "Rolling conversation summary: none.",
