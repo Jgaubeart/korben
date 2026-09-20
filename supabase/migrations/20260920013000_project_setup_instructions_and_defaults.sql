@@ -18,3 +18,6 @@ update public.projects
 set github_repo = null,
     vercel_project_id = null
 where slug = 'general-workspace';
+
+delete from public.projects
+where slug = 'cabinet-genies-portal';
