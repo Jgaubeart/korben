@@ -3158,7 +3158,7 @@ export default function Home() {
       )}
 
       <div className="work-board">
-        {["queued", "in_progress", "awaiting_approval", "failed", "complete"].map((status) => (
+        {["queued", "in_progress", "awaiting_approval", "blocked", "failed", "complete"].map((status) => (
           <div className={`work-lane work-lane-${status}`} key={status}>
             <div className="work-lane-header">
               <span>
@@ -3181,9 +3181,11 @@ export default function Home() {
                       ? task.result_summary || latestEvent?.message || "Completed."
                       : task.status === "awaiting_approval"
                         ? "Korben is paused here until you approve the protected step."
-                        : task.status === "failed"
-                          ? task.result_summary || latestEvent?.message || "This task hit a blocker."
-                          : "Queued and waiting for the prior step to finish.";
+                        : task.status === "blocked"
+                      ? task.result_summary || latestEvent?.message || "This task is blocked."
+                      : task.status === "failed"
+                        ? task.result_summary || latestEvent?.message || "This task failed."
+                        : "Queued and waiting for the prior step to finish.";
 
                 return (
                   <article className={`task-card task-card-${task.status}`} key={task.id}>
@@ -3197,9 +3199,11 @@ export default function Home() {
                             ? "Approval"
                             : task.status === "complete"
                               ? "Done"
-                              : task.status === "failed"
+                              : task.status === "blocked"
                                 ? "Blocked"
-                                : "Queued"}
+                                : task.status === "failed"
+                                  ? "Failed"
+                                  : "Queued"}
                       </span>
                     </div>
                     <strong>{task.title}</strong>
