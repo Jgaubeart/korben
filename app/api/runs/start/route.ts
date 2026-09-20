@@ -424,7 +424,7 @@ export async function POST(request: Request) {
     "If a required tool is unavailable or an approval is required, clearly state the blocker and stop.",
     "Recoverable exploratory misses such as a file path returning Not Found do not by themselves mean the task failed; continue if you can still satisfy the acceptance criteria.",
     "Your final response MUST begin with exactly one status line: TASK_STATUS: COMPLETE, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED.",
-    "Use COMPLETE only when the acceptance criteria are satisfied. Use BLOCKED when required access, data, or approval is missing. Use FAILED when a non-recoverable execution error prevents completion.",
+    "Use COMPLETE only when the acceptance criteria are satisfied. Use BLOCKED when required access, data, approval, or a required verification capability is unavailable. Use FAILED only when a non-recoverable execution error prevents completion.",
     "After the status line, return a concise completion summary including what changed and any remaining risk.",
     "",
     `Project: ${project.name}`,
