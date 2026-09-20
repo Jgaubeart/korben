@@ -1706,8 +1706,14 @@ export default function Home() {
 
     const browserOpenRequest = parseBrowserOpenRequest(text);
     const openedBrowserWindow = browserOpenRequest
-      ? window.open(browserOpenRequest.url, "_blank", "noopener,noreferrer")
+      ? window.open(browserOpenRequest.url, "_blank")
       : null;
+
+    if (openedBrowserWindow) {
+      try {
+        openedBrowserWindow.opener = null;
+      } catch {}
+    }
 
     let resolvedProjectId: string;
     let resolvedConversationId: string;
@@ -1771,7 +1777,13 @@ export default function Home() {
       setSending(false);
 
       if (!openedBrowserWindow) {
-        window.location.assign(browserOpenRequest.url);
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            text: "Your browser blocked the new tab. Allow pop-ups for Korben and try again.",
+          },
+        ]);
         return;
       }
 
