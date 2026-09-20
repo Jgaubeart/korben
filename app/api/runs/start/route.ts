@@ -140,6 +140,8 @@ async function executeToolRequestWithRetry(
 }
 
 const TOOL_ACTION_GUIDE: Record<string, string> = {
+  "browser.inspect":
+    "Valid action: inspect. Params require {url}; viewport, screenshot, text_scale_percent, and steps are optional. For a basic render/heading/layout check, omit steps entirely. Only include a step when you have a concrete non-empty CSS selector; never send placeholder or empty selectors.",
   "github.read":
     "Valid actions: repo, file, branch, branches, pull_request, pull_requests, commit, compare, workflow_runs, workflow_run, workflow_jobs. file accepts {path,ref?,start_line?,end_line?} and returns decoded UTF-8 content in bounded line windows. Use branches and pull_requests when an identifier was not supplied. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Use workflow_runs with {head_sha} to discover Actions runs tied to the exact commit under review; then use workflow_run with {run_id} to verify SHA/status/conclusion and workflow_jobs with {run_id} to verify job and step conclusions. Never use create/update/merge here.",
   "github.write":
@@ -705,7 +707,7 @@ export async function POST(request: Request) {
             action,
             params,
           },
-          READ_ONLY_TOOLS.has(toolKey)
+          READ_ONLY_TOOLS.has(toolKey) && toolKey !== "browser.inspect"
         );
 
         if (!toolResponse.ok) {
