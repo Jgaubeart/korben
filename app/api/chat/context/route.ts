@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
   const { data: messages, error: messageError } = await supabase
     .from("messages")
-    .select("id,role,content,created_at")
+    .select("id,role,content,created_at,message_attachments(file_name,mime_type)")
     .eq("conversation_id", conversationId)
     .in("role", ["user", "assistant"])
     .order("created_at", { ascending: true });
@@ -121,7 +121,15 @@ export async function POST(request: Request) {
   }
 
   const transcript = newRows
-    .map((row) => `${row.role.toUpperCase()}: ${String(row.content || "").slice(0, 4000)}`)
+    .map((row: any) => {
+      const attachmentNames = (row.message_attachments || [])
+        .map((attachment: any) => String(attachment.file_name || ""))
+        .filter(Boolean);
+      const attachmentNote = attachmentNames.length
+        ? `\nATTACHMENTS: ${attachmentNames.join(", ")}`
+        : "";
+      return `${row.role.toUpperCase()}: ${String(row.content || "").slice(0, 4000)}${attachmentNote}`;
+    })
     .join("\n\n");
 
   const response = await fetch("https://api.openai.com/v1/responses", {
