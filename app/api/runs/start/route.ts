@@ -713,7 +713,9 @@ export async function POST(request: Request) {
               ? "awaiting_approval"
               : finalStatus === "complete"
                 ? "complete"
-                : "failed",
+                : finalStatus === "blocked"
+                  ? "blocked"
+                  : "failed",
           result_summary: finalText,
           progress_message:
             finalStatus === "waiting_approval"
