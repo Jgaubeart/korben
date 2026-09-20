@@ -1910,7 +1910,7 @@ export default function Home() {
   const viewTitle =
     activeView === "command" ? "Command Center" :
     activeView === "network" ? "Agent Network" :
-    activeView === "work" ? "Work Routing" :
+    activeView === "work" ? "Mission Control" :
     activeView === "workstream" ? "Delegation Feed" :
     activeView === "runs" ? "Runs & Activity" :
     activeView === "brain" ? "Brain & Memory" :
@@ -2277,8 +2277,8 @@ export default function Home() {
       <div className="view-heading">
         <div>
           <span className="eyebrow">ROUTING LEDGER</span>
-          <h1>Work Routing</h1>
-          <p>See what Korben has routed, who owns it, and where each task sits in the workflow.</p>
+          <h1>Mission Control</h1>
+          <p>See the mission outcome, the agents Korben delegated to, live stages, proof of action, and anything still open.</p>
         </div>
         <div className="metric-strip">
           <div><strong>{tasks.length}</strong><span>Current tasks</span></div>
@@ -2286,6 +2286,23 @@ export default function Home() {
           <div><strong>{tasks.filter((task) => task.status === "complete").length}</strong><span>Complete</span></div>
         </div>
       </div>
+
+      {activeObjectiveId && (
+        <section className="mission-banner">
+          <div className="mission-banner-main">
+            <span className="eyebrow">ACTIVE MISSION</span>
+            <h2>{activeObjective}</h2>
+            <p>{missionSummary || "Korben is coordinating this mission."}</p>
+          </div>
+          <div className="mission-banner-meta">
+            <span className={`mission-mode ${missionExecutionMode}`}>
+              {missionExecutionMode === "fleet" ? "Fleet · parallel agents" : "Sequential mission"}
+            </span>
+            <strong>{progress}%</strong>
+            <small>{completedTasks} of {tasks.length} steps complete</small>
+          </div>
+        </section>
+      )}
 
       {approvals.some((approval) => approval.status === "pending") && (
         <section className="approval-panel">
@@ -2349,7 +2366,7 @@ export default function Home() {
                 const latestEvent = runEvents.find((event) => event.task_id === task.id);
                 const statusCopy =
                   task.status === "in_progress"
-                    ? latestEvent?.message || `${owner?.name || "Agent"} is working on this now.`
+                    ? task.progress_message || latestEvent?.message || `${owner?.name || "Agent"} is working on this now.`
                     : task.status === "complete"
                       ? task.result_summary || latestEvent?.message || "Completed."
                       : task.status === "awaiting_approval"
@@ -2362,6 +2379,7 @@ export default function Home() {
                   <article className={`task-card task-card-${task.status}`} key={task.id}>
                     <div className="task-card-topline">
                       <span className="task-sequence">#{task.sequence}</span>
+                      <span className="task-stage-pill">{task.stage || "Operate"}</span>
                       <span className={`task-status-pill ${task.status}`}>
                         {task.status === "in_progress"
                           ? "Working"
@@ -2402,6 +2420,59 @@ export default function Home() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mission-support-grid">
+        <section className="mission-support-card">
+          <div className="mission-support-head">
+            <div>
+              <span className="eyebrow">OPEN LOOPS</span>
+              <h3>Still unresolved</h3>
+            </div>
+            <b>{openLoops.length}</b>
+          </div>
+          <div className="mission-loop-list">
+            {openLoops.slice(0, 8).map((loop) => (
+              <article key={loop.id}>
+                <i className={loop.status} />
+                <div>
+                  <strong>{loop.title}</strong>
+                  <p>{loop.detail || "Waiting for resolution."}</p>
+                  {loop.waiting_on && <small>Waiting on {loop.waiting_on}</small>}
+                </div>
+              </article>
+            ))}
+            {!openLoops.length && <div className="lane-empty">No unresolved loops.</div>}
+          </div>
+        </section>
+
+        <section className="mission-support-card">
+          <div className="mission-support-head">
+            <div>
+              <span className="eyebrow">ACTION RECEIPTS</span>
+              <h3>Proof of work</h3>
+            </div>
+            <b>{actionReceipts.length}</b>
+          </div>
+          <div className="mission-receipt-list">
+            {actionReceipts.slice(0, 8).map((receipt) => {
+              const owner = agentById(receipt.agent_id);
+              return (
+                <article key={receipt.id}>
+                  <span>{owner ? owner.name.slice(0, 2).toUpperCase() : "K"}</span>
+                  <div>
+                    <strong>{receipt.summary}</strong>
+                    <small>
+                      {receipt.tool_system_key || "Korben"} · {new Date(receipt.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                    </small>
+                  </div>
+                  <i className={receipt.status} />
+                </article>
+              );
+            })}
+            {!actionReceipts.length && <div className="lane-empty">Receipts appear after Korben takes real actions.</div>}
+          </div>
+        </section>
       </div>
     </section>
   );
@@ -2477,7 +2548,7 @@ export default function Home() {
                       <span>Delegated to {agent?.name || "an agent"}</span>
                     </div>
                     <p>{task.title}</p>
-                    {task.description && <small>{task.description}</small>}
+                    {task.description && <small>{task.stage || "Operate"} · {task.description}</small>}
                   </div>
                 </article>
 
@@ -2499,8 +2570,8 @@ export default function Home() {
                       </>
                     ) : task.status === "in_progress" ? (
                       <>
-                        <p>{event?.message || `Working on ${task.title.toLowerCase()}.`}</p>
-                        <small>Live status · updates automatically</small>
+                        <p>{task.progress_message || event?.message || `Working on ${task.title.toLowerCase()}.`}</p>
+                        <small>{task.stage || "Operate"} · live status updates automatically</small>
                       </>
                     ) : task.status === "awaiting_approval" ? (
                       <>
