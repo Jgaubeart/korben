@@ -684,7 +684,7 @@ export async function POST(request: Request) {
     const finalStatus = approvalBlocked
       ? "waiting_approval"
       : declaredStatus === "BLOCKED"
-        ? "error"
+        ? "blocked"
         : declaredStatus === "FAILED"
           ? "error"
           : declaredStatus === "COMPLETE"
