@@ -33,7 +33,9 @@ const readPairs = new Set([
   "github.read:repo",
   "github.read:file",
   "github.read:branch",
+  "github.read:branches",
   "github.read:pull_request",
+  "github.read:pull_requests",
   "github.read:commit",
   "github.read:compare",
   "github.read:workflow_runs",
@@ -50,6 +52,7 @@ const readPairs = new Set([
 const l1Pairs = new Set([
   "github.write:create_branch",
   "github.write:update_file",
+  "github.write:replace_text",
   "github.write:sync_branch",
   "github.pr:create",
   "vercel.preview:deploy",
