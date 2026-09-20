@@ -131,6 +131,14 @@ type PlannedTask = {
   agent_system_key: string;
   acceptance_criteria: string[];
   approval_level: number;
+  stage: string;
+  parallel_group: number;
+};
+
+type PlannedOpenLoop = {
+  title: string;
+  detail: string;
+  waiting_on: string;
 };
 
 type OrchestrationPlan = {
@@ -140,6 +148,10 @@ type OrchestrationPlan = {
   title: string;
   summary: string;
   assistant_reply: string;
+  execution_mode: "sequential" | "fleet";
+  mission_summary: string;
+  open_loops: PlannedOpenLoop[];
+  resolved_loop_ids: string[];
   tasks: PlannedTask[];
 };
 
@@ -153,6 +165,46 @@ type Task = {
   result_summary?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
+  stage?: string | null;
+  parallel_group?: number;
+  progress_message?: string | null;
+  last_heartbeat_at?: string | null;
+};
+
+type OpenLoop = {
+  id: string;
+  title: string;
+  detail: string | null;
+  status: "open" | "waiting" | "closed";
+  waiting_on: string | null;
+  due_at: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolution: string | null;
+};
+
+type ActionReceipt = {
+  id: string;
+  objective_id: string | null;
+  task_id: string | null;
+  agent_id: string | null;
+  tool_system_key: string | null;
+  action: string;
+  status: string;
+  summary: string;
+  evidence: Record<string, any>;
+  created_at: string;
+};
+
+type NotificationRecord = {
+  id: string;
+  objective_id: string | null;
+  kind: string;
+  title: string;
+  body: string;
+  urgency: "low" | "normal" | "high";
+  status: "unread" | "read" | "held";
+  created_at: string;
 };
 
 const normalizeKorbenName = (value: string) =>
@@ -277,6 +329,11 @@ export default function Home() {
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [openLoops, setOpenLoops] = useState<OpenLoop[]>([]);
+  const [actionReceipts, setActionReceipts] = useState<ActionReceipt[]>([]);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const [missionSummary, setMissionSummary] = useState("");
+  const [missionExecutionMode, setMissionExecutionMode] = useState<"sequential" | "fleet">("sequential");
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
   const [activeObjectiveId, setActiveObjectiveId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -930,12 +987,18 @@ export default function Home() {
     summary: requestText,
     assistant_reply:
       "I could not reach the intent router, so I preserved this as structured work without executing any external action.",
+    execution_mode: "sequential",
+    mission_summary: requestText,
+    open_loops: [],
+    resolved_loop_ids: [],
     tasks: [
       {
         title: "Product Spec",
         description: "Define requirements and acceptance criteria",
         agent_system_key: "product_manager",
         acceptance_criteria: ["Requirements are explicit and testable."],
+        stage: "Plan",
+        parallel_group: 0,
         approval_level: 0,
       },
       {
@@ -943,6 +1006,8 @@ export default function Home() {
         description: "Map dependencies and implementation path",
         agent_system_key: "solutions_architect",
         acceptance_criteria: ["Architecture and dependencies are documented."],
+        stage: "Recon",
+        parallel_group: 0,
         approval_level: 0,
       },
       {
@@ -950,6 +1015,8 @@ export default function Home() {
         description: "Implement the requested change on a feature branch",
         agent_system_key: "frontend_engineer",
         acceptance_criteria: ["Requested behavior is implemented."],
+        stage: "Build",
+        parallel_group: 0,
         approval_level: 1,
       },
       {
@@ -957,6 +1024,8 @@ export default function Home() {
         description: "Test behavior, permissions and regressions",
         agent_system_key: "qa_engineer",
         acceptance_criteria: ["Acceptance criteria pass without critical regressions."],
+        stage: "Verify",
+        parallel_group: 0,
         approval_level: 0,
       },
       {
@@ -964,6 +1033,8 @@ export default function Home() {
         description: "Ship a Vercel preview for owner review",
         agent_system_key: "devops_engineer",
         acceptance_criteria: ["A preview deployment is available for review."],
+        stage: "Release",
+        parallel_group: 0,
         approval_level: 1,
       },
     ],
