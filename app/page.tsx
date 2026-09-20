@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { createBrowserSupabaseClient } from "../lib/supabase/client";
 import { AmbientScene } from "../components/ambient/AmbientScene";
 import { SpiritOrb } from "../components/orb/SpiritOrb";
+import { SiteNavbar } from "../components/navigation/SiteNavbar";
 import { getAmbientState, getGreetingForHour, getSimulatedTime } from "../lib/ambient-time";
 
 type Message = {
@@ -464,6 +465,27 @@ export default function Home() {
   const sendMessageRef = useRef<(messageText?: string, mode?: "text" | "voice") => Promise<void>>(
     async () => {}
   );
+
+  useEffect(() => {
+    const requestedView = new URLSearchParams(window.location.search).get("view");
+    const allowedViews = new Set([
+      "command",
+      "work",
+      "workstream",
+      "network",
+      "focus",
+      "brain",
+      "runs",
+      "preflight",
+      "sops",
+      "tools",
+      "integrations",
+    ]);
+
+    if (requestedView && allowedViews.has(requestedView)) {
+      setActiveView(requestedView as typeof activeView);
+    }
+  }, []);
 
   useEffect(() => {
     const resolveAmbientClock = () => {
@@ -2555,6 +2577,26 @@ export default function Home() {
       ? messages.slice(latestUserIndex + 1).find((message) => message.role === "assistant")
       : [...messages].reverse().find((message) => message.role === "assistant");
 
+  const handleProjectChange = (slug: string) => {
+    if (slug === "__manage__") {
+      window.location.assign("/projects");
+      return;
+    }
+
+    if (!projects.some((project) => project.slug === slug)) return;
+
+    window.localStorage.setItem("korben:selected-project", slug);
+    setSelectedProjectSlug(slug);
+  };
+
+  const navbarAccountLabel = `Good ${
+    ambientClock.getHours() < 12
+      ? "morning"
+      : ambientClock.getHours() < 18
+        ? "afternoon"
+        : "evening"
+  }, Jordan`;
+
   const toggleTheme = () => {
     const root = document.documentElement;
     const current = root.dataset.theme;
@@ -2585,46 +2627,17 @@ export default function Home() {
 
     return (
       <section className="korben-home">
-        <header className="korben-home-nav">
-          <button className="korben-home-wordmark" onClick={() => setActiveView("command")}>KORBEN</button>
-
-          <nav className="korben-home-links" aria-label="Primary navigation">
-            <button className="active" onClick={() => setActiveView("command")}>Home</button>
-            <button onClick={() => setActiveView("work")}>Tasks</button>
-            <button onClick={() => setActiveView("workstream")}>Delegation</button>
-            <button onClick={() => setActiveView("command")}>Calendar</button>
-            <button onClick={() => setActiveView("command")}>Communications</button>
-            <button onClick={() => setActiveView("focus")}>Focus</button>
-            <button onClick={() => setActiveView("brain")}>Library</button>
-          </nav>
-
-          <div className="korben-home-account">
-            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-            <label className="project-switcher-wrap">
-              <span>Project</span>
-              <select
-                value={selectedProjectSlug}
-                onChange={(event) => {
-                  const slug = event.target.value;
-                  if (slug === "__manage__") {
-                    window.location.assign("/projects");
-                    return;
-                  }
-                  window.localStorage.setItem("korben:selected-project", slug);
-                  setSelectedProjectSlug(slug);
-                }}
-                aria-label="Choose active project"
-              >
-                {projects.map((project) => (
-                  <option value={project.slug} key={project.id}>{project.name}</option>
-                ))}
-                <option value="__manage__">Manage projects…</option>
-              </select>
-            </label>
-            <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
-          </div>
-        </header>
+        <SiteNavbar
+          projects={projects}
+          selectedProjectSlug={selectedProjectSlug}
+          onProjectChange={handleProjectChange}
+          presence={presenceState}
+          accountLabel={navbarAccountLabel}
+          onAccountClick={() => void signOut()}
+          currentView="command"
+          onViewChange={(view) => setActiveView(view as typeof activeView)}
+          onToggleTheme={toggleTheme}
+        />
 
         <main className="korben-home-stage korben-home-stage-split">
           <div className="korben-home-copy">
@@ -3580,39 +3593,15 @@ export default function Home() {
   if (standaloneChat) {
     return (
       <main className="korben-chat-page">
-        <header className="korben-home-nav korben-chat-nav">
-          <button className="korben-home-wordmark" onClick={() => window.location.assign("/")}>KORBEN</button>
-          <div className="korben-chat-nav-copy">
-            <span>CONVERSATION</span>
-            <strong>You + Korben</strong>
-          </div>
-          <div className="korben-home-account">
-            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-            <label className="project-switcher-wrap">
-              <span>Project</span>
-              <select
-                value={selectedProjectSlug}
-                onChange={(event) => {
-                  const slug = event.target.value;
-                  if (slug === "__manage__") {
-                    window.location.assign("/projects");
-                    return;
-                  }
-                  window.localStorage.setItem("korben:selected-project", slug);
-                  setSelectedProjectSlug(slug);
-                }}
-                aria-label="Choose active project"
-              >
-                {projects.map((project) => (
-                  <option value={project.slug} key={project.id}>{project.name}</option>
-                ))}
-                <option value="__manage__">Manage projects…</option>
-              </select>
-            </label>
-            <button className="account-trigger" onClick={() => window.location.assign("/")}>Home</button>
-          </div>
-        </header>
+        <SiteNavbar
+          projects={projects}
+          selectedProjectSlug={selectedProjectSlug}
+          onProjectChange={handleProjectChange}
+          presence={presenceState}
+          accountLabel={navbarAccountLabel}
+          onAccountClick={() => window.location.assign("/")}
+          onToggleTheme={toggleTheme}
+        />
 
         <section className="korben-chat-shell">
           <div className="korben-chat-context-note">
@@ -3681,47 +3670,17 @@ export default function Home() {
 
   return (
     <main className="zen-app-page">
-      <header className="korben-home-nav zen-app-nav">
-        <button className="korben-home-wordmark" onClick={() => setActiveView("command")}>KORBEN</button>
-
-        <nav className="korben-home-links zen-app-links" aria-label="Primary navigation">
-          <button onClick={() => setActiveView("command")}>Home</button>
-          <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}>Tasks</button>
-          <button className={activeView === "workstream" ? "active" : ""} onClick={() => setActiveView("workstream")}>Delegation</button>
-          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}>Agents</button>
-          <button className={activeView === "focus" ? "active" : ""} onClick={() => setActiveView("focus")}>Focus</button>
-          <button className={["brain","sops","tools","integrations"].includes(activeView) ? "active" : ""} onClick={() => setActiveView("brain")}>Library</button>
-        </nav>
-
-        <div className="korben-home-account">
-          <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-          <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-          <label className="project-switcher-wrap">
-            <span>Project</span>
-            <select
-              value={selectedProjectSlug}
-              onChange={(event) => {
-                const slug = event.target.value;
-                if (slug === "__manage__") {
-                  window.location.assign("/projects");
-                  return;
-                }
-                window.localStorage.setItem("korben:selected-project", slug);
-                setSelectedProjectSlug(slug);
-              }}
-              aria-label="Choose active project"
-            >
-              {projects.map((project) => (
-                <option value={project.slug} key={project.id}>{project.name}</option>
-              ))}
-              <option value="__manage__">Manage projects…</option>
-            </select>
-          </label>
-          <button className="account-trigger" onClick={signOut} title="Sign out">
-            Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
-          </button>
-        </div>
-      </header>
+      <SiteNavbar
+        projects={projects}
+        selectedProjectSlug={selectedProjectSlug}
+        onProjectChange={handleProjectChange}
+        presence={presenceState}
+        accountLabel={navbarAccountLabel}
+        onAccountClick={() => void signOut()}
+        currentView={activeView}
+        onViewChange={(view) => setActiveView(view as typeof activeView)}
+        onToggleTheme={toggleTheme}
+      />
 
       <section className="zen-page-wrap zen-page-wrap-with-korben">
         <div className="zen-page-kicker">
