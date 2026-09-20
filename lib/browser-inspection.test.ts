@@ -6,7 +6,7 @@ import {
   SENTINEL_SYSTEM_KEY,
   isBlockedAddress,
   validateInspectionInput,
-} from "./browser-inspection";
+} from "./browser-inspection.ts";
 
 test("browser capability is bound to Sentinel canonical identity", () => {
   assert.equal(SENTINEL_SYSTEM_KEY, "qa_engineer");
