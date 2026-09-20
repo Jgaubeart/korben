@@ -1857,6 +1857,15 @@ export default function Home() {
   const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
   const latestAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
 
+  const toggleTheme = () => {
+    const root = document.documentElement;
+    const current = root.dataset.theme;
+    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = current === "dark" ? "light" : current === "light" ? "dark" : systemDark ? "light" : "dark";
+    root.dataset.theme = next;
+    window.localStorage.setItem("korben:theme", next);
+  };
+
   const renderCommandCenter = () => {
     const pendingApprovalCount = approvals.filter((approval) => approval.status === "pending").length;
     const homeStatus = pendingApprovalCount
@@ -1875,15 +1884,6 @@ export default function Home() {
         return priority(a.status) - priority(b.status) || a.sequence - b.sequence;
       })
       .slice(0, 4);
-
-    const toggleTheme = () => {
-      const root = document.documentElement;
-      const current = root.dataset.theme;
-      const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const next = current === "dark" ? "light" : current === "light" ? "dark" : systemDark ? "light" : "dark";
-      root.dataset.theme = next;
-      window.localStorage.setItem("korben:theme", next);
-    };
 
     return (
       <section className="korben-home">
@@ -2680,55 +2680,41 @@ export default function Home() {
     return renderCalmMode();
   }
 
+  if (activeView === "command") {
+    return <main className="command-home-shell">{renderCommandCenter()}</main>;
+  }
+
   return (
-    <main className={`calm-os-shell ${activeView === "command" ? "command-home-shell" : ""}`}>
-      <aside className="calm-sidebar">
-        <button className="calm-sidebar-brand" onClick={() => setActiveView("command")}>
-          <span className="sidebar-korben-mark" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
-          <strong>KORBEN</strong>
-          <span>YOUR AI OPERATING SYSTEM</span>
-        </button>
+    <main className="zen-app-page">
+      <header className="korben-home-nav zen-app-nav">
+        <button className="korben-home-wordmark" onClick={() => setActiveView("command")}>KORBEN</button>
 
-        <nav className="calm-nav">
-          <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>⌂</i><span>Overview</span></button>
-          <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}><i>☑</i><span>Tasks</span></button>
-          <button className={activeView === "workstream" ? "active" : ""} onClick={() => setActiveView("workstream")}><i>↗</i><span>Delegation</span></button>
-          <button onClick={() => setActiveView("work")}><i>□</i><span>Projects</span></button>
-          <button onClick={() => setActiveView("command")}><i>▣</i><span>Calendar</span></button>
-          <button onClick={() => setActiveView("command")}><i>▢</i><span>Communications</span></button>
-          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}><i>⌘</i><span>Agents</span></button>
-
-          <span className="calm-nav-divider" />
-
-          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>◇</i><span>Knowledge</span></button>
-          <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>▦</i><span>Integrations</span></button>
-          <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>⚙</i><span>Settings</span></button>
+        <nav className="korben-home-links zen-app-links" aria-label="Primary navigation">
+          <button onClick={() => setActiveView("command")}>Home</button>
+          <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}>Tasks</button>
+          <button className={activeView === "workstream" ? "active" : ""} onClick={() => setActiveView("workstream")}>Delegation</button>
+          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}>Agents</button>
+          <button className={activeView === "focus" ? "active" : ""} onClick={() => setActiveView("focus")}>Focus</button>
+          <button className={["brain","sops","tools","integrations"].includes(activeView) ? "active" : ""} onClick={() => setActiveView("brain")}>Library</button>
         </nav>
 
-        <div className="sidebar-affirmation">“A calmer mind<br />builds a bigger life.”</div>
-        <div className="sidebar-signature">PEOPLE<br />IDEAS<br />PROGRESS<br />A BRIGHTER YOU</div>
-      </aside>
+        <div className="korben-home-account">
+          <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+          <span className="presence-dot" />
+          <button className="account-trigger" onClick={signOut} title="Sign out">
+            Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
+          </button>
+        </div>
+      </header>
 
-      <div className="calm-main">
-        {activeView !== "command" && (
-          <header className="calm-inner-header">
-            <button onClick={() => setActiveView("command")}>← Home</button>
-            <div>
-              <span>{currentProjectName}</span>
-              <strong>{viewTitle}</strong>
-            </div>
-            <div className="inner-header-actions">
-              <button onClick={() => setCalmMode(true)}>Calm mode</button>
-              <button className="avatar calm-avatar" onClick={signOut} title="Sign out">JG</button>
-            </div>
-          </header>
-        )}
+      <section className="zen-page-wrap">
+        <div className="zen-page-kicker">
+          <button onClick={() => setActiveView("command")}>← Home</button>
+          <span>{currentProjectName}</span>
+          <i />
+          <strong>{viewTitle}</strong>
+        </div>
 
-        {activeView === "command" && renderCommandCenter()}
         {activeView === "network" && renderNetwork()}
         {activeView === "work" && renderWork()}
         {activeView === "workstream" && renderWorkstream()}
@@ -2737,7 +2723,7 @@ export default function Home() {
         {activeView === "preflight" && renderPreflight()}
         {activeView === "brain" && renderBrainGalaxy()}
         {["sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
-      </div>
+      </section>
     </main>
   );
 }
