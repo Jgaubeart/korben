@@ -659,21 +659,27 @@ export default function Home() {
 
       const { data: projectRows } = await supabase
         .from("projects")
-        .select("id,name,slug,github_repo,vercel_project_id")
+        .select("id,name,slug,github_repo,vercel_project_id,setup_instructions")
         .eq("status", "active")
         .order("name");
 
-      setProjects(projectRows || []);
+      const activeProjects = (projectRows || []) as ProjectRecord[];
+      setProjects(activeProjects);
 
-      const { data: project } = await supabase
-        .from("projects")
-        .select("id,name,slug,github_repo,vercel_project_id")
-        .eq("slug", selectedProjectSlug)
-        .single();
+      const project =
+        activeProjects.find((item) => item.slug === selectedProjectSlug) ||
+        activeProjects.find((item) => item.slug === "general-workspace") ||
+        activeProjects[0] ||
+        null;
 
       if (!project) {
-        setLoadingState("Project not found");
+        setLoadingState("No projects configured");
         return;
+      }
+
+      if (project.slug !== selectedProjectSlug) {
+        setSelectedProjectSlug(project.slug);
+        window.localStorage.setItem("korben:selected-project", project.slug);
       }
 
       setProjectId(project.id);
