@@ -2296,6 +2296,35 @@ export default function Home() {
           </div>
 
           <aside className="korben-home-sidecar" aria-label="Korben conversation and delegation">
+            {dailyBriefing && (
+              <section className="home-briefing-card">
+                <div>
+                  <span>DAILY BRIEFING</span>
+                  <strong>{dailyBriefing}</strong>
+                </div>
+                <small>{presenceState === "away" ? "Korben is staying quiet while you're away." : "Korben is keeping the day organized."}</small>
+              </section>
+            )}
+
+            <div className="home-awareness-strip">
+              <button className={screenAware ? "active" : ""} onClick={() => void toggleScreenAwareness()}>
+                <i />
+                {screenAware ? "Screen aware" : "Share screen context"}
+              </button>
+              {notificationPermission !== "granted" && notificationPermission !== "unsupported" ? (
+                <button onClick={() => void enableNotifications()}>Enable alerts</button>
+              ) : (
+                <span>{notifications.filter((item) => item.status === "unread").length} updates</span>
+              )}
+            </div>
+
+            {screenAware && screenSummary && (
+              <div className="home-screen-context">
+                <span>VISIBLE CONTEXT</span>
+                <p>{screenSummary}</p>
+              </div>
+            )}
+
             {latestUserMessage && (
               <div className="korben-live-transcript" aria-live="polite">
                 <div className="transcript-line user">
