@@ -944,3 +944,582 @@ body {
     -webkit-box-orient: vertical;
   }
 }
+
+
+/* =========================================================
+   Unified Korben interior pages
+   Every module now uses the same calm visual language as Home.
+   ========================================================= */
+.zen-app-page {
+  min-height: 100vh;
+  color: var(--korben-text);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.012), transparent 36%),
+    transparent;
+}
+
+.zen-app-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(235,194,126,.045), transparent 28%),
+    linear-gradient(180deg, transparent 0 72%, rgba(255,255,255,.02));
+}
+
+.zen-app-nav {
+  position: relative;
+  z-index: 10;
+}
+
+.zen-app-links {
+  gap: clamp(22px, 3.2vw, 48px);
+}
+
+.zen-page-wrap {
+  position: relative;
+  z-index: 2;
+  width: min(1180px, calc(100% - 80px));
+  margin: 0 auto;
+  padding: 42px 0 90px;
+}
+
+.zen-page-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  color: var(--korben-muted);
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+
+.zen-page-kicker button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--korben-text);
+  cursor: pointer;
+  opacity: .76;
+}
+
+.zen-page-kicker button:hover {
+  opacity: 1;
+}
+
+.zen-page-kicker i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--korben-gold);
+}
+
+.zen-page-kicker strong {
+  color: var(--korben-text);
+  font-weight: 540;
+}
+
+/* Page title language */
+.zen-app-page .os-view {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.zen-app-page .view-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  margin: 0 0 34px;
+  padding: 0;
+  border: 0;
+}
+
+.zen-app-page .view-heading > div:first-child {
+  max-width: 700px;
+}
+
+.zen-app-page .eyebrow {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--korben-gold);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .24em;
+}
+
+.zen-app-page .view-heading h1 {
+  margin: 0;
+  color: var(--korben-text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(40px, 5vw, 62px);
+  line-height: .98;
+  font-weight: 400;
+  letter-spacing: -.035em;
+}
+
+.zen-app-page .view-heading p {
+  max-width: 650px;
+  margin: 14px 0 0;
+  color: var(--korben-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* Quiet metrics instead of HUD boxes */
+.zen-app-page .metric-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 0 0 4px;
+  border: 0;
+  background: transparent;
+}
+
+.zen-app-page .metric-strip > div {
+  min-width: 72px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: right;
+}
+
+.zen-app-page .metric-strip strong {
+  display: block;
+  color: var(--korben-text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 26px;
+  font-weight: 400;
+}
+
+.zen-app-page .metric-strip span {
+  display: block;
+  margin-top: 3px;
+  color: var(--korben-muted);
+  font-size: 9px;
+  letter-spacing: .08em;
+}
+
+/* Shared calm surfaces */
+.zen-app-page .department-card,
+.zen-app-page .network-orchestrator,
+.zen-app-page .task-card,
+.zen-app-page .approval-panel,
+.zen-app-page .approval-card,
+.zen-app-page .work-lane,
+.zen-app-page .run-event-card,
+.zen-app-page .focus-console,
+.zen-app-page .focus-card,
+.zen-app-page .preflight-summary,
+.zen-app-page .preflight-card,
+.zen-app-page .registry-card,
+.zen-app-page .delegation-bubble {
+  border: 1px solid var(--korben-line);
+  background: color-mix(in srgb, var(--korben-surface) 74%, transparent);
+  box-shadow: none;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.zen-app-page .department-card,
+.zen-app-page .network-orchestrator,
+.zen-app-page .focus-console,
+.zen-app-page .focus-card,
+.zen-app-page .preflight-summary,
+.zen-app-page .preflight-card,
+.zen-app-page .registry-card {
+  border-radius: 22px;
+}
+
+/* Network / agents */
+.zen-app-page .network-orchestrator {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding: 20px 22px;
+}
+
+.zen-app-page .network-core,
+.zen-app-page .agent-node {
+  border: 1px solid var(--korben-line);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255,248,233,.94), rgba(219,192,152,.78) 40%, rgba(142,116,88,.82) 100%);
+  color: #f8f0e4;
+  box-shadow: 0 5px 18px rgba(112,83,46,.08);
+}
+
+.zen-app-page .network-orchestrator span,
+.zen-app-page .department-header span,
+.zen-app-page .task-owner small,
+.zen-app-page .registry-status,
+.zen-app-page .agent-state {
+  color: var(--korben-muted);
+}
+
+.zen-app-page .network-orchestrator strong,
+.zen-app-page .department-header h2,
+.zen-app-page .network-agent strong,
+.zen-app-page .task-card strong,
+.zen-app-page .registry-card strong,
+.zen-app-page .focus-card strong {
+  color: var(--korben-text);
+}
+
+.zen-app-page .network-orchestrator p,
+.zen-app-page .network-agent small,
+.zen-app-page .task-card p,
+.zen-app-page .registry-card p,
+.zen-app-page .focus-card p {
+  color: var(--korben-muted);
+}
+
+.zen-app-page .department-grid {
+  gap: 18px;
+}
+
+.zen-app-page .department-card {
+  padding: 20px;
+}
+
+.zen-app-page .network-agent {
+  border-top-color: var(--korben-line);
+}
+
+.zen-app-page .agent-state {
+  border-color: var(--korben-line);
+  background: transparent;
+}
+
+/* Tasks */
+.zen-app-page .work-board {
+  gap: 16px;
+}
+
+.zen-app-page .work-lane {
+  overflow: hidden;
+  border-radius: 22px;
+}
+
+.zen-app-page .work-lane-header {
+  border-bottom: 1px solid var(--korben-line);
+  background: transparent;
+  color: var(--korben-muted);
+}
+
+.zen-app-page .work-lane-header b {
+  color: var(--korben-text);
+}
+
+.zen-app-page .work-lane-body {
+  background: transparent;
+}
+
+.zen-app-page .task-card {
+  margin: 10px;
+  border-radius: 16px;
+  padding: 15px;
+}
+
+.zen-app-page .task-sequence {
+  color: var(--korben-gold);
+}
+
+.zen-app-page .task-owner > span {
+  border: 1px solid var(--korben-line);
+  background: transparent;
+  color: var(--korben-text);
+}
+
+.zen-app-page .approval-panel {
+  margin-bottom: 22px;
+  border-radius: 22px;
+  padding: 20px;
+}
+
+.zen-app-page .approval-panel-header,
+.zen-app-page .approval-card {
+  border-color: var(--korben-line);
+}
+
+.zen-app-page .approval-card {
+  border-radius: 16px;
+}
+
+.zen-app-page .approval-approve,
+.zen-app-page .approval-reject,
+.zen-app-page .preflight-run,
+.zen-app-page .focus-actions button,
+.zen-app-page .focus-duration-row button {
+  border: 1px solid var(--korben-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--korben-surface) 72%, transparent);
+  color: var(--korben-text);
+  box-shadow: none;
+}
+
+.zen-app-page .approval-approve,
+.zen-app-page .focus-start,
+.zen-app-page .preflight-run {
+  border-color: color-mix(in srgb, var(--korben-gold) 50%, var(--korben-line));
+}
+
+/* Runs / activity */
+.zen-app-page .run-event-list {
+  display: grid;
+  gap: 10px;
+}
+
+.zen-app-page .run-event-card {
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.zen-app-page .run-event-main strong {
+  color: var(--korben-text);
+}
+
+.zen-app-page .run-event-main span,
+.zen-app-page .run-event-main p,
+.zen-app-page .run-event-card time {
+  color: var(--korben-muted);
+}
+
+.zen-app-page .run-event-main b {
+  border-color: var(--korben-line);
+  background: transparent;
+  color: var(--korben-gold);
+}
+
+.zen-app-page .run-event-dot {
+  background: #a69f92;
+  box-shadow: none;
+}
+
+.zen-app-page .run-event-dot.complete { background: #6f9e82; }
+.zen-app-page .run-event-dot.running { background: var(--korben-gold); }
+.zen-app-page .run-event-dot.error { background: #b26f62; }
+
+/* Focus */
+.zen-app-page .focus-layout {
+  gap: 18px;
+}
+
+.zen-app-page .focus-console {
+  padding: clamp(28px, 5vw, 56px);
+  text-align: center;
+}
+
+.zen-app-page .focus-clock {
+  margin: 18px 0 24px;
+  color: var(--korben-text);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(72px, 10vw, 128px);
+  font-weight: 400;
+  letter-spacing: -.045em;
+  text-shadow: none;
+}
+
+.zen-app-page .focus-goal-input {
+  border: 0;
+  border-bottom: 1px solid var(--korben-line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--korben-text);
+  text-align: center;
+  box-shadow: none;
+}
+
+.zen-app-page .focus-goal-input::placeholder {
+  color: var(--korben-muted);
+}
+
+.zen-app-page .focus-side {
+  gap: 18px;
+}
+
+/* Preflight */
+.zen-app-page .preflight-summary {
+  padding: 20px 22px;
+}
+
+.zen-app-page .preflight-grid {
+  gap: 14px;
+}
+
+.zen-app-page .preflight-card {
+  padding: 18px;
+}
+
+.zen-app-page .preflight-card strong,
+.zen-app-page .preflight-summary strong {
+  color: var(--korben-text);
+}
+
+.zen-app-page .preflight-card p,
+.zen-app-page .preflight-card span,
+.zen-app-page .preflight-summary small {
+  color: var(--korben-muted);
+}
+
+.zen-app-page .preflight-dot {
+  box-shadow: none;
+}
+
+/* Knowledge / library cards */
+.zen-app-page .registry-grid {
+  gap: 16px;
+}
+
+.zen-app-page .registry-card {
+  padding: 20px;
+}
+
+.zen-app-page .registry-status {
+  border-color: var(--korben-line);
+  background: transparent;
+}
+
+/* Brain Galaxy: remove old cyber/HUD feel while preserving useful relationships */
+.zen-app-page .brain-galaxy {
+  border: 1px solid var(--korben-line);
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--korben-surface) 58%, transparent);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.zen-app-page .galaxy-grid {
+  opacity: .045;
+  filter: sepia(.5);
+}
+
+.zen-app-page .galaxy-haze {
+  opacity: .14;
+  filter: blur(55px);
+}
+
+.zen-app-page .galaxy-link {
+  stroke: var(--korben-line);
+  opacity: .45;
+}
+
+.zen-app-page .galaxy-core {
+  border-color: var(--korben-line);
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255,248,233,.92), rgba(219,192,152,.74) 38%, rgba(142,116,88,.78) 100%);
+  box-shadow: 0 12px 40px rgba(112,83,46,.10);
+}
+
+.zen-app-page .galaxy-node-dot {
+  box-shadow: none;
+}
+
+.zen-app-page .galaxy-node-card {
+  border-color: var(--korben-line);
+  background: color-mix(in srgb, var(--korben-surface) 86%, transparent);
+  color: var(--korben-text);
+  box-shadow: none;
+  backdrop-filter: blur(16px);
+}
+
+/* Empty states */
+.zen-app-page .empty-state,
+.zen-app-page .lane-empty {
+  border-color: var(--korben-line);
+  background: transparent;
+  color: var(--korben-muted);
+}
+
+/* Delegation page already uses zen surfaces; align heading width */
+.zen-app-page .delegation-view {
+  width: 100%;
+}
+
+.zen-app-page .delegation-thread {
+  margin-top: 28px;
+}
+
+/* Light mode interior tuning */
+html[data-theme="light"] .zen-app-page .department-card,
+html[data-theme="light"] .zen-app-page .network-orchestrator,
+html[data-theme="light"] .zen-app-page .task-card,
+html[data-theme="light"] .zen-app-page .approval-panel,
+html[data-theme="light"] .zen-app-page .approval-card,
+html[data-theme="light"] .zen-app-page .work-lane,
+html[data-theme="light"] .zen-app-page .run-event-card,
+html[data-theme="light"] .zen-app-page .focus-console,
+html[data-theme="light"] .zen-app-page .focus-card,
+html[data-theme="light"] .zen-app-page .preflight-summary,
+html[data-theme="light"] .zen-app-page .preflight-card,
+html[data-theme="light"] .zen-app-page .registry-card,
+html[data-theme="light"] .zen-app-page .delegation-bubble,
+html[data-theme="light"] .zen-app-page .brain-galaxy {
+  background: rgba(255,252,246,.50);
+}
+
+/* Responsive interior nav/pages */
+@media (max-width: 1100px) {
+  .zen-app-nav {
+    grid-template-columns: 1fr auto;
+  }
+
+  .zen-app-links {
+    top: 74px;
+  }
+
+  .zen-page-wrap {
+    width: min(1180px, calc(100% - 44px));
+    padding-top: 74px;
+  }
+
+  .zen-app-page .view-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .zen-app-page .metric-strip {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .zen-app-page .metric-strip > div {
+    text-align: left;
+  }
+}
+
+@media (max-width: 760px) {
+  .zen-page-wrap {
+    width: calc(100% - 32px);
+    padding-top: 34px;
+  }
+
+  .zen-page-kicker {
+    flex-wrap: wrap;
+  }
+
+  .zen-app-page .view-heading h1 {
+    font-size: 40px;
+  }
+
+  .zen-app-page .metric-strip {
+    gap: 18px;
+    overflow-x: auto;
+  }
+
+  .zen-app-page .work-board,
+  .zen-app-page .focus-layout,
+  .zen-app-page .department-grid,
+  .zen-app-page .registry-grid,
+  .zen-app-page .preflight-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .zen-app-page .focus-clock {
+    font-size: 68px;
+  }
+}
