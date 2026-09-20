@@ -1989,7 +1989,6 @@ export default function Home() {
             slug: project.slug,
             github_repo: project.github_repo,
             vercel_project_id: project.vercel_project_id,
-            setup_instructions: project.setup_instructions,
           })),
           conversationSummary,
           recentMessages: messages.slice(-12).map((message) => ({
@@ -2565,32 +2564,6 @@ export default function Home() {
     window.localStorage.setItem("korben:theme", next);
   };
 
-  const switchProject = (slug: string) => {
-    if (slug === "__manage__") {
-      window.location.assign("/projects");
-      return;
-    }
-    if (!projects.some((project) => project.slug === slug)) return;
-    window.localStorage.setItem("korben:selected-project", slug);
-    setSelectedProjectSlug(slug);
-  };
-
-  const renderProjectSwitcher = () => (
-    <label className="project-switcher-wrap">
-      <span>Project</span>
-      <select
-        value={selectedProjectSlug}
-        onChange={(event) => switchProject(event.target.value)}
-        aria-label="Choose active project"
-      >
-        {projects.map((project) => (
-          <option value={project.slug} key={project.id}>{project.name}</option>
-        ))}
-        <option value="__manage__">Manage projects…</option>
-      </select>
-    </label>
-  );
-
   const renderCommandCenter = () => {
     const pendingApprovalCount = approvals.filter((approval) => approval.status === "pending").length;
     const homeStatus = pendingApprovalCount
@@ -2628,7 +2601,6 @@ export default function Home() {
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
             <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-            {renderProjectSwitcher()}
             <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
           </div>
         </header>
@@ -3596,7 +3568,6 @@ export default function Home() {
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
             <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-            {renderProjectSwitcher()}
             <button className="account-trigger" onClick={() => window.location.assign("/")}>Home</button>
           </div>
         </header>
@@ -3683,7 +3654,6 @@ export default function Home() {
         <div className="korben-home-account">
           <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
           <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
-          {renderProjectSwitcher()}
           <button className="account-trigger" onClick={signOut} title="Sign out">
             Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
           </button>
