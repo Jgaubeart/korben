@@ -808,13 +808,22 @@ export default function Home() {
         }
       }
 
-      const { data: objective } = await supabase
+      const { data: objectiveRows } = await supabase
         .from("objectives")
         .select("id,title,status,created_at,execution_mode,mission_summary,report_back")
         .eq("project_id", project.id)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(40);
+
+      const projectMissions = (objectiveRows || []) as MissionRecord[];
+      setMissions(projectMissions);
+
+      const objective =
+        projectMissions.find((item) => item.status === "in_progress") ||
+        projectMissions.find((item) => item.status === "planned") ||
+        [...projectMissions].reverse().find((item) => item.status === "queued") ||
+        projectMissions[0] ||
+        null;
 
       if (objective) {
         setActiveObjective(objective.title);
@@ -828,6 +837,7 @@ export default function Home() {
           .order("sequence");
         setTasks(taskRows || []);
       } else {
+        setTasks([]);
         setMissionSummary("");
         setMissionExecutionMode("sequential");
       }
@@ -918,15 +928,29 @@ export default function Home() {
     let cancelled = false;
 
     const refreshWorkstream = async () => {
-      const { data: objective } = await supabase
+      const { data: objectiveRows } = await supabase
         .from("objectives")
-        .select("id,title,execution_mode,mission_summary,report_back")
+        .select("id,title,status,created_at,execution_mode,mission_summary,report_back")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(40);
 
-      if (cancelled || !objective) return;
+      const projectMissions = (objectiveRows || []) as MissionRecord[];
+      const objective =
+        projectMissions.find((item) => item.status === "in_progress") ||
+        projectMissions.find((item) => item.status === "planned") ||
+        [...projectMissions].reverse().find((item) => item.status === "queued") ||
+        projectMissions[0] ||
+        null;
+
+      if (cancelled) return;
+      setMissions(projectMissions);
+      if (!objective) {
+        setTasks([]);
+        setActiveObjective("No active objective");
+        setActiveObjectiveId(null);
+        return;
+      }
 
       const [
         { data: taskRows },
@@ -1290,6 +1314,7 @@ export default function Home() {
     setSignedIn(false);
     setMessages([fallbackGreeting]);
     setTasks([]);
+    setMissions([]);
     setOpenLoops([]);
     setActionReceipts([]);
     setNotifications([]);
