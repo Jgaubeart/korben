@@ -2601,6 +2601,27 @@ export default function Home() {
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
             <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            <label className="project-switcher-wrap">
+              <span>Project</span>
+              <select
+                value={selectedProjectSlug}
+                onChange={(event) => {
+                  const slug = event.target.value;
+                  if (slug === "__manage__") {
+                    window.location.assign("/projects");
+                    return;
+                  }
+                  window.localStorage.setItem("korben:selected-project", slug);
+                  setSelectedProjectSlug(slug);
+                }}
+                aria-label="Choose active project"
+              >
+                {projects.map((project) => (
+                  <option value={project.slug} key={project.id}>{project.name}</option>
+                ))}
+                <option value="__manage__">Manage projects…</option>
+              </select>
+            </label>
             <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
           </div>
         </header>
@@ -3568,6 +3589,27 @@ export default function Home() {
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
             <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            <label className="project-switcher-wrap">
+              <span>Project</span>
+              <select
+                value={selectedProjectSlug}
+                onChange={(event) => {
+                  const slug = event.target.value;
+                  if (slug === "__manage__") {
+                    window.location.assign("/projects");
+                    return;
+                  }
+                  window.localStorage.setItem("korben:selected-project", slug);
+                  setSelectedProjectSlug(slug);
+                }}
+                aria-label="Choose active project"
+              >
+                {projects.map((project) => (
+                  <option value={project.slug} key={project.id}>{project.name}</option>
+                ))}
+                <option value="__manage__">Manage projects…</option>
+              </select>
+            </label>
             <button className="account-trigger" onClick={() => window.location.assign("/")}>Home</button>
           </div>
         </header>
@@ -3654,6 +3696,27 @@ export default function Home() {
         <div className="korben-home-account">
           <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
           <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+          <label className="project-switcher-wrap">
+            <span>Project</span>
+            <select
+              value={selectedProjectSlug}
+              onChange={(event) => {
+                const slug = event.target.value;
+                if (slug === "__manage__") {
+                  window.location.assign("/projects");
+                  return;
+                }
+                window.localStorage.setItem("korben:selected-project", slug);
+                setSelectedProjectSlug(slug);
+              }}
+              aria-label="Choose active project"
+            >
+              {projects.map((project) => (
+                <option value={project.slug} key={project.id}>{project.name}</option>
+              ))}
+              <option value="__manage__">Manage projects…</option>
+            </select>
+          </label>
           <button className="account-trigger" onClick={signOut} title="Sign out">
             Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
           </button>
