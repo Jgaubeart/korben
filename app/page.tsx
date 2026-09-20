@@ -1401,6 +1401,15 @@ export default function Home() {
             role: message.role,
             content: message.text,
           })),
+          activeOpenLoops: openLoops
+            .filter((loop) => loop.status !== "closed")
+            .slice(0, 30)
+            .map((loop) => ({
+              id: loop.id,
+              title: loop.title,
+              detail: loop.detail,
+              waiting_on: loop.waiting_on,
+            })),
         }),
       });
 
@@ -1455,6 +1464,8 @@ export default function Home() {
           description: plan.summary || text,
           status: "planned",
           priority: "normal",
+          execution_mode: plan.execution_mode || "sequential",
+          mission_summary: plan.mission_summary || plan.summary || text,
         })
         .select("id,title")
         .single();
@@ -1465,6 +1476,8 @@ export default function Home() {
     if (objective) {
       setActiveObjective(objective.title);
       setActiveObjectiveId(objective.id);
+      setMissionSummary(plan.mission_summary || plan.summary || "");
+      setMissionExecutionMode(plan.execution_mode === "fleet" ? "fleet" : "sequential");
 
       const taskRows = plan.tasks.map((task, index) => ({
         objective_id: objective.id,
@@ -1475,12 +1488,15 @@ export default function Home() {
         status: "queued",
         sequence: index + 1,
         acceptance_criteria: task.acceptance_criteria,
+        stage: task.stage || "Operate",
+        parallel_group: Number(task.parallel_group || 0),
+        progress_message: `Queued for ${task.stage || "execution"}.`,
       }));
 
       const { data } = await supabase
         .from("tasks")
         .insert(taskRows)
-        .select("id,title,description,status,sequence,assigned_agent_id")
+        .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at,stage,parallel_group,progress_message,last_heartbeat_at")
         .order("sequence");
 
       createdTasks = data || [];
@@ -1510,6 +1526,40 @@ export default function Home() {
 
       if (approvals.length) {
         await supabase.from("approvals").insert(approvals);
+      }
+
+      if (plan.open_loops?.length) {
+        const loopRows = plan.open_loops.slice(0, 8).map((loop) => ({
+          project_id: executionProjectId,
+          conversation_id:
+            executionProjectId === resolvedProjectId ? resolvedConversationId : null,
+          source_message_id:
+            executionProjectId === resolvedProjectId ? insertedMessage?.id || null : null,
+          title: loop.title,
+          detail: loop.detail || null,
+          status: loop.waiting_on ? "waiting" : "open",
+          waiting_on: loop.waiting_on || null,
+        }));
+
+        await supabase.from("open_loops").insert(loopRows);
+      }
+
+      if (plan.resolved_loop_ids?.length) {
+        const validLoopIds = openLoops
+          .filter((loop) => plan.resolved_loop_ids.includes(loop.id))
+          .map((loop) => loop.id);
+
+        if (validLoopIds.length) {
+          await supabase
+            .from("open_loops")
+            .update({
+              status: "closed",
+              resolved_at: new Date().toISOString(),
+              resolution: `Resolved from conversation: ${text.slice(0, 500)}`,
+              updated_at: new Date().toISOString(),
+            })
+            .in("id", validLoopIds);
+        }
       }
 
       const orchestrator = agents.find((agent) => agent.system_key === "orchestrator");
@@ -1572,6 +1622,8 @@ export default function Home() {
           task_count: createdTasks.length,
           intent: plan.intent,
           requires_execution: plan.requires_execution,
+          execution_mode: plan.execution_mode,
+          mission_summary: plan.mission_summary,
           target_project_slug: routedProject?.slug || null,
         },
       },
