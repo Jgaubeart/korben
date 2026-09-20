@@ -1675,3 +1675,111 @@ html[data-theme="light"] .zen-app-page .brain-galaxy {
     width: min(92vw, 620px);
   }
 }
+
+
+/* Task status clarity — live progress and report-back friendly. */
+.zen-app-page .work-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  align-items: start;
+}
+
+.zen-app-page .work-lane {
+  min-width: 0;
+}
+
+.zen-app-page .work-lane-in_progress {
+  border-color: color-mix(in srgb, var(--korben-gold) 42%, var(--korben-line));
+}
+
+.zen-app-page .work-lane-awaiting_approval {
+  border-color: color-mix(in srgb, #c49a60 40%, var(--korben-line));
+}
+
+.zen-app-page .work-lane-failed {
+  border-color: color-mix(in srgb, #b26f62 40%, var(--korben-line));
+}
+
+.zen-app-page .work-lane-complete {
+  border-color: color-mix(in srgb, #6f9e82 34%, var(--korben-line));
+}
+
+.task-card-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.task-status-pill {
+  padding: 4px 7px;
+  border: 1px solid var(--korben-line);
+  border-radius: 999px;
+  color: var(--korben-muted);
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.task-status-pill.in_progress {
+  color: var(--korben-gold);
+  border-color: color-mix(in srgb, var(--korben-gold) 40%, var(--korben-line));
+}
+
+.task-status-pill.awaiting_approval {
+  color: #b98b52;
+}
+
+.task-status-pill.failed {
+  color: #b26f62;
+}
+
+.task-status-pill.complete {
+  color: #6f9e82;
+}
+
+.task-live-update {
+  margin: 13px 0;
+  padding: 10px 11px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--korben-surface) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--korben-line) 74%, transparent);
+}
+
+.task-live-update small,
+.task-live-update span {
+  display: block;
+}
+
+.task-live-update small {
+  margin-bottom: 5px;
+  color: var(--korben-gold);
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: .14em;
+}
+
+.task-live-update span {
+  color: var(--korben-text);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.task-timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid var(--korben-line);
+  color: var(--korben-muted);
+  font-size: 8px;
+}
+
+@media (max-width: 760px) {
+  .zen-app-page .work-board {
+    grid-template-columns: 1fr;
+  }
+}
