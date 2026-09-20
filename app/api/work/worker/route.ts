@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { handleCallback, send } from "@vercel/queue";
+import { POST as startAgentRun } from "../../runs/start/route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -150,7 +151,7 @@ async function addReport(
 }
 
 async function runTask(taskId: string, token: string) {
-  const response = await fetch(`${appOrigin()}/api/runs/start`, {
+  const request = new Request("http://korben.internal/api/runs/start", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -159,6 +160,7 @@ async function runTask(taskId: string, token: string) {
     body: JSON.stringify({ task_id: taskId }),
   });
 
+  const response = await startAgentRun(request);
   const result = await response.json().catch(() => ({}));
 
   return {
