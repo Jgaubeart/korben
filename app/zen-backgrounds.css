@@ -3693,3 +3693,207 @@ html[data-theme="light"] .site-navbar {
     justify-self: start;
   }
 }
+
+
+/* =========================================================
+   Korben chat attachments
+   ========================================================= */
+
+.korben-file-input {
+  display: none;
+}
+
+.korben-chat-compose-wrap {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 14;
+  width: min(900px, calc(100vw - 36px));
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+}
+
+.korben-chat-compose-wrap .korben-chat-composer {
+  position: static;
+  left: auto;
+  bottom: auto;
+  width: 100%;
+  transform: none;
+  grid-template-columns: 58px 38px minmax(0, 1fr) 42px;
+}
+
+.korben-file-button,
+.korben-rail-file-button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--korben-line);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--korben-surface) 58%, transparent);
+  color: var(--korben-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.korben-file-button:hover,
+.korben-rail-file-button:hover {
+  color: var(--korben-text);
+  border-color: color-mix(in srgb, var(--korben-gold) 45%, var(--korben-line));
+}
+
+.korben-file-button:disabled,
+.korben-rail-file-button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+.korben-pending-files {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 0 6px;
+}
+
+.korben-pending-file {
+  max-width: 280px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 1px solid var(--korben-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--korben-surface) 88%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.korben-pending-file > span {
+  color: var(--korben-gold);
+  font-size: 13px;
+}
+
+.korben-pending-file > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--korben-text);
+  font-size: 9px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.korben-pending-file > button {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--korben-muted);
+  cursor: pointer;
+}
+
+.korben-file-error {
+  padding: 0 8px;
+  color: #a96e63;
+  font-size: 9px;
+}
+
+.korben-attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.korben-attachment-chip {
+  min-width: 0;
+  max-width: min(310px, 100%);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--korben-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--korben-surface) 54%, transparent);
+}
+
+.korben-attachment-chip > span {
+  color: var(--korben-gold);
+  font-size: 14px;
+}
+
+.korben-attachment-chip > div {
+  min-width: 0;
+}
+
+.korben-attachment-chip strong,
+.korben-attachment-chip small {
+  display: block;
+}
+
+.korben-attachment-chip strong {
+  overflow: hidden;
+  color: var(--korben-text);
+  font-size: 9px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.korben-attachment-chip small {
+  margin-top: 2px;
+  color: var(--korben-muted);
+  font-size: 7px;
+}
+
+.korben-rail-compose {
+  display: grid;
+  gap: 8px;
+}
+
+.korben-rail-compose .korben-pending-files {
+  padding: 0;
+}
+
+.korben-rail-compose .korben-pending-file {
+  max-width: 100%;
+}
+
+.korben-rail-input {
+  grid-template-columns: 34px minmax(0, 1fr) 36px;
+}
+
+.korben-rail-file-button {
+  width: 34px;
+  height: 34px;
+  font-size: 17px;
+}
+
+html[data-theme="light"] .korben-pending-file,
+html[data-theme="light"] .korben-attachment-chip {
+  background: rgba(255, 252, 246, .72);
+}
+
+@media (max-width: 700px) {
+  .korben-chat-compose-wrap {
+    width: calc(100vw - 20px);
+    bottom: 10px;
+  }
+
+  .korben-chat-compose-wrap .korben-chat-composer {
+    grid-template-columns: 46px 34px minmax(0, 1fr) 38px;
+  }
+
+  .korben-file-button {
+    width: 32px;
+    height: 32px;
+    font-size: 17px;
+  }
+}

@@ -8,11 +8,22 @@ import { SpiritOrb } from "../components/orb/SpiritOrb";
 import { SiteNavbar } from "../components/navigation/SiteNavbar";
 import { getAmbientState, getGreetingForHour, getSimulatedTime } from "../lib/ambient-time";
 
+type ChatAttachment = {
+  id?: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  storage_path?: string;
+  openai_file_id?: string | null;
+  openai_input_type?: "input_file" | "input_image";
+};
+
 type Message = {
   id?: string;
   role: "user" | "assistant";
   text: string;
   inputMode?: "text" | "voice";
+  attachments?: ChatAttachment[];
 };
 
 type Agent = {
@@ -398,6 +409,9 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileUploadError, setFileUploadError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [activeView, setActiveView] = useState<"command" | "network" | "work" | "workstream" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -791,7 +805,7 @@ export default function Home() {
       if (currentConversationId) {
         const { data: history } = await supabase
           .from("messages")
-          .select("id,role,content,input_mode,created_at")
+          .select("id,role,content,input_mode,created_at,message_attachments(id,file_name,mime_type,size_bytes,storage_path,openai_file_id,openai_input_type)")
           .eq("conversation_id", currentConversationId)
           .in("role", ["user", "assistant"])
           .order("created_at", { ascending: true });
@@ -803,6 +817,7 @@ export default function Home() {
               role: row.role as "user" | "assistant",
               text: row.content,
               inputMode: row.input_mode === "voice" ? "voice" : "text",
+              attachments: (row.message_attachments || []) as ChatAttachment[],
             }))
           );
         }
@@ -1048,7 +1063,7 @@ export default function Home() {
       if (conversationId) {
         const { data: messageRows } = await supabase
           .from("messages")
-          .select("id,role,content,input_mode,created_at")
+          .select("id,role,content,input_mode,created_at,message_attachments(id,file_name,mime_type,size_bytes,storage_path,openai_file_id,openai_input_type)")
           .eq("conversation_id", conversationId)
           .in("role", ["user", "assistant"])
           .order("created_at", { ascending: true });
@@ -1060,6 +1075,7 @@ export default function Home() {
               role: row.role as "user" | "assistant",
               text: row.content,
               inputMode: row.input_mode === "voice" ? "voice" : "text",
+              attachments: (row.message_attachments || []) as ChatAttachment[],
             }))
           );
         }
@@ -1867,24 +1883,91 @@ export default function Home() {
     }
   };
 
+  const addPendingFiles = (files: FileList | File[]) => {
+    const selected = Array.from(files);
+    if (!selected.length) return;
+
+    const supported = selected.filter((file) => file.size > 0 && file.size <= 20 * 1024 * 1024);
+    const rejected = selected.length - supported.length;
+
+    setPendingFiles((current) => [...current, ...supported].slice(0, 8));
+    setFileUploadError(
+      rejected
+        ? "Some files were skipped. Each attachment must be 20 MB or smaller."
+        : ""
+    );
+  };
+
+  const uploadChatFiles = async (
+    files: File[],
+    conversationIdForUpload: string,
+    messageIdForUpload: string
+  ) => {
+    if (!files.length) return [] as ChatAttachment[];
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) throw new Error("Sign in again before uploading files.");
+
+    const uploaded: ChatAttachment[] = [];
+
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("conversation_id", conversationIdForUpload);
+      form.append("message_id", messageIdForUpload);
+
+      const response = await fetch("/api/chat/files", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || `Could not upload ${file.name}.`);
+      }
+
+      uploaded.push(payload.attachment as ChatAttachment);
+    }
+
+    return uploaded;
+  };
+
   const sendMessage = async (
     messageText?: string,
     mode?: "text" | "voice"
   ) => {
-    const text = normalizeKorbenName((messageText ?? input).trim());
+    const filesForMessage = [...pendingFiles];
+    const rawText = normalizeKorbenName((messageText ?? input).trim());
+    const text = rawText || (filesForMessage.length ? "Please review the attached file." : "");
     if (!text || sendingRef.current) return;
 
     sendingRef.current = true;
     setSending(true);
     setInput("");
-    setLoadingState("Korben is thinking…");
+    setPendingFiles([]);
+    setFileUploadError("");
+    setLoadingState(filesForMessage.length ? "Uploading files…" : "Korben is thinking…");
     setVoiceState("thinking");
     const currentInputMode = mode ?? inputMode;
-    const userMessage: Message = { role: "user", text, inputMode: currentInputMode };
+    const userMessage: Message = {
+      role: "user",
+      text,
+      inputMode: currentInputMode,
+      attachments: filesForMessage.map((file) => ({
+        file_name: file.name,
+        mime_type: file.type,
+        size_bytes: file.size,
+      })),
+    };
     setMessages((current) => [...current, userMessage]);
 
-    const internalNavigationRequest = parseInternalNavigationRequest(text);
-    const browserOpenRequest = internalNavigationRequest ? null : parseBrowserOpenRequest(text);
+    const internalNavigationRequest = filesForMessage.length
+      ? null
+      : parseInternalNavigationRequest(text);
+    const browserOpenRequest =
+      internalNavigationRequest || filesForMessage.length ? null : parseBrowserOpenRequest(text);
     const openedBrowserWindow = browserOpenRequest
       ? window.open(browserOpenRequest.url, "_blank")
       : null;
@@ -1915,7 +1998,7 @@ export default function Home() {
       return;
     }
 
-    const { data: insertedMessage } = await supabase
+    const { data: insertedMessage, error: messageInsertError } = await supabase
       .from("messages")
       .insert({
         conversation_id: resolvedConversationId,
@@ -1925,6 +2008,41 @@ export default function Home() {
       })
       .select("id")
       .single();
+
+    if (messageInsertError || !insertedMessage?.id) {
+      const reply = "I couldn't save that message, so I stopped before processing the attachment.";
+      setMessages((current) => [...current, { role: "assistant", text: reply }]);
+      setLoadingState("Message not saved");
+      sendingRef.current = false;
+      setSending(false);
+      return;
+    }
+
+    let uploadedAttachments: ChatAttachment[] = [];
+
+    if (filesForMessage.length) {
+      try {
+        uploadedAttachments = await uploadChatFiles(
+          filesForMessage,
+          resolvedConversationId,
+          insertedMessage.id
+        );
+        setMessages((current) =>
+          current.map((message) =>
+            message === userMessage ? { ...message, attachments: uploadedAttachments } : message
+          )
+        );
+        setLoadingState("Korben is reading the attachment…");
+      } catch (error) {
+        const reply =
+          error instanceof Error ? error.message : "I couldn't upload that attachment.";
+        setMessages((current) => [...current, { role: "assistant", text: reply }]);
+        setLoadingState("Upload failed");
+        sendingRef.current = false;
+        setSending(false);
+        return;
+      }
+    }
 
     if (internalNavigationRequest) {
       const reply = `Opening ${internalNavigationRequest.label}.`;
@@ -2127,6 +2245,7 @@ export default function Home() {
             screen_summary: screenAware ? screenSummary : "",
             focus_active: focusRunning && !focusPaused,
           },
+          attachments: uploadedAttachments,
         }),
       });
 
@@ -3759,6 +3878,79 @@ export default function Home() {
     );
   };
 
+  const renderMessageAttachments = (attachments?: ChatAttachment[]) => {
+    if (!attachments?.length) return null;
+
+    return (
+      <div className="korben-attachment-list">
+        {attachments.map((attachment, index) => (
+          <div
+            className="korben-attachment-chip"
+            key={attachment.id || `${attachment.file_name}-${index}`}
+            title={attachment.file_name}
+          >
+            <span>{attachment.openai_input_type === "input_image" || attachment.mime_type.startsWith("image/") ? "▧" : "⌑"}</span>
+            <div>
+              <strong>{attachment.file_name}</strong>
+              <small>{Math.max(1, Math.round(attachment.size_bytes / 1024))} KB</small>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderPendingAttachments = () => (
+    <>
+      {pendingFiles.length > 0 && (
+        <div className="korben-pending-files">
+          {pendingFiles.map((file, index) => (
+            <div className="korben-pending-file" key={`${file.name}-${file.lastModified}-${index}`}>
+              <span>⌑</span>
+              <strong>{file.name}</strong>
+              <button
+                type="button"
+                onClick={() =>
+                  setPendingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))
+                }
+                aria-label={`Remove ${file.name}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {fileUploadError && <div className="korben-file-error">{fileUploadError}</div>}
+    </>
+  );
+
+  const renderFileButton = (className = "korben-file-button") => (
+    <>
+      <input
+        ref={fileInputRef}
+        className="korben-file-input"
+        type="file"
+        multiple
+        accept=".pdf,.txt,.md,.csv,.json,.xml,.html,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif"
+        onChange={(event) => {
+          if (event.target.files) addPendingFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        className={className}
+        onClick={() => fileInputRef.current?.click()}
+        disabled={sending || pendingFiles.length >= 8}
+        aria-label="Attach files"
+        title="Attach files"
+      >
+        ＋
+      </button>
+    </>
+  );
+
   if (standaloneChat) {
     return (
       <main className="korben-chat-page">
@@ -3786,43 +3978,53 @@ export default function Home() {
               >
                 <span>{message.role === "user" ? "You" : "Korben"}</span>
                 <p>{message.text}</p>
+                {renderMessageAttachments(message.attachments)}
               </article>
             ))}
           </div>
 
-          <div className="korben-chat-composer">
-            <button
-              className={`zen-listener korben-chat-listener ${orbState} ${voiceMode ? "active" : ""}`}
-              onClick={toggleVoiceMode}
-              aria-label="Talk to Korben"
-            >
-              <span className="zen-ring zen-ring-outer">
-                <span className="zen-node zen-node-left" />
-                <span className="zen-node zen-node-right" />
-              </span>
-              <span className="zen-ring zen-ring-inner" />
-              <span className="zen-core"><span className="zen-core-glow" /></span>
-            </button>
-            <input
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
-                  event.preventDefault();
-                  void sendMessage();
-                }
-              }}
-              placeholder="Message Korben…"
-              aria-label="Message Korben"
-            />
-            <button
-              className="korben-chat-send"
-              onClick={() => void sendMessage()}
-              disabled={sending || !input.trim()}
-              aria-label="Send to Korben"
-            >
-              ↑
-            </button>
+          <div className="korben-chat-compose-wrap">
+            {renderPendingAttachments()}
+            <div className="korben-chat-composer">
+              <button
+                className={`zen-listener korben-chat-listener ${orbState} ${voiceMode ? "active" : ""}`}
+                onClick={toggleVoiceMode}
+                aria-label="Talk to Korben"
+              >
+                <span className="zen-ring zen-ring-outer">
+                  <span className="zen-node zen-node-left" />
+                  <span className="zen-node zen-node-right" />
+                </span>
+                <span className="zen-ring zen-ring-inner" />
+                <span className="zen-core"><span className="zen-core-glow" /></span>
+              </button>
+              {renderFileButton()}
+              <input
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    (input.trim() || pendingFiles.length) &&
+                    !sending
+                  ) {
+                    event.preventDefault();
+                    void sendMessage();
+                  }
+                }}
+                placeholder={pendingFiles.length ? "Ask Korben about the attached file…" : "Message Korben…"}
+                aria-label="Message Korben"
+              />
+              <button
+                className="korben-chat-send"
+                onClick={() => void sendMessage()}
+                disabled={sending || (!input.trim() && !pendingFiles.length)}
+                aria-label="Send to Korben"
+              >
+                ↑
+              </button>
+            </div>
           </div>
         </section>
       </main>
@@ -3912,30 +4114,40 @@ export default function Home() {
             >
               <span>{message.role === "user" ? "You" : "Korben"}</span>
               <p>{message.text}</p>
+              {renderMessageAttachments(message.attachments)}
             </div>
           ))}
         </div>
 
-        <div className="korben-rail-input">
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
-                event.preventDefault();
-                void sendMessage();
-              }
-            }}
-            placeholder="Ask Korben…"
-            aria-label="Ask Korben"
-          />
-          <button
-            onClick={() => void sendMessage()}
-            disabled={sending || !input.trim()}
-            aria-label="Send to Korben"
-          >
-            ↑
-          </button>
+        <div className="korben-rail-compose">
+          {renderPendingAttachments()}
+          <div className="korben-rail-input">
+            {renderFileButton("korben-rail-file-button")}
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  (input.trim() || pendingFiles.length) &&
+                  !sending
+                ) {
+                  event.preventDefault();
+                  void sendMessage();
+                }
+              }}
+              placeholder={pendingFiles.length ? "Ask about the file…" : "Ask Korben…"}
+              aria-label="Ask Korben"
+            />
+            <button
+              onClick={() => void sendMessage()}
+              disabled={sending || (!input.trim() && !pendingFiles.length)}
+              aria-label="Send to Korben"
+            >
+              ↑
+            </button>
+          </div>
         </div>
 
         {tasks.some((task) => ["in_progress", "awaiting_approval"].includes(task.status)) && (
