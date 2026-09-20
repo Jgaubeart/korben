@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createBrowserSupabaseClient } from "../lib/supabase/client";
+import { AmbientScene } from "../components/ambient/AmbientScene";
+import { SpiritOrb } from "../components/orb/SpiritOrb";
+import { getAmbientState, getGreetingForHour, getSimulatedTime } from "../lib/ambient-time";
 
 type Message = {
   id?: string;
@@ -68,6 +71,26 @@ type IntegrationStatus = {
   obsidian: boolean;
 };
 
+type PreflightCheck = {
+  key: string;
+  label: string;
+  status: "healthy" | "warning" | "error" | "not_configured";
+  detail: string;
+};
+
+type PreflightReport = {
+  checked_at: string;
+  overall: "healthy" | "degraded" | "error";
+  project: {
+    id: string;
+    name: string;
+    slug: string;
+    github_repo: string | null;
+    vercel_project_id: string | null;
+  };
+  checks: PreflightCheck[];
+};
+
 type RunEvent = {
   id: string;
   run_id: string | null;
@@ -127,12 +150,86 @@ type Task = {
   status: string;
   sequence: number;
   assigned_agent_id?: string | null;
+  result_summary?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
 };
 
 const normalizeKorbenName = (value: string) =>
   value.replace(/\bcorbin\b/gi, (match) =>
     match[0] === match[0]?.toUpperCase() ? "Korben" : "korben"
   );
+
+const toSpokenReply = (value: string) => {
+  const cleaned = value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\b[a-f0-9]{7,40}\b/gi, " ")
+    .replace(/[_/\\]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const words = cleaned.split(" ").filter(Boolean);
+  if (words.length <= 45) return cleaned;
+  return `${words.slice(0, 45).join(" ")}…`;
+};
+
+const KORBEN_VOICE_STORAGE_KEY = "korben:voice-uri";
+
+const chooseKorbenVoice = (voices: SpeechSynthesisVoice[]) => {
+  if (!voices.length) return null;
+
+  const savedUri =
+    typeof window !== "undefined"
+      ? window.localStorage.getItem(KORBEN_VOICE_STORAGE_KEY)
+      : null;
+
+  const savedVoice = savedUri
+    ? voices.find((voice) => voice.voiceURI === savedUri)
+    : null;
+
+  const preferredVoice =
+    savedVoice ||
+    voices.find((voice) => /Google UK English Male/i.test(voice.name)) ||
+    voices.find((voice) => /Microsoft.*(Guy|Ryan|Mark|David)/i.test(voice.name)) ||
+    voices.find((voice) => /male/i.test(voice.name)) ||
+    voices.find((voice) => /^en(-|_)?US/i.test(voice.lang)) ||
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ||
+    null;
+
+  if (preferredVoice && typeof window !== "undefined") {
+    window.localStorage.setItem(KORBEN_VOICE_STORAGE_KEY, preferredVoice.voiceURI);
+  }
+
+  return preferredVoice;
+};
+
+const resolveKorbenVoice = async () => {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    return null;
+  }
+
+  const synth = window.speechSynthesis;
+  const immediate = chooseKorbenVoice(synth.getVoices());
+  if (immediate) return immediate;
+
+  return await new Promise<SpeechSynthesisVoice | null>((resolve) => {
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      synth.removeEventListener("voiceschanged", handleVoicesChanged);
+      resolve(chooseKorbenVoice(synth.getVoices()));
+    };
+
+    const handleVoicesChanged = () => finish();
+
+    synth.addEventListener("voiceschanged", handleVoicesChanged, { once: true });
+    window.setTimeout(finish, 900);
+  });
+};
 
 const fallbackGreeting: Message = {
   role: "assistant",
@@ -149,7 +246,7 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
-  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "runs" | "brain" | "sops" | "tools" | "integrations">("command");
+  const [activeView, setActiveView] = useState<"command" | "network" | "work" | "workstream" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [selectedProjectSlug, setSelectedProjectSlug] = useState(() => {
@@ -161,22 +258,39 @@ export default function Home() {
   const [agentToolPermissions, setAgentToolPermissions] = useState<AgentToolPermission[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus | null>(null);
+  const [preflightReport, setPreflightReport] = useState<PreflightReport | null>(null);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const [focusGoal, setFocusGoal] = useState("");
+  const [focusMinutes, setFocusMinutes] = useState(30);
+  const [focusRemaining, setFocusRemaining] = useState(0);
+  const [focusRunning, setFocusRunning] = useState(false);
+  const [focusPaused, setFocusPaused] = useState(false);
+  const [focusLockTab, setFocusLockTab] = useState(false);
+  const [focusInterruptions, setFocusInterruptions] = useState(0);
+  const [focusReport, setFocusReport] = useState<string | null>(null);
+  const [focusStreak, setFocusStreak] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    return Number(window.localStorage.getItem("korben:focus-streak") || "0");
+  });
   const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>([]);
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
+  const [activeObjectiveId, setActiveObjectiveId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loadingState, setLoadingState] = useState("Connecting…");
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [calmMode, setCalmMode] = useState(false);
   const [voiceState, setVoiceState] = useState<"waiting" | "listening" | "thinking" | "speaking">("waiting");
   const [conversationActive, setConversationActive] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
+  const [ambientClock, setAmbientClock] = useState(() => new Date());
   const recognitionRef = useRef<any>(null);
   const heldShortcutRef = useRef(false);
   const sendingRef = useRef(false);
@@ -188,6 +302,19 @@ export default function Home() {
   const sendMessageRef = useRef<(messageText?: string, mode?: "text" | "voice") => Promise<void>>(
     async () => {}
   );
+
+  useEffect(() => {
+    const resolveAmbientClock = () => {
+      const simulated = getSimulatedTime(
+        new URLSearchParams(window.location.search).get("ambientTime")
+      );
+      setAmbientClock(simulated || new Date());
+    };
+
+    resolveAmbientClock();
+    const interval = window.setInterval(resolveAmbientClock, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -324,9 +451,10 @@ export default function Home() {
 
       if (objective) {
         setActiveObjective(objective.title);
+        setActiveObjectiveId(objective.id);
         const { data: taskRows } = await supabase
           .from("tasks")
-          .select("id,title,description,status,sequence,assigned_agent_id")
+          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
           .eq("objective_id", objective.id)
           .order("sequence");
         setTasks(taskRows || []);
@@ -385,6 +513,57 @@ export default function Home() {
 
     bootstrap();
   }, [supabase, selectedProjectSlug]);
+
+  useEffect(() => {
+    if (!projectId || !signedIn) return;
+
+    let cancelled = false;
+
+    const refreshWorkstream = async () => {
+      const { data: objective } = await supabase
+        .from("objectives")
+        .select("id,title")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled || !objective) return;
+
+      const [{ data: taskRows }, { data: eventRows }, { data: agentRows }] = await Promise.all([
+        supabase
+          .from("tasks")
+          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
+          .eq("objective_id", objective.id)
+          .order("sequence"),
+        supabase
+          .from("run_events")
+          .select("id,run_id,task_id,agent_id,event_type,tool_system_key,status,message,created_at")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("agents")
+          .select("id,name,role,status,system_key,department_id")
+          .order("name"),
+      ]);
+
+      if (cancelled) return;
+      setActiveObjective(objective.title);
+      setActiveObjectiveId(objective.id);
+      setTasks((taskRows || []) as Task[]);
+      setRunEvents((eventRows || []) as RunEvent[]);
+      setAgents((agentRows || []) as Agent[]);
+    };
+
+    void refreshWorkstream();
+    const interval = window.setInterval(refreshWorkstream, 3500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [projectId, signedIn, supabase]);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -520,6 +699,71 @@ export default function Home() {
       window.speechSynthesis?.cancel();
     };
   }, []);
+
+  useEffect(() => {
+    if (!focusRunning || focusPaused) return;
+
+    const timer = window.setInterval(() => {
+      setFocusRemaining((current) => {
+        if (current <= 1) {
+          window.clearInterval(timer);
+          setFocusRunning(false);
+          setFocusPaused(false);
+          setFocusLockTab(false);
+
+          const nextStreak = focusStreak + 1;
+          setFocusStreak(nextStreak);
+          window.localStorage.setItem("korben:focus-streak", String(nextStreak));
+
+          setFocusReport(
+            `Focus session complete — ${focusMinutes} minutes on ${focusGoal || "your priority"}, with ${focusInterruptions} detected tab drift${focusInterruptions === 1 ? "" : "s"}.`
+          );
+
+          if ("speechSynthesis" in window && voiceModeRef.current) {
+            const utterance = new SpeechSynthesisUtterance(
+              `Focus session complete. ${focusInterruptions} interruptions detected.`
+            );
+            utterance.rate = 0.96;
+            window.speechSynthesis.speak(utterance);
+          }
+
+          return 0;
+        }
+
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    focusRunning,
+    focusPaused,
+    focusMinutes,
+    focusGoal,
+    focusInterruptions,
+    focusStreak,
+  ]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!focusRunning || focusPaused || !focusLockTab || !document.hidden) return;
+
+      setFocusInterruptions((count) => count + 1);
+
+      if ("speechSynthesis" in window && voiceModeRef.current) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(
+          "Focus drift detected. Return to the locked Korben tab when you are ready."
+        );
+        utterance.rate = 0.96;
+        window.speechSynthesis.speak(utterance);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [focusRunning, focusPaused, focusLockTab]);
+
   const clearConversationTimeout = () => {
     if (conversationTimeoutRef.current) {
       window.clearTimeout(conversationTimeoutRef.current);
@@ -591,6 +835,55 @@ export default function Home() {
     setConversationId(null);
     setActiveObjective("No active objective");
     setLoadingState("Sign in required");
+  };
+
+  const runPreflight = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+
+    if (!token) return;
+
+    setPreflightBusy(true);
+
+    try {
+      const response = await fetch(
+        `/api/health/preflight${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }
+      );
+
+      if (response.ok) {
+        setPreflightReport(await response.json());
+      }
+    } finally {
+      setPreflightBusy(false);
+    }
+  };
+
+  const startFocus = () => {
+    const minutes = Math.max(1, Math.min(240, Number(focusMinutes) || 30));
+    setFocusMinutes(minutes);
+    setFocusRemaining(minutes * 60);
+    setFocusInterruptions(0);
+    setFocusReport(null);
+    setFocusPaused(false);
+    setFocusRunning(true);
+    setLoadingState("Focus session active");
+  };
+
+  const endFocus = () => {
+    const elapsedSeconds = Math.max(0, focusMinutes * 60 - focusRemaining);
+    const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+
+    setFocusRunning(false);
+    setFocusPaused(false);
+    setFocusLockTab(false);
+    setFocusReport(
+      `Focus session ended after ${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} on ${focusGoal || "your priority"}, with ${focusInterruptions} detected tab drift${focusInterruptions === 1 ? "" : "s"}.`
+    );
+    setLoadingState("System online");
   };
 
   const toggleVoiceMode = () => {
@@ -757,36 +1050,57 @@ export default function Home() {
     setConversationId(null);
     setTasks([]);
     setActiveObjective("No active objective");
+    setActiveObjectiveId(null);
     setMessages([fallbackGreeting]);
     setLoadingState("Switching workspace…");
   };
 
-  const runSingleTask = async (taskId: string) => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
+  const enqueueObjectiveWork = async ({
+    objectiveId,
+    conversationIdForWork,
+    projectName,
+    reason = "initial",
+    resumeTaskId = null,
+  }: {
+    objectiveId: string;
+    conversationIdForWork: string;
+    projectName: string;
+    reason?: string;
+    resumeTaskId?: string | null;
+  }) => {
+    const { data: refreshedSession } = await supabase.auth.refreshSession();
+    const token =
+      refreshedSession.session?.access_token ||
+      (await supabase.auth.getSession()).data.session?.access_token;
 
     if (!token) {
-      return { status: "failed" };
+      setLoadingState("Sign in required");
+      return false;
     }
 
-    const response = await fetch("/api/runs/start", {
+    const response = await fetch("/api/work/enqueue", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ task_id: taskId }),
+      body: JSON.stringify({
+        objective_id: objectiveId,
+        conversation_id: conversationIdForWork,
+        project_name: projectName,
+        reason,
+        resume_task_id: resumeTaskId,
+      }),
     });
 
-    const result = await response.json().catch(() => ({}));
-    return {
-      status:
-        response.ok && result.status === "complete"
-          ? "complete"
-          : result.status === "waiting_approval"
-            ? "awaiting_approval"
-            : "failed",
-    };
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      setLoadingState(result?.error || "Could not queue background work");
+      return false;
+    }
+
+    setLoadingState("Agents working in background…");
+    return true;
   };
 
   const approveAction = async (approval: ApprovalRecord) => {
@@ -809,7 +1123,7 @@ export default function Home() {
       )
     );
 
-    if (!approval.task_id) return;
+    if (!approval.task_id || !approval.objective_id || !conversationId) return;
 
     await supabase
       .from("tasks")
@@ -818,54 +1132,17 @@ export default function Home() {
 
     setTasks((current) =>
       current.map((item) =>
-        item.id === approval.task_id ? { ...item, status: "in_progress" } : item
+        item.id === approval.task_id ? { ...item, status: "queued" } : item
       )
     );
 
-    setLoadingState("Approved task running…");
-    const result = await runSingleTask(approval.task_id);
-
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === approval.task_id ? { ...item, status: result.status } : item
-      )
-    );
-
-    if (result.status === "complete") {
-      const approvedTask = tasks.find((task) => task.id === approval.task_id);
-      const remaining = tasks
-        .filter((task) =>
-          approvedTask ? task.sequence > approvedTask.sequence : false
-        )
-        .sort((a, b) => a.sequence - b.sequence);
-
-      for (const nextTask of remaining) {
-        const pendingApproval = approvals.some(
-          (item) => item.task_id === nextTask.id && item.status === "pending"
-        );
-
-        if (pendingApproval) break;
-        if (!["queued", "failed"].includes(nextTask.status)) continue;
-
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === nextTask.id ? { ...item, status: "in_progress" } : item
-          )
-        );
-
-        const nextResult = await runSingleTask(nextTask.id);
-
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === nextTask.id ? { ...item, status: nextResult.status } : item
-          )
-        );
-
-        if (nextResult.status !== "complete") break;
-      }
-    }
-
-    setLoadingState("System online");
+    await enqueueObjectiveWork({
+      objectiveId: approval.objective_id,
+      conversationIdForWork: conversationId,
+      projectName: currentProjectName,
+      reason: `approval:${approval.id}:${decidedAt}`,
+      resumeTaskId: approval.task_id,
+    });
   };
 
   const rejectAction = async (approval: ApprovalRecord) => {
@@ -900,74 +1177,28 @@ export default function Home() {
 
   const executeTaskQueue = async (
     createdTasks: Task[],
-    plannedTasks: PlannedTask[]
+    _plannedTasks: PlannedTask[],
+    conversationIdForWork: string,
+    projectNameForWork: string,
+    objectiveIdForWork: string
   ) => {
     if (!createdTasks.length) return;
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
+    const queued = await enqueueObjectiveWork({
+      objectiveId: objectiveIdForWork,
+      conversationIdForWork,
+      projectName: projectNameForWork,
+    });
 
-    if (!token) return;
-
-    setLoadingState("Agents working…");
-
-    for (let index = 0; index < createdTasks.length; index += 1) {
-      const task = createdTasks[index];
-      const planned = plannedTasks[index];
-
-      if (!planned) continue;
-
-      if (planned.approval_level >= 2) {
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id ? { ...item, status: "awaiting_approval" } : item
-          )
-        );
-        break;
-      }
-
-      setTasks((current) =>
-        current.map((item) =>
-          item.id === task.id ? { ...item, status: "in_progress" } : item
-        )
-      );
-
-      try {
-        const response = await fetch("/api/runs/start", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ task_id: task.id }),
-        });
-
-        const result = await response.json().catch(() => ({}));
-        const nextStatus =
-          response.ok && result.status === "complete"
-            ? "complete"
-            : result.status === "waiting_approval"
-              ? "awaiting_approval"
-              : "failed";
-
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id ? { ...item, status: nextStatus } : item
-          )
-        );
-
-        if (nextStatus !== "complete") break;
-      } catch {
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id ? { ...item, status: "failed" } : item
-          )
-        );
-        break;
-      }
+    if (!queued) {
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: "I created the work, but the background worker could not start. I left the tasks queued so they can be resumed safely.",
+        },
+      ]);
     }
-
-    setLoadingState("System online");
   };
 
   const sendMessage = async (
@@ -1033,6 +1264,10 @@ export default function Home() {
             github_repo: project.github_repo,
             vercel_project_id: project.vercel_project_id,
           })),
+          recentMessages: messages.slice(-12).map((message) => ({
+            role: message.role,
+            content: message.text,
+          })),
         }),
       });
 
@@ -1096,6 +1331,7 @@ export default function Home() {
 
     if (objective) {
       setActiveObjective(objective.title);
+      setActiveObjectiveId(objective.id);
 
       const taskRows = plan.tasks.map((task, index) => ({
         objective_id: objective.id,
@@ -1215,26 +1451,29 @@ export default function Home() {
 
     if (
       objective &&
+      plan.requires_execution &&
       createdTasks.length > 0 &&
-      ["work", "action"].includes(plan.intent)
+      ["work", "action", "approval"].includes(plan.intent)
     ) {
-      void executeTaskQueue(createdTasks, plan.tasks);
+      void executeTaskQueue(
+        createdTasks,
+        plan.tasks,
+        resolvedConversationId,
+        executionProjectName,
+        objective.id
+      );
     }
 
     if (voiceModeRef.current && "speechSynthesis" in window) {
       setVoiceState("speaking");
       window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(reply);
-      utterance.rate = 0.96;
+      const spokenReply = toSpokenReply(reply);
+      const utterance = new SpeechSynthesisUtterance(spokenReply);
+      utterance.rate = 0.98;
       utterance.pitch = 0.9;
 
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice =
-        voices.find((voice) => /Google UK English Male/i.test(voice.name)) ||
-        voices.find((voice) => /Microsoft.*(Guy|Ryan|Mark|David)/i.test(voice.name)) ||
-        voices.find((voice) => /male/i.test(voice.name)) ||
-        voices.find((voice) => voice.lang.startsWith("en"));
+      const preferredVoice = await resolveKorbenVoice();
 
       if (preferredVoice) {
         utterance.voice = preferredVoice;
@@ -1278,43 +1517,94 @@ export default function Home() {
 
   sendMessageRef.current = sendMessage;
 
+  useEffect(() => {
+    if (!signedIn || !conversationId || !activeObjectiveId || !tasks.length) return;
+    if (tasks.some((task) => task.status === "in_progress")) return;
+
+    const ordered = [...tasks].sort((a, b) => a.sequence - b.sequence);
+    const hasRunnableQueuedTask = ordered.some((task, index) =>
+      task.status === "queued" &&
+      ordered.slice(0, index).every((prior) => prior.status === "complete")
+    );
+
+    if (!hasRunnableQueuedTask) return;
+
+    const recoveryKey = `korben:background-recovery:${activeObjectiveId}`;
+    if (window.sessionStorage.getItem(recoveryKey) === "1") return;
+    window.sessionStorage.setItem(recoveryKey, "1");
+
+    void enqueueObjectiveWork({
+      objectiveId: activeObjectiveId,
+      conversationIdForWork: conversationId,
+      projectName: currentProjectName,
+      reason: "browser-recovery",
+    });
+  }, [activeObjectiveId, conversationId, currentProjectName, signedIn, tasks]);
+
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
   const progress = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
+  const focusClock = `${String(Math.floor(focusRemaining / 60)).padStart(2, "0")}:${String(
+    focusRemaining % 60
+  ).padStart(2, "0")}`;
+  const runtimeState =
+    approvals.some((approval) => approval.status === "pending")
+      ? "Blocked · approval"
+      : tasks.some((task) => task.status === "in_progress")
+        ? "Executing"
+        : focusRunning
+          ? focusPaused
+            ? "Focus paused"
+            : "Focus active"
+          : voiceState === "thinking"
+            ? "Thinking"
+            : voiceState === "speaking"
+              ? "Speaking"
+              : voiceState === "listening"
+                ? "Listening"
+                : loadingState;
 
   if (!authReady) {
     return (
-      <main className="auth-shell">
-        <div className="auth-card">
-          <div className="brand auth-brand">
-            <div className="brand-mark">K</div>
-            <div>
-              <strong>KORBEN</strong>
-              <span>Multi-Agent OS</span>
-            </div>
+      <main className="auth-shell zen-auth-shell">
+        <div className="zen-auth-wordmark">KORBEN</div>
+        <div className="auth-card zen-auth-card zen-auth-loading">
+          <div className="zen-auth-presence" aria-hidden="true">
+            <span className="zen-auth-ring zen-auth-ring-outer">
+              <i className="zen-auth-node zen-auth-node-left" />
+              <i className="zen-auth-node zen-auth-node-right" />
+            </span>
+            <span className="zen-auth-ring zen-auth-ring-inner" />
+            <span className="zen-auth-pearl" />
           </div>
-          <p className="auth-status">Connecting to your workspace…</p>
+          <p className="auth-status">Connecting to Korben…</p>
         </div>
+        <div className="zen-auth-footer">A CALMER, BRIGHTER YOU.</div>
       </main>
     );
   }
 
   if (!signedIn) {
     return (
-      <main className="auth-shell">
-        <div className="auth-card">
-          <div className="brand auth-brand">
-            <div className="brand-mark">K</div>
-            <div>
-              <strong>KORBEN</strong>
-              <span>Multi-Agent OS</span>
-            </div>
+      <main className="auth-shell zen-auth-shell">
+        <div className="zen-auth-wordmark">KORBEN</div>
+
+        <div className="auth-card zen-auth-card">
+          <div className="zen-auth-presence" aria-hidden="true">
+            <span className="zen-auth-ring zen-auth-ring-outer">
+              <i className="zen-auth-node zen-auth-node-left" />
+              <i className="zen-auth-node zen-auth-node-right" />
+            </span>
+            <span className="zen-auth-ring zen-auth-ring-inner" />
+            <span className="zen-auth-pearl" />
           </div>
-          <div className="auth-copy">
-            <span className="kicker">OWNER ACCESS</span>
-            <h1>Sign in to Korben</h1>
-            <p>Your Command Center, agents, projects and run history are protected by your Korben account.</p>
+
+          <div className="auth-copy zen-auth-copy">
+            <span className="kicker">WELCOME BACK</span>
+            <h1>Sign in to Korben.</h1>
+            <p>Your private space to think, plan, and get things done.</p>
           </div>
-          <div className="auth-form">
+
+          <div className="auth-form zen-auth-form">
             <label>
               Email
               <input
@@ -1341,11 +1631,13 @@ export default function Home() {
               />
             </label>
             {loginError && <div className="auth-error">{loginError}</div>}
-            <button className="auth-submit" onClick={signIn} disabled={loginBusy}>
-              {loginBusy ? "Signing in…" : "Sign in"}
+            <button className="auth-submit zen-auth-submit" onClick={signIn} disabled={loginBusy}>
+              {loginBusy ? "Signing in…" : "Enter Korben"}
             </button>
           </div>
         </div>
+
+        <div className="zen-auth-footer">A CALMER, BRIGHTER YOU.</div>
       </main>
     );
   }
@@ -1370,133 +1662,300 @@ export default function Home() {
     activeView === "command" ? "Command Center" :
     activeView === "network" ? "Agent Network" :
     activeView === "work" ? "Work Routing" :
+    activeView === "workstream" ? "Delegation Feed" :
     activeView === "runs" ? "Runs & Activity" :
     activeView === "brain" ? "Brain & Memory" :
     activeView === "sops" ? "SOP Library" :
     activeView === "tools" ? "Tool Registry" :
-    "Integrations";
+    activeView === "integrations" ? "Integrations" :
+    activeView === "focus" ? "Focus" :
+    "Preflight";
 
-  const renderCommandCenter = () => (
-    <section className="korben-stage">
-      <div className="ambient-grid" />
+  const currentTask =
+    tasks.find((task) => task.status === "in_progress") ||
+    tasks.find((task) => task.status === "awaiting_approval") ||
+    tasks.find((task) => task.status === "queued");
+  const currentAgent = agentById(currentTask?.assigned_agent_id);
+  const latestRunEvent = runEvents[0];
+  const workingAgentCount = agents.filter((agent) => agent.status === "working").length;
+  const hasPendingApproval = approvals.some((approval) => approval.status === "pending");
+  const coreMode = hasPendingApproval
+    ? "blocked"
+    : tasks.some((task) => task.status === "in_progress")
+      ? "executing"
+      : focusRunning && !focusPaused
+        ? "focus"
+        : voiceState;
 
-      <div className="core-column">
-        <div
-          className={`korben-core ${voiceState} ${voiceMode ? "armed" : ""}`}
-          onClick={toggleVoiceMode}
-          role="button"
-          tabIndex={0}
-          aria-label="Korben voice core"
-        >
-          <div className="core-orbit orbit-one" />
-          <div className="core-orbit orbit-two" />
-          <div className="core-orbit orbit-three" />
-          <div className="core-energy" />
-          <div className="core-center"><span>K</span></div>
-          <div className="voice-ripple ripple-one" />
-          <div className="voice-ripple ripple-two" />
-          <div className="voice-ripple ripple-three" />
+  const todayEvents = [
+    ["8:30", "Team standup", "work"],
+    ["10:00", "Client strategy call", "work"],
+    ["11:30", "Review contract", "work"],
+    ["1:00", "Lunch", "personal"],
+    ["2:30", "Prepare proposal", "focus"],
+    ["4:00", "Gym", "personal"],
+  ];
+
+  const priorityItems = [
+    ["Prepare proposal", "Due today · High impact"],
+    ["Review contract", "Due today"],
+    ["Plan next campaign", "This week"],
+  ];
+
+  const communicationItems = [
+    ["Natalie", "Re: Proposal looks great!", "8:47 AM", "mail"],
+    ["Client Team", "Upcoming call agenda", "8:12 AM", "team"],
+    ["Mom", "Dinner this weekend?", "7:34 AM", "text"],
+    ["Travel", "Your flight is confirmed", "7:14 AM", "travel"],
+  ];
+
+  const dashboardTasks = tasks.length
+    ? tasks.slice(0, 6)
+    : [
+        { id: "mock-1", title: "Draft client email", status: "complete", sequence: 1 },
+        { id: "mock-2", title: "Review contract", status: "complete", sequence: 2 },
+        { id: "mock-3", title: "Prepare proposal", status: "queued", sequence: 3 },
+        { id: "mock-4", title: "Book flight to Atlanta", status: "queued", sequence: 4 },
+        { id: "mock-5", title: "Set gym reminder", status: "queued", sequence: 5 },
+      ] as Task[];
+
+  const dashboardCompleted = dashboardTasks.filter((task) => task.status === "complete").length;
+  const dashboardProgress = dashboardTasks.length
+    ? Math.round((dashboardCompleted / dashboardTasks.length) * 100)
+    : 0;
+
+  const orbState =
+    tasks.some((task) => task.status === "in_progress")
+      ? "working"
+      : voiceState === "thinking"
+        ? "thinking"
+        : voiceState === "speaking"
+          ? "responding"
+          : voiceState === "listening"
+            ? "listening"
+            : "idle";
+
+  const compactStatus = hasPendingApproval
+    ? "A protected action needs your approval."
+    : currentTask?.status === "in_progress"
+      ? `${currentAgent?.name || "Korben"} is handling ${currentTask.title.toLowerCase()}.`
+      : sending
+        ? "Reviewing your request."
+        : voiceState === "listening"
+          ? "I’m listening."
+          : "Reviewing inbox priorities · 2 agents active";
+
+  const renderOrb = (large = false) => (
+    <button
+      className={`calm-orb spirit-orb webgl-orb ${orbState} ${large ? "large" : ""}`}
+      onClick={toggleVoiceMode}
+      aria-label="Talk to Korben"
+    >
+      <SpiritOrb
+        state={orbState}
+        tone={getAmbientState(ambientClock).current.key}
+      />
+    </button>
+  );
+
+  const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
+  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+
+  const toggleTheme = () => {
+    const root = document.documentElement;
+    const current = root.dataset.theme;
+    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const next = current === "dark" ? "light" : current === "light" ? "dark" : systemDark ? "light" : "dark";
+    root.dataset.theme = next;
+    window.localStorage.setItem("korben:theme", next);
+  };
+
+  const renderCommandCenter = () => {
+    const pendingApprovalCount = approvals.filter((approval) => approval.status === "pending").length;
+    const homeStatus = pendingApprovalCount
+      ? `${pendingApprovalCount} approval${pendingApprovalCount === 1 ? "" : "s"} waiting`
+      : currentTask?.status === "in_progress"
+        ? `${currentAgent?.name || "Korben"} is working quietly`
+        : "Everything is quiet";
+
+    const homeDelegationItems = [...tasks]
+      .sort((a, b) => {
+        const priority = (status: string) =>
+          status === "in_progress" ? 0 :
+          status === "awaiting_approval" ? 1 :
+          status === "failed" ? 2 :
+          status === "queued" ? 3 : 4;
+        return priority(a.status) - priority(b.status) || a.sequence - b.sequence;
+      })
+      .slice(0, 4);
+
+    return (
+      <section className="korben-home">
+        <header className="korben-home-nav">
+          <button className="korben-home-wordmark" onClick={() => setActiveView("command")}>KORBEN</button>
+
+          <nav className="korben-home-links" aria-label="Primary navigation">
+            <button className="active" onClick={() => setActiveView("command")}>Home</button>
+            <button onClick={() => setActiveView("work")}>Tasks</button>
+            <button onClick={() => setActiveView("workstream")}>Delegation</button>
+            <button onClick={() => setActiveView("command")}>Calendar</button>
+            <button onClick={() => setActiveView("command")}>Communications</button>
+            <button onClick={() => setActiveView("focus")}>Focus</button>
+            <button onClick={() => setActiveView("brain")}>Library</button>
+          </nav>
+
+          <div className="korben-home-account">
+            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+            <span className="presence-dot" />
+            <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
+          </div>
+        </header>
+
+        <main className="korben-home-stage korben-home-stage-split">
+          <div className="korben-home-copy">
+            <h1>{getGreetingForHour(ambientClock.getHours())}, Jordan.</h1>
+            <p>A CALMER, BRIGHTER YOU.</p>
+          </div>
+
+          <div className="korben-presence-center">
+            <button
+              className={`zen-listener ${orbState} ${voiceMode ? "active" : ""}`}
+              onClick={toggleVoiceMode}
+              aria-label="Talk to Korben"
+            >
+              <span className="zen-ring zen-ring-outer">
+                <span className="zen-node zen-node-left" />
+                <span className="zen-node zen-node-right" />
+              </span>
+              <span className="zen-ring zen-ring-inner" />
+              <span className="zen-core">
+                <span className="zen-core-glow" />
+              </span>
+            </button>
+
+            <div className="korben-home-listening">
+              <strong>{voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "speaking" ? "Speaking" : "Listening"}</strong>
+              <span>{voiceMode ? "Just speak to Korben." : "Tap Korben and speak."}</span>
+            </div>
+
+            <button className="quiet-status" onClick={() => setActiveView(pendingApprovalCount ? "work" : "runs")}>
+              <i className={pendingApprovalCount ? "attention" : ""} />
+              {homeStatus}
+            </button>
+          </div>
+
+          <aside className="korben-home-sidecar" aria-label="Korben conversation and delegation">
+            {latestUserMessage && (
+              <div className="korben-live-transcript" aria-live="polite">
+                <div className="transcript-line user">
+                  <span>You</span>
+                  <p>{latestUserMessage.text}</p>
+                </div>
+                {latestAssistantMessage && (
+                  <div className="transcript-line assistant">
+                    <span>Korben</span>
+                    <p>{latestAssistantMessage.text}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {homeDelegationItems.length > 0 && (
+              <section className="home-delegation-feed" aria-label="Delegation activity">
+                <div className="home-delegation-header">
+                  <div>
+                    <span>DELEGATION</span>
+                    <strong>{activeObjective}</strong>
+                  </div>
+                  <button onClick={() => setActiveView("workstream")}>View all</button>
+                </div>
+
+                <div className="home-delegation-list">
+                  {homeDelegationItems.map((task) => {
+                    const agent = agentById(task.assigned_agent_id);
+                    const taskEvent = runEvents.find((event) => event.task_id === task.id);
+                    const statusText =
+                      task.status === "in_progress" ? "Working" :
+                      task.status === "awaiting_approval" ? "Waiting on you" :
+                      task.status === "complete" ? "Complete" :
+                      task.status === "failed" ? "Needs attention" :
+                      "Queued";
+
+                    return (
+                      <button
+                        key={task.id}
+                        className={`home-delegation-row ${task.status}`}
+                        onClick={() => setActiveView("workstream")}
+                      >
+                        <span className="home-agent-avatar">
+                          {agent ? agent.name.slice(0, 2).toUpperCase() : "AI"}
+                        </span>
+                        <span className="home-delegation-copy">
+                          <span>
+                            <strong>{agent?.name || "Korben agent"}</strong>
+                            <small>{statusText}</small>
+                          </span>
+                          <p>{task.status === "complete"
+                            ? task.result_summary || taskEvent?.message || task.title
+                            : taskEvent?.message || task.title}
+                          </p>
+                        </span>
+                        <i className={task.status} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </aside>
+        </main>
+
+        <div className="korben-home-corner corner-left">
+          <span className="corner-sun">☼</span>
+          <div>
+            <strong>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(ambientClock)}</strong>
+            <small>A BRIGHTER DAY AHEAD</small>
+          </div>
         </div>
 
-        <div className="core-status">
-          <span className={`status-light ${voiceState}`} />
-          <strong>{statusCopy}</strong>
-          <p>
-            {voiceState === "listening"
-              ? input || "I’m listening."
-              : voiceState === "thinking"
-                ? "Processing your request."
-                : voiceState === "speaking"
-                  ? "Korben is responding."
-                  : voiceMode
-                    ? conversationActive
-                      ? "Conversation is open. Speak naturally."
-                      : "Wake me by saying “Korben”."
-                    : "Activate voice or type below."}
-          </p>
+        <div className="korben-home-corner corner-right">
+          <span>Cape Coral</span>
+          <i />
+          <span>{ambientClock.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
         </div>
+      </section>
+    );
+  };
 
-        <div className="voice-actions">
-          <button
-            className={`voice-primary ${voiceMode ? "active" : ""}`}
-            onClick={toggleVoiceMode}
-            disabled={!speechSupported}
-          >
-            <span className="voice-primary-dot" />
-            {voiceMode ? "Voice online" : "Activate voice"}
-          </button>
-        </div>
+  const renderCalmMode = () => (
+    <section className="ambient-calm-mode">
+      <AmbientScene className="ambient-scene-calm" />
 
-        <div className="command-input">
-          <input
-            value={input}
-            onChange={(event) => {
-              setInput(event.target.value);
-              setInputMode("text");
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void sendMessage();
-              }
-            }}
-            placeholder="Type a message to Korben…"
-          />
-          <button onClick={() => void sendMessage()} disabled={!input.trim() || sending}>
-            {sending ? "…" : "↗"}
-          </button>
-        </div>
-
-        {!speechSupported && (
-          <div className="voice-warning">Voice recognition is unavailable in this browser.</div>
-        )}
+      <div className="calm-brand">
+        <strong>KORBEN</strong>
+        <span>THINK AHEAD</span>
       </div>
 
-      <aside className="conversation-rail">
-        <div className="rail-header">
-          <div>
-            <span>CONVERSATION</span>
-            <strong>Command log</strong>
-          </div>
-          <span className="rail-live">● LIVE</span>
-        </div>
+      <button className="calm-exit" onClick={() => setCalmMode(false)}>Command Center</button>
 
-        <div className="rail-messages">
-          {messages.map((message, index) => (
-            <div key={message.id || index} className={`rail-message ${message.role}`}>
-              <div className="rail-message-meta">
-                <span>{message.role === "user" ? "YOU" : "KORBEN"}</span>
-                <small>{message.inputMode === "voice" ? "VOICE" : "TEXT"}</small>
-              </div>
-              <p>{message.text}</p>
-            </div>
-          ))}
-
-          {sending && (
-            <div className="rail-message assistant pending">
-              <div className="rail-message-meta">
-                <span>KORBEN</span>
-                <small>PROCESSING</small>
-              </div>
-              <p>Thinking…</p>
-            </div>
-          )}
+      <div className="calm-mode-center">
+        {renderOrb(true)}
+        <div className="calm-mode-copy">
+          <strong>{voiceState === "listening" ? "Listening" : compactStatus}</strong>
+          <span className="calm-divider" />
+          <small>{currentTask?.title || "I’ve handled everything for now."}</small>
         </div>
+      </div>
 
-        <div className="rail-footer">
-          <div>
-            <span className="footer-label">SYSTEM</span>
-            <strong>{loadingState}</strong>
-          </div>
-          <div>
-            <span className="footer-label">ACTIVE OBJECTIVE</span>
-            <strong>{activeObjective}</strong>
-          </div>
-          <div>
-            <span className="footer-label">TASKS</span>
-            <strong>{tasks.length}</strong>
-          </div>
-        </div>
-      </aside>
+      <div className="calm-quote">“A calmer mind builds a brighter you.”</div>
+
+      <button
+        className="calm-voice-trigger"
+        onClick={toggleVoiceMode}
+        aria-label="Talk to Korben"
+      >
+        {voiceMode ? "Listening for you" : "Talk to Korben"}
+      </button>
     </section>
   );
 
@@ -1623,20 +2082,55 @@ export default function Home() {
       )}
 
       <div className="work-board">
-        {["queued", "in_progress", "complete"].map((status) => (
-          <div className="work-lane" key={status}>
+        {["queued", "in_progress", "awaiting_approval", "failed", "complete"].map((status) => (
+          <div className={`work-lane work-lane-${status}`} key={status}>
             <div className="work-lane-header">
-              <span>{status === "in_progress" ? "IN PROGRESS" : status.toUpperCase()}</span>
+              <span>
+                {status === "in_progress"
+                  ? "IN PROGRESS"
+                  : status === "awaiting_approval"
+                    ? "WAITING ON YOU"
+                    : status.toUpperCase()}
+              </span>
               <b>{tasks.filter((task) => task.status === status).length}</b>
             </div>
             <div className="work-lane-body">
               {tasks.filter((task) => task.status === status).map((task) => {
                 const owner = agentById(task.assigned_agent_id);
+                const latestEvent = runEvents.find((event) => event.task_id === task.id);
+                const statusCopy =
+                  task.status === "in_progress"
+                    ? latestEvent?.message || `${owner?.name || "Agent"} is working on this now.`
+                    : task.status === "complete"
+                      ? task.result_summary || latestEvent?.message || "Completed."
+                      : task.status === "awaiting_approval"
+                        ? "Korben is paused here until you approve the protected step."
+                        : task.status === "failed"
+                          ? task.result_summary || latestEvent?.message || "This task hit a blocker."
+                          : "Queued and waiting for the prior step to finish.";
+
                 return (
-                  <article className="task-card" key={task.id}>
-                    <span className="task-sequence">#{task.sequence}</span>
+                  <article className={`task-card task-card-${task.status}`} key={task.id}>
+                    <div className="task-card-topline">
+                      <span className="task-sequence">#{task.sequence}</span>
+                      <span className={`task-status-pill ${task.status}`}>
+                        {task.status === "in_progress"
+                          ? "Working"
+                          : task.status === "awaiting_approval"
+                            ? "Approval"
+                            : task.status === "complete"
+                              ? "Done"
+                              : task.status === "failed"
+                                ? "Blocked"
+                                : "Queued"}
+                      </span>
+                    </div>
                     <strong>{task.title}</strong>
                     <p>{task.description || "No description"}</p>
+                    <div className="task-live-update">
+                      <small>LATEST UPDATE</small>
+                      <span>{statusCopy}</span>
+                    </div>
                     <div className="task-owner">
                       <span>{owner ? owner.name.slice(0, 2).toUpperCase() : "—"}</span>
                       <div>
@@ -1644,6 +2138,12 @@ export default function Home() {
                         <b>{owner ? owner.name : "Unassigned"}</b>
                       </div>
                     </div>
+                    {(task.started_at || task.completed_at) && (
+                      <div className="task-timing">
+                        {task.started_at && <span>Started {new Date(task.started_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
+                        {task.completed_at && <span>Finished {new Date(task.completed_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}
+                      </div>
+                    )}
                   </article>
                 );
               })}
@@ -1656,6 +2156,141 @@ export default function Home() {
       </div>
     </section>
   );
+
+  const renderWorkstream = () => {
+    const sortedTasks = [...tasks].sort((a, b) => a.sequence - b.sequence);
+    const latestEventsByTask = new Map<string, RunEvent>();
+
+    [...runEvents]
+      .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+      .forEach((event) => {
+        if (event.task_id && !latestEventsByTask.has(event.task_id)) {
+          latestEventsByTask.set(event.task_id, event);
+        }
+      });
+
+    const completed = sortedTasks.filter((task) => task.status === "complete").length;
+    const working = sortedTasks.filter((task) => task.status === "in_progress").length;
+    const waiting = sortedTasks.filter((task) => task.status === "awaiting_approval").length;
+
+    return (
+      <section className="os-view delegation-view">
+        <div className="view-heading delegation-heading">
+          <div>
+            <span className="eyebrow">KORBEN WORKSTREAM</span>
+            <h1>Delegation</h1>
+            <p>See what Korben handed off, who is working on it, and what came back.</p>
+          </div>
+          <div className="delegation-summary">
+            <span><i className="queued" />{sortedTasks.length - completed - working - waiting} queued</span>
+            <span><i className="working" />{working} working</span>
+            <span><i className="complete" />{completed} complete</span>
+          </div>
+        </div>
+
+        <div className="delegation-thread">
+          <article className="delegation-message korben-message">
+            <div className="delegation-avatar korben-avatar">K</div>
+            <div className="delegation-bubble">
+              <div className="delegation-meta">
+                <strong>Korben</strong>
+                <span>Coordinator</span>
+              </div>
+              <p>
+                {sortedTasks.length
+                  ? `I broke “${activeObjective}” into ${sortedTasks.length} delegated step${sortedTasks.length === 1 ? "" : "s"}. I’ll keep this feed updated as the agents work.`
+                  : "Nothing is delegated right now. Give me a task and I’ll show the handoffs here."}
+              </p>
+            </div>
+          </article>
+
+          {sortedTasks.map((task) => {
+            const agent = agentById(task.assigned_agent_id);
+            const event = latestEventsByTask.get(task.id);
+            const stateLabel =
+              task.status === "in_progress"
+                ? "Working now"
+                : task.status === "complete"
+                  ? "Completed"
+                  : task.status === "awaiting_approval"
+                    ? "Waiting for you"
+                    : task.status === "failed"
+                      ? "Needs attention"
+                      : "Queued";
+
+            return (
+              <div className="delegation-step" key={task.id}>
+                <article className="delegation-message handoff-message">
+                  <div className="delegation-avatar korben-avatar">K</div>
+                  <div className="delegation-bubble">
+                    <div className="delegation-meta">
+                      <strong>Korben</strong>
+                      <span>Delegated to {agent?.name || "an agent"}</span>
+                    </div>
+                    <p>{task.title}</p>
+                    {task.description && <small>{task.description}</small>}
+                  </div>
+                </article>
+
+                <article className={`delegation-message agent-message ${task.status}`}>
+                  <div className="delegation-avatar agent-avatar">
+                    {agent ? agent.name.slice(0, 2).toUpperCase() : "AI"}
+                  </div>
+                  <div className="delegation-bubble">
+                    <div className="delegation-meta">
+                      <strong>{agent?.name || "Korben agent"}</strong>
+                      <span>{agent?.role || "Specialist"}</span>
+                      <b className={`delegation-state ${task.status}`}>{stateLabel}</b>
+                    </div>
+
+                    {task.status === "complete" ? (
+                      <>
+                        <p>{task.result_summary || event?.message || "Completed and reported back to Korben."}</p>
+                        <small>Korben has received this result.</small>
+                      </>
+                    ) : task.status === "in_progress" ? (
+                      <>
+                        <p>{event?.message || `Working on ${task.title.toLowerCase()}.`}</p>
+                        <small>Live status · updates automatically</small>
+                      </>
+                    ) : task.status === "awaiting_approval" ? (
+                      <>
+                        <p>I’m paused here until you approve the protected action.</p>
+                        <button className="delegation-review-button" onClick={() => setActiveView("work")}>Review approval</button>
+                      </>
+                    ) : task.status === "failed" ? (
+                      <>
+                        <p>{task.result_summary || event?.message || "I hit a blocker and could not finish this step."}</p>
+                        <small>Open Runs for technical details.</small>
+                      </>
+                    ) : (
+                      <>
+                        <p>Waiting for the prior step to finish.</p>
+                        <small>Queued by Korben</small>
+                      </>
+                    )}
+                  </div>
+                </article>
+              </div>
+            );
+          })}
+
+          {sortedTasks.length > 0 && completed === sortedTasks.length && (
+            <article className="delegation-message korben-message final-report">
+              <div className="delegation-avatar korben-avatar">K</div>
+              <div className="delegation-bubble">
+                <div className="delegation-meta">
+                  <strong>Korben</strong>
+                  <span>Report back</span>
+                </div>
+                <p>Done. All {completed} delegated steps are complete. The work is finished.</p>
+              </div>
+            </article>
+          )}
+        </div>
+      </section>
+    );
+  };
 
   const renderRuns = () => (
     <section className="os-view">
@@ -1696,6 +2331,219 @@ export default function Home() {
       </div>
     </section>
   );
+
+  const renderFocus = () => (
+    <section className="os-view">
+      <div className="view-heading">
+        <div>
+          <span className="eyebrow">ACCOUNTABILITY ORGAN</span>
+          <h1>Focus</h1>
+          <p>A privacy-safe focus session inspired by JARVIS: timer, goal, optional tab lock, interruption tracking and a report card.</p>
+        </div>
+        <div className="metric-strip">
+          <div><strong>{focusStreak}</strong><span>Streak</span></div>
+          <div><strong>{focusInterruptions}</strong><span>Drifts</span></div>
+          <div><strong>{focusRunning ? "LIVE" : "OFF"}</strong><span>State</span></div>
+        </div>
+      </div>
+
+      <div className="focus-layout">
+        <article className="focus-console">
+          <span className="eyebrow">SESSION TIMER</span>
+          <div className={`focus-clock ${focusRunning && !focusPaused ? "running" : ""}`}>
+            {focusRunning || focusRemaining ? focusClock : `${String(focusMinutes).padStart(2, "0")}:00`}
+          </div>
+          <input
+            className="focus-goal-input"
+            value={focusGoal}
+            onChange={(event) => setFocusGoal(event.target.value)}
+            placeholder="What are we focusing on?"
+            disabled={focusRunning}
+          />
+          <div className="focus-duration-row">
+            {[15, 25, 30, 45, 60].map((minutes) => (
+              <button
+                key={minutes}
+                className={focusMinutes === minutes ? "active" : ""}
+                onClick={() => setFocusMinutes(minutes)}
+                disabled={focusRunning}
+              >
+                {minutes}m
+              </button>
+            ))}
+          </div>
+          <div className="focus-actions">
+            {!focusRunning ? (
+              <button className="focus-start" onClick={startFocus}>Start focus</button>
+            ) : (
+              <>
+                <button onClick={() => setFocusPaused((paused) => !paused)}>
+                  {focusPaused ? "Resume" : "Pause"}
+                </button>
+                <button
+                  className={focusLockTab ? "active" : ""}
+                  onClick={() => setFocusLockTab((locked) => !locked)}
+                >
+                  {focusLockTab ? "Tab locked" : "Lock this tab"}
+                </button>
+                <button className="focus-stop" onClick={endFocus}>End session</button>
+              </>
+            )}
+          </div>
+        </article>
+
+        <aside className="focus-side">
+          <article className="focus-card">
+            <span className="eyebrow">PRIVACY BOUNDARY</span>
+            <strong>Nothing is watching your camera or screen.</strong>
+            <p>The optional tab lock uses only the browser visibility signal. Korben knows only that you left this tab—not what you opened.</p>
+          </article>
+          <article className="focus-card">
+            <span className="eyebrow">REPORT CARD</span>
+            <strong>{focusReport ? "Latest session" : "No completed session yet"}</strong>
+            <p>{focusReport || "Finish a session and Korben will summarize duration, goal and detected tab drift."}</p>
+          </article>
+        </aside>
+      </div>
+    </section>
+  );
+
+  const renderPreflight = () => (
+    <section className="os-view">
+      <div className="view-heading">
+        <div>
+          <span className="eyebrow">SYSTEM PREFLIGHT</span>
+          <h1>Preflight</h1>
+          <p>JARVIS-style health check for the active Korben execution environment before you trust it with autonomous work.</p>
+        </div>
+        <button className="preflight-run" onClick={() => void runPreflight()} disabled={preflightBusy}>
+          {preflightBusy ? "Checking…" : "Run preflight"}
+        </button>
+      </div>
+
+      <div className={`preflight-summary ${preflightReport?.overall || "idle"}`}>
+        <div>
+          <span className="eyebrow">SYSTEM VERDICT</span>
+          <strong>
+            {preflightReport
+              ? preflightReport.overall === "healthy"
+                ? "All core systems healthy"
+                : preflightReport.overall === "degraded"
+                  ? "Operational with warnings"
+                  : "Attention required"
+              : "Preflight has not been run"}
+          </strong>
+        </div>
+        <small>
+          {preflightReport
+            ? `${preflightReport.project.name} · checked ${new Date(preflightReport.checked_at).toLocaleString()}`
+            : "Run the check to verify credentials, agents, tools, Brain, approvals and recent run health."}
+        </small>
+      </div>
+
+      <div className="preflight-grid">
+        {(preflightReport?.checks || []).map((check) => (
+          <article className={`preflight-card ${check.status}`} key={check.key}>
+            <span className="preflight-dot" />
+            <div>
+              <strong>{check.label}</strong>
+              <span>{check.status.replaceAll("_", " ")}</span>
+              <p>{check.detail}</p>
+            </div>
+          </article>
+        ))}
+        {!preflightReport && (
+          <div className="empty-state large">No health snapshot yet.</div>
+        )}
+      </div>
+    </section>
+  );
+
+  const renderBrainGalaxy = () => {
+    const galaxyEntries = knowledgeEntries.slice(0, 24);
+    const centerX = 50;
+    const centerY = 47;
+
+    return (
+      <section className="os-view brain-galaxy-view">
+        <div className="view-heading">
+          <div>
+            <span className="eyebrow">LIVING KNOWLEDGE GRAPH</span>
+            <h1>Brain Galaxy</h1>
+            <p>Korben’s shared Brain rendered as an active constellation of SOPs, facts, decisions, memories and project knowledge.</p>
+          </div>
+          <div className="metric-strip">
+            <div><strong>{knowledgeEntries.length}</strong><span>Entries</span></div>
+            <div><strong>{knowledgeSources.length}</strong><span>Sources</span></div>
+            <div><strong>{agents.length}</strong><span>Readers</span></div>
+          </div>
+        </div>
+
+        <div className="brain-galaxy">
+          <div className="galaxy-grid" />
+          <div className="galaxy-haze haze-a" />
+          <div className="galaxy-haze haze-b" />
+          <svg className="galaxy-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {galaxyEntries.map((entry, index) => {
+              const angle = (index / Math.max(galaxyEntries.length, 1)) * Math.PI * 2;
+              const radius = 20 + (index % 4) * 6;
+              const x = centerX + Math.cos(angle) * radius;
+              const y = centerY + Math.sin(angle) * radius * .72;
+              return (
+                <line
+                  key={entry.id}
+                  x1={centerX}
+                  y1={centerY}
+                  x2={x}
+                  y2={y}
+                  className={`galaxy-link ${entry.entry_type}`}
+                />
+              );
+            })}
+          </svg>
+
+          <button className="galaxy-core" onClick={() => setActiveView("command")}>
+            <span>K</span>
+            <strong>KORBEN BRAIN</strong>
+            <small>{knowledgeEntries.length} active entries</small>
+          </button>
+
+          {galaxyEntries.map((entry, index) => {
+            const angle = (index / Math.max(galaxyEntries.length, 1)) * Math.PI * 2;
+            const radius = 20 + (index % 4) * 6;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius * .72;
+
+            return (
+              <article
+                key={entry.id}
+                className={`galaxy-node ${entry.entry_type}`}
+                style={{
+                  left: `${x}%`,
+                  top: `${y}%`,
+                  "--delay": `${index * -.17}s`,
+                } as React.CSSProperties}
+                title={entry.title}
+              >
+                <span className="galaxy-node-dot" />
+                <div className="galaxy-node-card">
+                  <small>{entry.entry_type.toUpperCase()}</small>
+                  <strong>{entry.title}</strong>
+                  <p>{entry.content.length > 120 ? `${entry.content.slice(0, 120)}…` : entry.content}</p>
+                </div>
+              </article>
+            );
+          })}
+
+          <div className="galaxy-legend">
+            {["sop", "fact", "decision", "memory", "document"].map((type) => (
+              <span key={type} className={type}><i />{type}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  };
 
   const renderKnowledgeView = () => {
     const content = {
@@ -1777,65 +2625,54 @@ export default function Home() {
     );
   };
 
+  if (calmMode) {
+    return renderCalmMode();
+  }
+
+  if (activeView === "command") {
+    return <main className="command-home-shell">{renderCommandCenter()}</main>;
+  }
+
   return (
-    <main className="os-shell">
-      <aside className="os-sidebar">
-        <button className="sidebar-brand" onClick={() => setActiveView("command")}>
-          <span className="mini-core">K</span>
-          <div><strong>KORBEN</strong><small>OPERATING SYSTEM</small></div>
-        </button>
+    <main className="zen-app-page">
+      <header className="korben-home-nav zen-app-nav">
+        <button className="korben-home-wordmark" onClick={() => setActiveView("command")}>KORBEN</button>
 
-        <nav className="os-nav">
-          <span className="nav-section">CORE</span>
-          <button className={activeView === "command" ? "active" : ""} onClick={() => setActiveView("command")}><i>◉</i><span>Command</span></button>
-          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}><i>⌘</i><span>Agent Network</span><b>{agents.length}</b></button>
-          <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}><i>↗</i><span>Work Routing</span><b>{tasks.length}</b></button>
-          <button className={activeView === "runs" ? "active" : ""} onClick={() => setActiveView("runs")}><i>◎</i><span>Runs</span><b>{runEvents.length}</b></button>
-
-          <span className="nav-section">KNOWLEDGE</span>
-          <button className={activeView === "brain" ? "active" : ""} onClick={() => setActiveView("brain")}><i>◇</i><span>Brain</span></button>
-          <button className={activeView === "sops" ? "active" : ""} onClick={() => setActiveView("sops")}><i>▤</i><span>SOPs</span></button>
-
-          <span className="nav-section">SYSTEM</span>
-          <button className={activeView === "tools" ? "active" : ""} onClick={() => setActiveView("tools")}><i>⌁</i><span>Tools</span></button>
-          <button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><i>⬡</i><span>Integrations</span></button>
+        <nav className="korben-home-links zen-app-links" aria-label="Primary navigation">
+          <button onClick={() => setActiveView("command")}>Home</button>
+          <button className={activeView === "work" ? "active" : ""} onClick={() => setActiveView("work")}>Tasks</button>
+          <button className={activeView === "workstream" ? "active" : ""} onClick={() => setActiveView("workstream")}>Delegation</button>
+          <button className={activeView === "network" ? "active" : ""} onClick={() => setActiveView("network")}>Agents</button>
+          <button className={activeView === "focus" ? "active" : ""} onClick={() => setActiveView("focus")}>Focus</button>
+          <button className={["brain","sops","tools","integrations"].includes(activeView) ? "active" : ""} onClick={() => setActiveView("brain")}>Library</button>
         </nav>
 
-        <div className="sidebar-system">
-          <span className="system-pulse" />
-          <div><strong>{loadingState}</strong><small>{currentProjectName}</small></div>
+        <div className="korben-home-account">
+          <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+          <span className="presence-dot" />
+          <button className="account-trigger" onClick={signOut} title="Sign out">
+            Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
+          </button>
         </div>
-      </aside>
+      </header>
 
-      <div className="os-main">
-        <header className="korben-topbar">
-          <div>
-            <span className="topbar-kicker">KORBEN / {viewTitle.toUpperCase()}</span>
-            <strong className="topbar-title">{viewTitle}</strong>
-          </div>
-          <div className="korben-top-actions">
-            <select
-              className="workspace-select"
-              value={selectedProjectSlug}
-              onChange={(event) => switchProject(event.target.value)}
-              aria-label="Current project"
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.slug}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-            <button className="avatar" onClick={signOut} title="Sign out">JG</button>
-          </div>
-        </header>
+      <section className="zen-page-wrap">
+        <div className="zen-page-kicker">
+          <button onClick={() => setActiveView("command")}>← Home</button>
+          <span>{currentProjectName}</span>
+          <i />
+          <strong>{viewTitle}</strong>
+        </div>
 
-        {activeView === "command" && renderCommandCenter()}
         {activeView === "network" && renderNetwork()}
         {activeView === "work" && renderWork()}
+        {activeView === "workstream" && renderWorkstream()}
         {activeView === "runs" && renderRuns()}
-        {["brain", "sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
-      </div>
+        {activeView === "focus" && renderFocus()}
+        {activeView === "preflight" && renderPreflight()}
+        {activeView === "brain" && renderBrainGalaxy()}
+        {["sops", "tools", "integrations"].includes(activeView) && renderKnowledgeView()}
+      </section>
     </main>
   );
 }

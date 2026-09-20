@@ -4,14 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "build": "npm test && next build",
+    "start": "next start",
+    "test": "node --experimental-strip-types lib/approval-policy.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
     "next": "^16.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@vercel/queue": "^0.5.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

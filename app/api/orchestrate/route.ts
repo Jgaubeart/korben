@@ -11,7 +11,13 @@ Classify every request into exactly one intent:
 - question: informational, analytical, or research-style request that can be answered without changing external systems
 - work: a request that should become structured work/tasks but does not itself require immediate external side effects
 - action: a request to use external systems or tools to do something
-- approval: a requested action that is L2/L3 and therefore requires explicit approval before execution
+- approval: a requested action that includes one or more L2/L3 protected steps and therefore requires explicit approval before those protected steps execute
+
+Intent guardrails:
+- Requests phrased as "can you", "could you", "will you", "I need you to", or similar are still action/work requests when the user is asking Korben to actually change, create, send, publish, deploy, update, fix, open, merge, move, schedule, or otherwise do something.
+- Do not classify an executable request as a question merely because it is phrased grammatically as a question.
+- Use question only when the user wants information or analysis and does not want Korben to change external state.
+- If an approval intent contains earlier L0/L1 tasks before a protected L2/L3 task, those safe earlier tasks should still be executable immediately; approval gates only the protected step.
 
 Project routing rules:
 1. Return target_project_slug for work/action/approval when the target can be resolved from the request or current context.
@@ -21,6 +27,9 @@ Project routing rules:
 5. General Workspace is conversational and neutral. Do not route external execution to general-workspace.
 6. If execution is requested but no available target project can be resolved confidently, return target_project_slug="" and explain briefly that Korben needs the target named. Do not invent a project.
 7. conversation and question may use target_project_slug="" unless project context is materially useful.
+8. Use recent conversation context only to resolve follow-ups, pronouns, corrections, and continuation requests. The newest user request controls intent and scope.
+9. If the user says the previous result was wrong, asks to check again, or disputes a factual/tool result, plan a fresh verification rather than merely agreeing with the correction.
+10. Prior conversation context never grants fresh L2/L3 approval. Protected actions still require current explicit approval.
 
 Execution rules:
 1. conversation and question must return requires_execution=false and an empty tasks array.
@@ -39,18 +48,23 @@ Execution rules:
 13. Never reinterpret "open a PR to main" as "merge to main".
 8. Never assume production deployment is approved.
 14. Keep assistant_reply natural, concise, and useful.
-15. The output must match the requested JSON schema exactly.
+15. assistant_reply is what Korben may speak aloud. It must be plain English, conversational, and no more than 45 words unless the user explicitly asks for detail.
+16. Do not put code, JSON, file paths, commit SHAs, tool names, system keys, approval levels, implementation jargon, or internal planning language in assistant_reply unless the user explicitly asks for those details.
+17. For work/action requests, assistant_reply should simply acknowledge the goal and briefly state what Korben is doing or what it needs from the user. Do not narrate the internal task plan.
+18. The output must match the requested JSON schema exactly.
 
-Available roles:
+Available roles and execution boundaries:
 - product_manager
-- solutions_architect
+- solutions_architect: architecture/repository inspection; has GitHub read + knowledge search, but no Vercel tools
 - ux_ui_designer
 - frontend_engineer
 - backend_engineer
 - database_engineer
 - qa_engineer
 - security_reviewer
-- devops_engineer
+- devops_engineer: deployment/release inspection; has GitHub read plus Vercel read/preview/production and GitHub PR/merge capabilities
+
+Planning rule: if a task must inspect, verify, or determine Vercel project settings, deployment history, preview state, production-branch behavior, or other Vercel delivery facts, assign that task to devops_engineer or split the Vercel verification into a separate devops_engineer task. Never assign required Vercel verification to solutions_architect.
 `;
 
 const PLAN_SCHEMA = {
@@ -126,6 +140,12 @@ function normalizePlan(plan: any, requestText: string) {
     /\b(do not|don't|never)\s+(deploy|ship|release).*(production|prod)\b/i.test(requestText) ||
     /\b(do not|don't|never)\s+deploy\s+to\s+production\b/i.test(requestText);
 
+  const explicitBranchMatch = requestText.match(/\b(?:branch\s+)?[\`'"]?((?:feature|fix|chore|bugfix|hotfix|korben)\/[A-Za-z0-9._\/-]+)[\`'"]?/i);
+  const explicitFeatureBranch = explicitBranchMatch?.[1] || "";
+  const explicitSyncFromMain =
+    /\b(sync|synchronize|update|bring|merge|rebase)\b[\s\S]{0,100}\b(main|master)\b[\s\S]{0,140}\b(feature branch|existing branch|branch|feature\/|fix\/|chore\/|bugfix\/|hotfix\/|korben\/)/i.test(requestText) ||
+    /\b(main|master)\b[\s\S]{0,100}\b(into|onto|with)\b[\s\S]{0,100}\b(feature branch|existing branch|feature\/|fix\/|chore\/|bugfix\/|hotfix\/|korben\/)/i.test(requestText);
+
   const tasks = Array.isArray(plan?.tasks)
     ? plan.tasks
         .filter((task: any) => {
@@ -150,16 +170,63 @@ function normalizePlan(plan: any, requestText: string) {
             /\b(deploy|deployment|create|publish)\b/.test(text) &&
             !/\bproduction|prod\b/.test(text);
 
+          const needsVercelRead =
+            /\b(vercel|deployment|deployments|production branch|preview)\b/.test(text) &&
+            /\b(audit|inspect|verify|check|determine|review|read|trace)\b/.test(text);
+
+          const normalizedAgent =
+            needsVercelRead && task?.agent_system_key === "solutions_architect"
+              ? "devops_engineer"
+              : task?.agent_system_key;
+
           if (isPullRequestCreation || isPreview) {
             return {
               ...task,
+              agent_system_key: normalizedAgent,
               approval_level: Math.min(Number(task.approval_level ?? 1), 1),
             };
           }
 
-          return task;
+          return {
+            ...task,
+            agent_system_key: normalizedAgent,
+          };
         })
     : [];
+
+  if (explicitSyncFromMain) {
+    const hasSyncTask = tasks.some((task: any) => {
+      const text = `${task?.title || ""} ${task?.description || ""}`.toLowerCase();
+      return /\b(sync|synchronize|merge|rebase|bring .* up to date|update .* branch)\b/.test(text) &&
+        /\b(main|master)\b/.test(text);
+    });
+
+    if (!hasSyncTask) {
+      tasks.unshift({
+        title: "Synchronize the existing feature branch with current main",
+        description: explicitFeatureBranch
+          ? `Use github.write:sync_branch to merge current main into existing branch ${explicitFeatureBranch}. Preserve history, do not recreate/reset the branch, and do not modify main.`
+          : "Use github.write:sync_branch to merge current main into the existing feature branch identified from project context. Preserve history, do not recreate/reset the branch, and do not modify main.",
+        agent_system_key: "backend_engineer",
+        approval_level: 1,
+        acceptance_criteria: [
+          "sync_branch completes against the existing feature branch",
+          "main is unchanged",
+          "a follow-up compare shows the feature branch is not behind main"
+        ]
+      });
+    } else {
+      const syncIndex = tasks.findIndex((task: any) => {
+        const text = `${task?.title || ""} ${task?.description || ""}`.toLowerCase();
+        return /\b(sync|synchronize|merge|rebase|bring .* up to date|update .* branch)\b/.test(text) &&
+          /\b(main|master)\b/.test(text);
+      });
+      if (syncIndex > 0) {
+        const [syncTask] = tasks.splice(syncIndex, 1);
+        tasks.unshift(syncTask);
+      }
+    }
+  }
 
   const maxApproval = tasks.reduce(
     (max: number, task: any) => Math.max(max, Number(task?.approval_level ?? 0)),
@@ -198,6 +265,14 @@ export async function POST(request: Request) {
     .replace(/\bcorbin\b/gi, "Korben");
   const currentProjectName = String(body?.projectName ?? "General Workspace");
   const currentProjectSlug = String(body?.currentProjectSlug ?? "general-workspace");
+  const recentMessages = Array.isArray(body?.recentMessages)
+    ? body.recentMessages
+        .slice(-12)
+        .map((message: any) => ({
+          role: message?.role === "assistant" ? "assistant" : "user",
+          content: String(message?.content ?? "").slice(0, 4000),
+        }))
+    : [];
   const availableProjects = Array.isArray(body?.projects)
     ? body.projects
         .map((project: any) => ({
@@ -226,8 +301,9 @@ export async function POST(request: Request) {
       input: [
         `Current Command Center context: ${currentProjectName} (${currentProjectSlug})`,
         `Available projects: ${JSON.stringify(availableProjects)}`,
+        `Recent conversation context: ${JSON.stringify(recentMessages)}`,
         "",
-        "User request:",
+        "Current user request:",
         requestText,
       ].join("\n"),
       text: {

@@ -46,13 +46,13 @@ function safeJson(value: any, max = 30000) {
 
 const TOOL_ACTION_GUIDE: Record<string, string> = {
   "github.read":
-    "Valid actions: repo, file, branch, pull_request. Never use list/create/update/merge here.",
+    "Valid actions: repo, file, branch, pull_request, commit, compare, workflow_runs, workflow_run, workflow_jobs. Use commit to inspect an exact commit/ref. Use compare with {base, head} to verify ancestry, ahead/behind counts, and changed files. Use workflow_runs with {head_sha} to discover Actions runs tied to the exact commit under review; then use workflow_run with {run_id} to verify SHA/status/conclusion and workflow_jobs with {run_id} to verify job and step conclusions. Never use create/update/merge here.",
   "github.write":
-    "Valid actions: create_branch, update_file. All writes must be on a feature branch, never main/master.",
+    "Valid actions: create_branch, update_file, sync_branch. sync_branch may only merge main/master into an existing feature branch; it must never target main/master or force-reset history.",
   "github.pr":
     "Valid action: create only. Use this only to open a pull request; do not use it to list/read PRs.",
   "github.merge":
-    "Valid action: merge only. This is L2 and requires explicit approval.",
+    "Valid action: merge only. Runtime verification may escalate a merge to L3 when the verified target triggers production.",
   "vercel.read":
     "Valid actions: project, deployments, deployment.",
   "vercel.preview":
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
   const { data: task, error: taskError } = await supabase
     .from("tasks")
     .select(
-      "id,title,description,status,acceptance_criteria,assigned_agent_id,objective_id"
+      "id,title,description,status,sequence,acceptance_criteria,assigned_agent_id,objective_id"
     )
     .eq("id", taskId)
     .maybeSingle();
@@ -160,6 +160,115 @@ export async function POST(request: Request) {
 
   if (!project) {
     return NextResponse.json({ error: "Project is unavailable." }, { status: 404 });
+  }
+
+  const { data: siblingTasks } = await supabase
+    .from("tasks")
+    .select("id,title,sequence,status")
+    .eq("objective_id", objective.id)
+    .lt("sequence", task.sequence)
+    .order("sequence");
+
+  const priorTaskIds = (siblingTasks || []).map((item) => item.id);
+  let priorTaskContext: Array<{
+    sequence: number;
+    title: string;
+    status: string;
+    summary: string;
+  }> = [];
+
+  if (priorTaskIds.length) {
+    const { data: priorRuns } = await supabase
+      .from("agent_runs")
+      .select("task_id,status,output,completed_at")
+      .in("task_id", priorTaskIds)
+      .order("completed_at", { ascending: false });
+
+    priorTaskContext = (siblingTasks || []).map((item) => {
+      const matchingRun = (priorRuns || []).find(
+        (run: any) => run.task_id === item.id && run.status === "complete"
+      );
+
+      const summary =
+        matchingRun?.output &&
+        typeof matchingRun.output === "object" &&
+        "summary" in matchingRun.output
+          ? String((matchingRun.output as any).summary || "")
+          : "";
+
+      return {
+        sequence: item.sequence,
+        title: item.title,
+        status: item.status,
+        summary,
+      };
+    });
+  }
+
+  let recentProjectContext: Array<{
+    objective: string;
+    task: string;
+    status: string;
+    summary: string;
+  }> = [];
+
+  const { data: recentObjectives } = await supabase
+    .from("objectives")
+    .select("id,title,created_at")
+    .eq("project_id", project.id)
+    .neq("id", objective.id)
+    .order("created_at", { ascending: false })
+    .limit(4);
+
+  const recentObjectiveIds = (recentObjectives || []).map((item: any) => item.id);
+
+  if (recentObjectiveIds.length) {
+    const { data: recentTasks } = await supabase
+      .from("tasks")
+      .select("id,objective_id,title,status,sequence")
+      .in("objective_id", recentObjectiveIds)
+      .order("sequence", { ascending: true });
+
+    const recentTaskIds = (recentTasks || []).map((item: any) => item.id);
+
+    if (recentTaskIds.length) {
+      const { data: recentRuns } = await supabase
+        .from("agent_runs")
+        .select("task_id,status,output,completed_at")
+        .in("task_id", recentTaskIds)
+        .order("completed_at", { ascending: false });
+
+      recentProjectContext = (recentTasks || [])
+        .map((item: any) => {
+          const matchingRun = (recentRuns || []).find(
+            (run: any) =>
+              run.task_id === item.id &&
+              run.output &&
+              typeof run.output === "object" &&
+              "summary" in run.output
+          );
+
+          if (!matchingRun) return null;
+
+          const parentObjective = (recentObjectives || []).find(
+            (candidate: any) => candidate.id === item.objective_id
+          );
+
+          return {
+            objective: String(parentObjective?.title || ""),
+            task: String(item.title || ""),
+            status: String(matchingRun.status || item.status || ""),
+            summary: String((matchingRun.output as any).summary || ""),
+          };
+        })
+        .filter(Boolean)
+        .slice(0, 8) as Array<{
+          objective: string;
+          task: string;
+          status: string;
+          summary: string;
+        }>;
+    }
   }
 
   const { data: permissionRows } = await supabase
@@ -286,7 +395,7 @@ export async function POST(request: Request) {
               action: {
                 type: "string",
                 description:
-                  "Provider action. Examples: repo, file, branch, pull_request, create_branch, update_file, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
+                  "Provider action. Examples: repo, file, branch, pull_request, commit, compare, workflow_runs, workflow_run, workflow_jobs, create_branch, update_file, sync_branch, create, merge, project, deployments, deployment, deploy, select, insert, update, search.",
               },
               params_json: {
                 type: "string",
@@ -309,7 +418,10 @@ export async function POST(request: Request) {
     "Never attempt to bypass an approval boundary.",
     "GitHub writes must use a feature branch, never main or master.",
     "If a required tool is unavailable or an approval is required, clearly state the blocker and stop.",
-    "When the task is complete, return a concise completion summary including what changed and any remaining risk.",
+    "Recoverable exploratory misses such as a file path returning Not Found do not by themselves mean the task failed; continue if you can still satisfy the acceptance criteria.",
+    "Your final response MUST begin with exactly one status line: TASK_STATUS: COMPLETE, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED.",
+    "Use COMPLETE only when the acceptance criteria are satisfied. Use BLOCKED when required access, data, or approval is missing. Use FAILED when a non-recoverable execution error prevents completion.",
+    "After the status line, return a concise completion summary including what changed and any remaining risk.",
     "",
     `Project: ${project.name}`,
     `GitHub repo: ${project.github_repo || "not configured"}`,
@@ -325,6 +437,18 @@ export async function POST(request: Request) {
           .map((key) => `- ${key}: ${TOOL_ACTION_GUIDE[key] || "Use only documented actions."}`)
           .join("\n")}`
       : "No tools are available.",
+    priorTaskContext.length
+      ? `Outputs from earlier tasks in this objective. Treat these as authoritative handoff context and reuse exact identifiers such as branch names, commit SHAs, PR numbers, file paths, and deployment URLs:\n${safeJson(
+          priorTaskContext,
+          16000
+        )}`
+      : "No earlier task outputs are available for this objective.",
+    recentProjectContext.length
+      ? `Recent outputs from related work in this same project. Use these to continue existing missions across objective boundaries. Reuse exact durable identifiers such as branch names, commit SHAs, PR numbers, file paths, and deployment URLs when clearly relevant, but re-verify mutable state before acting:\n${safeJson(
+          recentProjectContext,
+          24000
+        )}`
+      : "No recent cross-objective project context is available.",
     knowledgeContext
       ? `Shared knowledge retrieved before execution: ${safeJson(knowledgeContext, 16000)}`
       : "Shared knowledge search returned no additional context.",
@@ -342,7 +466,8 @@ export async function POST(request: Request) {
   let finalText = "";
   let approvalBlocked = false;
   let executionFailed = false;
-  const maxTurns = 8;
+  let hadRecoverableToolFailure = false;
+  const maxTurns = 12;
   const model =
     process.env.OPENAI_AGENT_MODEL ||
     process.env.OPENAI_ORCHESTRATOR_MODEL ||
@@ -419,37 +544,16 @@ export async function POST(request: Request) {
           continue;
         }
 
-        const riskLevel = riskByTool[toolKey] ?? 3;
-        let approvalId: string | null = null;
+        const { data: latestApproved } = await supabase
+          .from("approvals")
+          .select("id,status,risk_level,request_payload,decided_at")
+          .eq("task_id", task.id)
+          .eq("status", "approved")
+          .order("decided_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (riskLevel >= 2) {
-          const { data: approval } = await supabase
-            .from("approvals")
-            .select("id,status,risk_level")
-            .eq("task_id", task.id)
-            .eq("status", "approved")
-            .gte("risk_level", riskLevel)
-            .order("decided_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          approvalId = approval?.id || null;
-
-          if (!approvalId) {
-            approvalBlocked = true;
-            await supabase.from("run_events").insert({
-              run_id: runId,
-              project_id: project.id,
-              task_id: task.id,
-              agent_id: agent.id,
-              event_type: "approval_required",
-              tool_system_key: toolKey,
-              status: "waiting_approval",
-              message: `${toolKey} requires L${riskLevel} approval`,
-              payload: { action },
-            });
-          }
-        }
+        const approvalId = latestApproved?.id || null;
 
         const toolResponse = await fetch(
           `${new URL(request.url).origin}/api/tools/execute`,
@@ -480,7 +584,7 @@ export async function POST(request: Request) {
           if (toolResponse.status === 409) {
             approvalBlocked = true;
           } else {
-            executionFailed = true;
+            hadRecoverableToolFailure = true;
           }
         }
 
@@ -496,19 +600,71 @@ export async function POST(request: Request) {
       }
     }
 
+    if (!finalText && !approvalBlocked) {
+      try {
+        const finalResponse = await fetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            reasoning: { effort: "none" },
+            instructions:
+              "You are a specialist agent operating inside Korben OS. The tool-execution phase has ended. Do not request any more tools. Review the complete transcript and decide whether the assigned task acceptance criteria were satisfied. Your response MUST begin with exactly one line: TASK_STATUS: COMPLETE, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED. Then summarize the work performed, exact artifacts created or changed, any recoverable tool misses, and remaining risk.",
+            input: [
+              ...input,
+              {
+                role: "user",
+                content:
+                  "Tool execution is finished. Produce the final task status and completion summary now. A recoverable exploratory read miss does not make the task fail if the acceptance criteria were otherwise satisfied.",
+              },
+            ],
+          }),
+        });
+
+        const finalPayload = await finalResponse.json();
+
+        if (finalResponse.ok) {
+          finalText = responseText(finalPayload) || "";
+        }
+      } catch {
+        // Fall through to deterministic failure text below.
+      }
+    }
+
     if (!finalText) {
       finalText = approvalBlocked
-        ? "This task is waiting for approval before Korben can continue."
+        ? "TASK_STATUS: BLOCKED\nThis task is waiting for approval before Korben can continue."
         : executionFailed
-          ? "This task stopped because a required tool call failed."
-          : "The agent reached its turn limit before completing the task.";
+          ? "TASK_STATUS: FAILED\nThis task stopped because a required tool call failed."
+          : "TASK_STATUS: FAILED\nThe agent exhausted its execution budget and could not produce a final verified task result.";
+    }
+
+    const statusMatch = finalText.match(/^TASK_STATUS:\s*(COMPLETE|BLOCKED|FAILED)\s*\n?/i);
+    const declaredStatus = statusMatch?.[1]?.toUpperCase() || "";
+    const cleanedFinalText = statusMatch
+      ? finalText.slice(statusMatch[0].length).trim()
+      : finalText.trim();
+
+    if (statusMatch) {
+      finalText = cleanedFinalText || "Task completed.";
     }
 
     const finalStatus = approvalBlocked
       ? "waiting_approval"
-      : executionFailed
+      : declaredStatus === "BLOCKED"
         ? "error"
-        : "complete";
+        : declaredStatus === "FAILED"
+          ? "error"
+          : declaredStatus === "COMPLETE"
+            ? "complete"
+            : executionFailed
+              ? "error"
+              : hadRecoverableToolFailure
+                ? "error"
+                : "complete";
 
     await Promise.all([
       supabase
