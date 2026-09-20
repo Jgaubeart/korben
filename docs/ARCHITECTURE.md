@@ -49,7 +49,7 @@ All inputs enter the same conversation and orchestrator context.
 
 ## Data boundary
 
-Korben gets its own Supabase project. Cabinet Genies Portal remains a separate workload and data boundary.
+Korben uses explicit project boundaries. External products and business systems are not available to Korben until the user adds them as projects and supplies setup instructions and connections.
 
 
 ## Intent model
