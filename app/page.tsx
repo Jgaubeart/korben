@@ -440,6 +440,7 @@ export default function Home() {
   const [screenSummary, setScreenSummary] = useState("");
   const recognitionRef = useRef<any>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const conversationRailRef = useRef<HTMLDivElement | null>(null);
   const lastPresenceActivityRef = useRef(Date.now());
   const heldShortcutRef = useRef(false);
   const sendingRef = useRef(false);
@@ -938,8 +939,7 @@ export default function Home() {
           .select("id,role,content,input_mode,created_at")
           .eq("conversation_id", conversationId)
           .in("role", ["user", "assistant"])
-          .order("created_at", { ascending: true })
-          .limit(120);
+          .order("created_at", { ascending: true });
 
         if (!cancelled && messageRows?.length) {
           setMessages(
@@ -962,6 +962,16 @@ export default function Home() {
       window.clearInterval(interval);
     };
   }, [conversationId, projectId, signedIn, supabase]);
+
+  useEffect(() => {
+    if (activeView === "command") return;
+    const node = conversationRailRef.current;
+    if (!node) return;
+
+    window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+  }, [activeView, messages.length]);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -3585,8 +3595,12 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="korben-rail-conversation" aria-live="polite">
-          {messages.slice(-6).map((message, index) => (
+        <div
+          className="korben-rail-conversation"
+          aria-live="polite"
+          ref={conversationRailRef}
+        >
+          {messages.map((message, index) => (
             <div
               className={`korben-rail-message ${message.role}`}
               key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
