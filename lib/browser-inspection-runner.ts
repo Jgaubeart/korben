@@ -1,5 +1,6 @@
 import chromium from "@sparticuz/chromium";
 import { chromium as playwrightChromium } from "playwright-core";
+import { getVercelOidcToken } from "@vercel/oidc";
 import {
   assertPublicHostname,
   BROWSER_LIMITS,
@@ -30,6 +31,32 @@ export type BrowserInspectionResult = {
 
 function normalizeOrigins(origins: string[]) {
   return [...new Set(origins.map((value) => new URL(value).origin))];
+}
+
+async function protectedPreviewHeaders() {
+  const headers: Record<string, string> = {};
+
+  try {
+    const oidcToken = await getVercelOidcToken({
+      project: process.env.VERCEL_PROJECT_ID || undefined,
+      team: process.env.VERCEL_TEAM_ID || undefined,
+      expirationBufferMs: 60_000,
+    });
+
+    if (oidcToken) {
+      headers["x-vercel-trusted-oidc-idp-token"] = oidcToken;
+    }
+  } catch {
+    // Fall back to an explicitly configured automation bypass secret below.
+  }
+
+  const bypassSecret = process.env.KORBEN_VERCEL_PROTECTION_BYPASS;
+  if (bypassSecret) {
+    headers["x-vercel-protection-bypass"] = bypassSecret;
+    headers["x-vercel-set-bypass-cookie"] = "true";
+  }
+
+  return headers;
 }
 
 export async function runBrowserInspection(
@@ -65,6 +92,7 @@ export async function runBrowserInspection(
       serviceWorkers: "block",
       viewport: input.viewport,
       javaScriptEnabled: true,
+      extraHTTPHeaders: await protectedPreviewHeaders(),
     });
 
     context.setDefaultTimeout(3000);
