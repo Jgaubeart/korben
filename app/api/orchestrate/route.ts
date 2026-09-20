@@ -73,6 +73,7 @@ Available roles and execution boundaries:
 - devops_engineer: deployment/release inspection; has GitHub read plus Vercel read/preview/production and GitHub PR/merge capabilities
 
 Planning rule: if a task must inspect, verify, or determine Vercel project settings, deployment history, preview state, production-branch behavior, or other Vercel delivery facts, assign that task to devops_engineer or split the Vercel verification into a separate devops_engineer task. Never assign required Vercel verification to solutions_architect.
+Planning rule: rendered UI/browser verification belongs to qa_engineer. If a task must open a preview in a browser, inspect rendered content, verify visible headings/layout/navigation/interactions, or use sandboxed browser inspection, assign it to qa_engineer. Do not assign browser/UI verification to security_reviewer. If the same request also needs Vercel deployment-state verification, split it into a devops_engineer task followed by a qa_engineer browser-verification task when necessary.
 `;
 
 const PLAN_SCHEMA = {
@@ -216,8 +217,13 @@ function normalizePlan(plan: any, requestText: string) {
             /\b(vercel|deployment|deployments|production branch|preview)\b/.test(text) &&
             /\b(audit|inspect|verify|check|determine|review|read|trace)\b/.test(text);
 
-          const normalizedAgent =
-            needsVercelRead && task?.agent_system_key === "solutions_architect"
+          const needsBrowserVerification =
+            /\b(browser|rendered|visible|heading|layout|navigation|interaction|ui|visual|page)\b/.test(text) &&
+            /\b(inspect|verify|check|review|open|confirm|test)\b/.test(text);
+
+          const normalizedAgent = needsBrowserVerification
+            ? "qa_engineer"
+            : needsVercelRead && task?.agent_system_key === "solutions_architect"
               ? "devops_engineer"
               : task?.agent_system_key;
 

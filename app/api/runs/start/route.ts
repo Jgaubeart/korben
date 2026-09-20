@@ -524,8 +524,11 @@ export async function POST(request: Request) {
     "If a required tool is unavailable or an approval is required, clearly state the blocker and stop.",
     "Recoverable exploratory misses such as a file path returning Not Found do not by themselves mean the task failed; continue if you can still satisfy the acceptance criteria.",
     "Transient read failures are not blockers. The runtime automatically retries read-only tool calls on 408, 429, 5xx, empty, or unreadable responses. If a read still fails, try another valid read path such as repo, branches, pull_requests, commit, compare, or a smaller file line window before declaring BLOCKED.",
-    "Your final response MUST begin with exactly one status line: TASK_STATUS: COMPLETE, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED.",
-    "Use COMPLETE only when the acceptance criteria are satisfied. Use BLOCKED when required access, data, approval, or a required verification capability is unavailable. Use FAILED only when a non-recoverable execution error prevents completion.",
+    "Your final response MUST begin with exactly one status line: TASK_STATUS: COMPLETE, TASK_STATUS: WAITING, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED.",
+    agent.system_key === "qa_engineer"
+      ? "For verification that depends on an external preview/deployment: if the exact required deployment is QUEUED, INITIALIZING, BUILDING, or otherwise non-terminal, return TASK_STATUS: WAITING instead of BLOCKED. Include the deployment id/url/state in the summary when available. Only return BLOCKED for terminal deployment failure, missing access, or another unrecoverable verification blocker."
+      : "",
+    "Use COMPLETE only when the acceptance criteria are satisfied. Use WAITING when completion depends on a known non-terminal external state that should be retried automatically. Use BLOCKED when required access, data, approval, or a required verification capability is unavailable with no automatic recovery path. Use FAILED only when a non-recoverable execution error prevents completion.",
     "After the status line, return a concise completion summary including what changed and any remaining risk.",
     "",
     `Project: ${project.name}`,
@@ -742,7 +745,7 @@ export async function POST(request: Request) {
             model,
             reasoning: { effort: "none" },
             instructions:
-              "You are a specialist agent operating inside Korben OS. The tool-execution phase has ended. Do not request any more tools. Review the complete transcript and decide whether the assigned task acceptance criteria were satisfied. Your response MUST begin with exactly one line: TASK_STATUS: COMPLETE, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED. Then summarize the work performed, exact artifacts created or changed, any recoverable tool misses, and remaining risk.",
+              "You are a specialist agent operating inside Korben OS. The tool-execution phase has ended. Do not request any more tools. Review the complete transcript and decide whether the assigned task acceptance criteria were satisfied. Your response MUST begin with exactly one line: TASK_STATUS: COMPLETE, TASK_STATUS: WAITING, TASK_STATUS: BLOCKED, or TASK_STATUS: FAILED. Use WAITING only for a known non-terminal external dependency that should be retried automatically. Then summarize the work performed, exact artifacts created or changed, any recoverable tool misses, and remaining risk.",
             input: [
               ...input,
               {
@@ -772,7 +775,7 @@ export async function POST(request: Request) {
           : "TASK_STATUS: FAILED\nThe agent exhausted its execution budget and could not produce a final verified task result.";
     }
 
-    const statusMatch = finalText.match(/^TASK_STATUS:\s*(COMPLETE|BLOCKED|FAILED)\s*\n?/i);
+    const statusMatch = finalText.match(/^TASK_STATUS:\s*(COMPLETE|WAITING|BLOCKED|FAILED)\s*\n?/i);
     const declaredStatus = statusMatch?.[1]?.toUpperCase() || "";
     const cleanedFinalText = statusMatch
       ? finalText.slice(statusMatch[0].length).trim()
@@ -784,8 +787,10 @@ export async function POST(request: Request) {
 
     const finalStatus = approvalBlocked
       ? "waiting_approval"
-      : declaredStatus === "BLOCKED"
-        ? "blocked"
+      : declaredStatus === "WAITING"
+        ? "waiting_external"
+        : declaredStatus === "BLOCKED"
+          ? "blocked"
         : declaredStatus === "FAILED"
           ? "error"
           : declaredStatus === "COMPLETE"
@@ -803,7 +808,9 @@ export async function POST(request: Request) {
           status: finalStatus,
           output: { summary: finalText },
           completed_at:
-            finalStatus === "waiting_approval" ? null : new Date().toISOString(),
+            finalStatus === "waiting_approval" || finalStatus === "waiting_external"
+              ? null
+              : new Date().toISOString(),
         })
         .eq("id", runId),
       supabase
@@ -812,7 +819,9 @@ export async function POST(request: Request) {
           status:
             finalStatus === "waiting_approval"
               ? "awaiting_approval"
-              : finalStatus === "complete"
+              : finalStatus === "waiting_external"
+                ? "waiting"
+                : finalStatus === "complete"
                 ? "complete"
                 : finalStatus === "blocked"
                   ? "blocked"
@@ -821,7 +830,9 @@ export async function POST(request: Request) {
           progress_message:
             finalStatus === "waiting_approval"
               ? "Waiting for your approval."
-              : finalStatus === "complete"
+              : finalStatus === "waiting_external"
+                ? `Waiting on external dependency · ${finalText.slice(0, 220)}`
+                : finalStatus === "complete"
                 ? `${task.stage || "Operate"} complete · ${finalText.slice(0, 220)}`
                 : `Blocked · ${finalText.slice(0, 220)}`,
           last_heartbeat_at: new Date().toISOString(),
