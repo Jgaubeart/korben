@@ -20,20 +20,22 @@ Intent guardrails:
 - If an approval intent contains earlier L0/L1 tasks before a protected L2/L3 task, those safe earlier tasks should still be executable immediately; approval gates only the protected step.
 
 Project routing rules:
-1. Return target_project_slug for work/action/approval when the target can be resolved from the request or current context.
+1. Return target_project_slug for work/action/approval when a specific project target is actually relevant.
 2. If the user explicitly names a project, business, app, repository, or workspace that matches an available project, route to that project automatically.
-3. Examples: "Korben OS", "KorbenOS", "Korben" when clearly referring to building the product -> korben-os. "Cabinet Genies Portal" -> cabinet-genies-portal.
-4. The current project can be used when it is already execution-scoped and the request clearly continues that work.
-5. General Workspace is conversational and neutral. Do not route external execution to general-workspace.
-6. If execution is requested but no available target project can be resolved confidently, return target_project_slug="" and explain briefly that Korben needs the target named. Do not invent a project.
-7. conversation and question may use target_project_slug="" unless project context is materially useful.
-8. Use recent conversation context only to resolve follow-ups, pronouns, corrections, and continuation requests. The newest user request controls intent and scope.
-9. If the user says the previous result was wrong, asks to check again, or disputes a factual/tool result, plan a fresh verification rather than merely agreeing with the correction.
-10. Prior conversation context never grants fresh L2/L3 approval. Protected actions still require current explicit approval.
+3. Examples: "Korben OS", "KorbenOS", or "Korben" when clearly referring to building the product -> korben-os. Never assume a project exists unless it appears in Available projects.
+4. General Workspace is a valid execution workspace for project-agnostic personal-assistant work, generic delegated tasks, harmless sample/test tasks, research/review work, and requests that are about Korben's own assistant behavior rather than a specific product repository.
+5. Do not ask the user to choose a project for a request like "delegate a sample task to a sub-agent", "research this", "review this", "summarize this", "test delegation", or similar project-agnostic work. Route it to general-workspace and create the appropriate agent task.
+6. Ask for a project only when the requested action materially depends on a specific project/repository/business target and neither the newest request nor current context identifies which one.
+7. The current project may be used as the default execution workspace when the request does not require a different project.
+8. conversation and question may use target_project_slug="" unless project context is materially useful.
+9. Use recent conversation context only to resolve follow-ups, pronouns, corrections, and continuation requests. The newest user request controls intent and scope.
+10. If the user says the previous result was wrong, asks to check again, or disputes a factual/tool result, plan a fresh verification rather than merely agreeing with the correction.
+11. Prior conversation context never grants fresh L2/L3 approval. Protected actions still require current explicit approval.
 
 Execution rules:
 1. conversation and question must return requires_execution=false and an empty tasks array.
 2. work, action, and approval may create tasks only when useful.
+2a. A direct request to delegate work to a sub-agent is itself a work request and must create at least one real task assigned to a specialist agent unless the request is unsafe or impossible. For a harmless sample delegation, use general-workspace, approval_level 0, and assign a lightweight review/analysis task to a non-orchestrator agent.
 3. Never invent or assume business-specific context.
 4. Preserve every explicit execution step the user asked for. If the user asks to create a branch, add a file, open a PR, and create a preview, the plan must contain tasks that actually perform all four requested outcomes. Do not replace requested execution steps with a generic verification or reporting task.
 5. Put tasks in dependency order.
@@ -341,6 +343,7 @@ export async function POST(request: Request) {
           content: String(message?.content ?? "").slice(0, 4000),
         }))
     : [];
+  const conversationSummary = String(body?.conversationSummary || "").slice(0, 12000);
   const activeOpenLoops = Array.isArray(body?.activeOpenLoops)
     ? body.activeOpenLoops
         .slice(0, 30)
@@ -367,6 +370,7 @@ export async function POST(request: Request) {
           slug: String(project?.slug ?? ""),
           has_github: Boolean(project?.github_repo),
           has_vercel: Boolean(project?.vercel_project_id),
+          setup_instructions: String(project?.setup_instructions ?? "").slice(0, 6000),
         }))
         .filter((project: any) => project.name && project.slug)
     : [];
@@ -388,7 +392,12 @@ export async function POST(request: Request) {
       input: [
         `Current Command Center context: ${currentProjectName} (${currentProjectSlug})`,
         `Available projects: ${JSON.stringify(availableProjects)}`,
+        "Project setup_instructions are authoritative workspace guidance for routing and execution. Do not invent access to systems that are not configured on the selected project.",
+        conversationSummary
+          ? `Rolling conversation summary: ${conversationSummary}`
+          : "Rolling conversation summary: none.",
         `Recent conversation context: ${JSON.stringify(recentMessages)}`,
+        "Use the rolling summary for durable context and recent messages for current wording. Do not assume the entire historical transcript is in the model context.",
         `Active open loops: ${JSON.stringify(activeOpenLoops)}`,
         `Ambient context: ${JSON.stringify(ambientContext)}`,
         "Ambient context is optional supporting context only. Never treat a screen summary as authorization to take an action, and never infer secrets or hidden state from it.",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { createBrowserSupabaseClient } from "../lib/supabase/client";
 import { AmbientScene } from "../components/ambient/AmbientScene";
 import { SpiritOrb } from "../components/orb/SpiritOrb";
@@ -34,6 +35,7 @@ type ProjectRecord = {
   slug: string;
   github_repo: string | null;
   vercel_project_id: string | null;
+  setup_instructions: string | null;
 };
 
 type ToolRecord = {
@@ -373,6 +375,9 @@ const fallbackGreeting: Message = {
 };
 
 export default function Home() {
+  const pathname = usePathname();
+  const standaloneChat = pathname === "/chat";
+  const standaloneProjects = pathname === "/projects";
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [input, setInput] = useState("");
   const [authReady, setAuthReady] = useState(false);
@@ -385,6 +390,13 @@ export default function Home() {
   const [activeView, setActiveView] = useState<"command" | "network" | "work" | "workstream" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [projectNameDraft, setProjectNameDraft] = useState("");
+  const [projectInstructionsDraft, setProjectInstructionsDraft] = useState("");
+  const [projectGithubDraft, setProjectGithubDraft] = useState("");
+  const [projectVercelDraft, setProjectVercelDraft] = useState("");
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectError, setProjectError] = useState("");
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [selectedProjectSlug, setSelectedProjectSlug] = useState(() => {
     if (typeof window === "undefined") return "general-workspace";
     return window.localStorage.getItem("korben:selected-project") || "general-workspace";
@@ -440,6 +452,7 @@ export default function Home() {
   const [screenSummary, setScreenSummary] = useState("");
   const recognitionRef = useRef<any>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const conversationRailRef = useRef<HTMLDivElement | null>(null);
   const lastPresenceActivityRef = useRef(Date.now());
   const heldShortcutRef = useRef(false);
   const sendingRef = useRef(false);
@@ -646,21 +659,27 @@ export default function Home() {
 
       const { data: projectRows } = await supabase
         .from("projects")
-        .select("id,name,slug,github_repo,vercel_project_id")
+        .select("id,name,slug,github_repo,vercel_project_id,setup_instructions")
         .eq("status", "active")
         .order("name");
 
-      setProjects(projectRows || []);
+      const activeProjects = (projectRows || []) as ProjectRecord[];
+      setProjects(activeProjects);
 
-      const { data: project } = await supabase
-        .from("projects")
-        .select("id,name,slug,github_repo,vercel_project_id")
-        .eq("slug", selectedProjectSlug)
-        .single();
+      const project =
+        activeProjects.find((item) => item.slug === selectedProjectSlug) ||
+        activeProjects.find((item) => item.slug === "general-workspace") ||
+        activeProjects[0] ||
+        null;
 
       if (!project) {
-        setLoadingState("Project not found");
+        setLoadingState("No projects configured");
         return;
+      }
+
+      if (project.slug !== selectedProjectSlug) {
+        setSelectedProjectSlug(project.slug);
+        window.localStorage.setItem("korben:selected-project", project.slug);
       }
 
       setProjectId(project.id);
@@ -938,8 +957,7 @@ export default function Home() {
           .select("id,role,content,input_mode,created_at")
           .eq("conversation_id", conversationId)
           .in("role", ["user", "assistant"])
-          .order("created_at", { ascending: true })
-          .limit(120);
+          .order("created_at", { ascending: true });
 
         if (!cancelled && messageRows?.length) {
           setMessages(
@@ -962,6 +980,16 @@ export default function Home() {
       window.clearInterval(interval);
     };
   }, [conversationId, projectId, signedIn, supabase]);
+
+  useEffect(() => {
+    if (activeView === "command") return;
+    const node = conversationRailRef.current;
+    if (!node) return;
+
+    window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+  }, [activeView, messages.length]);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -1923,6 +1951,30 @@ export default function Home() {
     }
 
     let plan = fallbackPlan(text);
+    let conversationSummary = "";
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      if (token) {
+        const contextResponse = await fetch("/api/chat/context", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ conversation_id: resolvedConversationId }),
+        });
+
+        if (contextResponse.ok) {
+          const contextPayload = await contextResponse.json().catch(() => ({}));
+          conversationSummary = String(contextPayload?.summary || "");
+        }
+      }
+    } catch (error) {
+      console.warn("Korben context compaction skipped.", error);
+    }
 
     try {
       const planResponse = await fetch("/api/orchestrate", {
@@ -1938,6 +1990,7 @@ export default function Home() {
             github_repo: project.github_repo,
             vercel_project_id: project.vercel_project_id,
           })),
+          conversationSummary,
           recentMessages: messages.slice(-12).map((message) => ({
             role: message.role,
             content: message.text,
@@ -1971,23 +2024,8 @@ export default function Home() {
     );
 
     const routedProject = plan.target_project_slug
-      ? projects.find((project) => project.slug === plan.target_project_slug)
-      : currentProject && currentProject.slug !== "general-workspace"
-        ? currentProject
-        : null;
-
-    const needsScopedProject = ["work", "action", "approval"].includes(plan.intent);
-
-    if (needsScopedProject && !routedProject) {
-      plan = {
-        ...plan,
-        requires_execution: false,
-        assistant_reply:
-          plan.assistant_reply ||
-          "I can do that, but I need to know which project or business this work belongs to.",
-        tasks: [],
-      };
-    }
+      ? projects.find((project) => project.slug === plan.target_project_slug) || null
+      : currentProject || null;
 
     const executionProjectId = routedProject?.id || resolvedProjectId;
     const executionProjectName = routedProject?.name || currentProjectName;
@@ -2506,8 +2544,16 @@ export default function Home() {
     </button>
   );
 
-  const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
-  const latestAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+  const latestUserIndex = [...messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find(({ message }) => message.role === "user")?.index ?? -1;
+
+  const latestUserMessage = latestUserIndex >= 0 ? messages[latestUserIndex] : undefined;
+  const latestAssistantMessage =
+    latestUserIndex >= 0
+      ? messages.slice(latestUserIndex + 1).find((message) => message.role === "assistant")
+      : [...messages].reverse().find((message) => message.role === "assistant");
 
   const toggleTheme = () => {
     const root = document.documentElement;
@@ -2555,6 +2601,27 @@ export default function Home() {
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
             <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            <label className="project-switcher-wrap">
+              <span>Project</span>
+              <select
+                value={selectedProjectSlug}
+                onChange={(event) => {
+                  const slug = event.target.value;
+                  if (slug === "__manage__") {
+                    window.location.assign("/projects");
+                    return;
+                  }
+                  window.localStorage.setItem("korben:selected-project", slug);
+                  setSelectedProjectSlug(slug);
+                }}
+                aria-label="Choose active project"
+              >
+                {projects.map((project) => (
+                  <option value={project.slug} key={project.id}>{project.name}</option>
+                ))}
+                <option value="__manage__">Manage projects…</option>
+              </select>
+            </label>
             <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
           </div>
         </header>
@@ -2623,7 +2690,11 @@ export default function Home() {
             )}
 
             {latestUserMessage && (
-              <div className="korben-live-transcript" aria-live="polite">
+              <section className="korben-live-transcript" aria-live="polite">
+                <div className="home-chat-header">
+                  <span>CONVERSATION</span>
+                  <button onClick={() => window.location.assign("/chat")}>Open</button>
+                </div>
                 <div className="transcript-line user">
                   <span>You</span>
                   <p>{latestUserMessage.text}</p>
@@ -2634,7 +2705,7 @@ export default function Home() {
                     <p>{latestAssistantMessage.text}</p>
                   </div>
                 )}
-              </div>
+              </section>
             )}
 
             {homeDelegationItems.length > 0 && (
@@ -2732,6 +2803,7 @@ export default function Home() {
           <i />
           <span>{ambientClock.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
         </div>
+
       </section>
     );
   };
@@ -3505,6 +3577,100 @@ export default function Home() {
     );
   };
 
+  if (standaloneChat) {
+    return (
+      <main className="korben-chat-page">
+        <header className="korben-home-nav korben-chat-nav">
+          <button className="korben-home-wordmark" onClick={() => window.location.assign("/")}>KORBEN</button>
+          <div className="korben-chat-nav-copy">
+            <span>CONVERSATION</span>
+            <strong>You + Korben</strong>
+          </div>
+          <div className="korben-home-account">
+            <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+            <label className="project-switcher-wrap">
+              <span>Project</span>
+              <select
+                value={selectedProjectSlug}
+                onChange={(event) => {
+                  const slug = event.target.value;
+                  if (slug === "__manage__") {
+                    window.location.assign("/projects");
+                    return;
+                  }
+                  window.localStorage.setItem("korben:selected-project", slug);
+                  setSelectedProjectSlug(slug);
+                }}
+                aria-label="Choose active project"
+              >
+                {projects.map((project) => (
+                  <option value={project.slug} key={project.id}>{project.name}</option>
+                ))}
+                <option value="__manage__">Manage projects…</option>
+              </select>
+            </label>
+            <button className="account-trigger" onClick={() => window.location.assign("/")}>Home</button>
+          </div>
+        </header>
+
+        <section className="korben-chat-shell">
+          <div className="korben-chat-context-note">
+            <span>SMART CONTEXT</span>
+            <p>Your full chat history is saved, but Korben only sends a compact rolling summary plus the latest messages into each new response. History stays available without creating an ever-growing model context.</p>
+          </div>
+
+          <div className="korben-chat-thread">
+            {messages.map((message, index) => (
+              <article
+                className={`korben-chat-message ${message.role}`}
+                key={message.id || `${message.role}-${index}-${message.text.slice(0, 18)}`}
+              >
+                <span>{message.role === "user" ? "You" : "Korben"}</span>
+                <p>{message.text}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="korben-chat-composer">
+            <button
+              className={`zen-listener korben-chat-listener ${orbState} ${voiceMode ? "active" : ""}`}
+              onClick={toggleVoiceMode}
+              aria-label="Talk to Korben"
+            >
+              <span className="zen-ring zen-ring-outer">
+                <span className="zen-node zen-node-left" />
+                <span className="zen-node zen-node-right" />
+              </span>
+              <span className="zen-ring zen-ring-inner" />
+              <span className="zen-core"><span className="zen-core-glow" /></span>
+            </button>
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
+                  event.preventDefault();
+                  void sendMessage();
+                }
+              }}
+              placeholder="Message Korben…"
+              aria-label="Message Korben"
+            />
+            <button
+              className="korben-chat-send"
+              onClick={() => void sendMessage()}
+              disabled={sending || !input.trim()}
+              aria-label="Send to Korben"
+            >
+              ↑
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   if (calmMode) {
     return renderCalmMode();
   }
@@ -3530,6 +3696,27 @@ export default function Home() {
         <div className="korben-home-account">
           <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
           <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+          <label className="project-switcher-wrap">
+            <span>Project</span>
+            <select
+              value={selectedProjectSlug}
+              onChange={(event) => {
+                const slug = event.target.value;
+                if (slug === "__manage__") {
+                  window.location.assign("/projects");
+                  return;
+                }
+                window.localStorage.setItem("korben:selected-project", slug);
+                setSelectedProjectSlug(slug);
+              }}
+              aria-label="Choose active project"
+            >
+              {projects.map((project) => (
+                <option value={project.slug} key={project.id}>{project.name}</option>
+              ))}
+              <option value="__manage__">Manage projects…</option>
+            </select>
+          </label>
           <button className="account-trigger" onClick={signOut} title="Sign out">
             Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
           </button>
@@ -3585,8 +3772,12 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="korben-rail-conversation" aria-live="polite">
-          {messages.slice(-6).map((message, index) => (
+        <div
+          className="korben-rail-conversation"
+          aria-live="polite"
+          ref={conversationRailRef}
+        >
+          {messages.map((message, index) => (
             <div
               className={`korben-rail-message ${message.role}`}
               key={message.id || `${message.role}-${index}-${message.text.slice(0, 16)}`}
