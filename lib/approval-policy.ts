@@ -44,6 +44,7 @@ const readPairs = new Set([
   "vercel.read:deployment",
   "supabase.read:select",
   "knowledge.search:search",
+  "browser.inspect:inspect",
 ]);
 
 const l1Pairs = new Set([
