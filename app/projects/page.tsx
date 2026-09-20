@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "../../lib/supabase/client";
+import { SiteNavbar } from "../../components/navigation/SiteNavbar";
 
 type ProjectRecord = {
   id: string;
@@ -185,6 +186,7 @@ export default function ProjectsPage() {
   };
 
   const switchProject = (slug: string) => {
+    if (slug === "__manage__") return;
     setSelectedProjectSlug(slug);
     window.localStorage.setItem("korben:selected-project", slug);
   };
@@ -198,29 +200,14 @@ export default function ProjectsPage() {
 
   return (
     <main className="zen-app-page project-manager-page">
-      <header className="korben-home-nav zen-app-nav">
-        <button className="korben-home-wordmark" onClick={() => window.location.assign("/")}>KORBEN</button>
-        <nav className="korben-home-links zen-app-links" aria-label="Primary navigation">
-          <button onClick={() => window.location.assign("/")}>Home</button>
-          <button className="active">Projects</button>
-        </nav>
-        <div className="korben-home-account">
-          <span className="presence-dot present" />
-          <label className="project-switcher-wrap">
-            <span>Project</span>
-            <select
-              value={selectedProjectSlug}
-              onChange={(event) => switchProject(event.target.value)}
-              aria-label="Choose active project"
-            >
-              {projects.map((project) => (
-                <option value={project.slug} key={project.id}>{project.name}</option>
-              ))}
-            </select>
-          </label>
-          <button className="account-trigger" onClick={() => window.location.assign("/")}>Jordan <span>⌄</span></button>
-        </div>
-      </header>
+      <SiteNavbar
+        projects={projects}
+        selectedProjectSlug={selectedProjectSlug}
+        onProjectChange={switchProject}
+        presence="present"
+        accountLabel="Jordan"
+        onAccountClick={() => window.location.assign("/")}
+      />
 
       <section className="zen-page-wrap project-manager-wrap">
         <div className="zen-page-kicker">
