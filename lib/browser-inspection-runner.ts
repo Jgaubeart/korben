@@ -1,5 +1,6 @@
 import chromium from "@sparticuz/chromium";
 import { chromium as playwrightChromium } from "playwright-core";
+import { getVercelOidcToken } from "@vercel/oidc";
 import {
   assertPublicHostname,
   BROWSER_LIMITS,
@@ -25,11 +26,77 @@ export type BrowserInspectionResult = {
   }>;
   console_errors: string[];
   page_errors: string[];
+  blocked_requests: Array<{ url: string; reason: string }>;
+  qa_auth: "not_configured" | "not_needed" | "attempted" | "succeeded" | "failed";
   screenshot_base64: string | null;
 };
 
 function normalizeOrigins(origins: string[]) {
   return [...new Set(origins.map((value) => new URL(value).origin))];
+}
+
+async function protectedPreviewHeaders() {
+  const headers: Record<string, string> = {};
+
+  try {
+    const oidcToken = await getVercelOidcToken({
+      project: process.env.VERCEL_PROJECT_ID || undefined,
+      team: process.env.VERCEL_TEAM_ID || undefined,
+      expirationBufferMs: 60_000,
+    });
+
+    if (oidcToken) {
+      headers["x-vercel-trusted-oidc-idp-token"] = oidcToken;
+    }
+  } catch {
+    // Fall back to an explicitly configured automation bypass secret below.
+  }
+
+  const bypassSecret = process.env.KORBEN_VERCEL_PROTECTION_BYPASS;
+  if (bypassSecret) {
+    headers["x-vercel-protection-bypass"] = bypassSecret;
+    headers["x-vercel-set-bypass-cookie"] = "true";
+  }
+
+  return headers;
+}
+
+async function signInToKorbenPreview(
+  page: import("playwright-core").Page
+): Promise<"not_configured" | "not_needed" | "succeeded"> {
+  const email = process.env.KORBEN_QA_EMAIL;
+  const password = process.env.KORBEN_QA_PASSWORD;
+
+  if (!email || !password) {
+    return "not_configured";
+  }
+
+  const signInHeading = page.getByRole("heading", { name: "Sign in to Korben." });
+  await signInHeading.waitFor({ state: "visible", timeout: 8000 }).catch(() => undefined);
+
+  const visible = await signInHeading.isVisible().catch(() => false);
+  if (!visible) {
+    return "not_needed";
+  }
+
+  await page.locator('input[type="email"]').fill(email);
+  await page.locator('input[type="password"]').fill(password);
+  await page.getByRole("button", { name: "Enter Korben" }).click();
+
+  await signInHeading
+    .waitFor({ state: "hidden", timeout: 10_000 })
+    .catch(() => undefined);
+
+  if (await signInHeading.isVisible().catch(() => false)) {
+    const authError = await page
+      .locator(".auth-error")
+      .innerText()
+      .catch(() => "QA sign-in did not complete.");
+    throw new Error(`Korben QA sign-in failed: ${authError.slice(0, 500)}`);
+  }
+
+  await page.waitForTimeout(500);
+  return "succeeded";
 }
 
 export async function runBrowserInspection(
@@ -38,6 +105,14 @@ export async function runBrowserInspection(
 ): Promise<BrowserInspectionResult> {
   const input: BrowserInspectionInput = validateInspectionInput(raw);
   const origins = normalizeOrigins(allowedOrigins);
+  const requestOrigins = new Set(origins);
+
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    "https://gojgwlnoefbpfvuffxof.supabase.co";
+  const supabaseOrigin = new URL(supabaseUrl).origin;
+  await assertPublicHostname(new URL(supabaseOrigin));
+  requestOrigins.add(supabaseOrigin);
 
   if (!origins.length) {
     throw new Error("No browser origins are authorized for this project.");
@@ -60,6 +135,8 @@ export async function runBrowserInspection(
   });
 
   try {
+    const previewHeaders = await protectedPreviewHeaders();
+    const blockedRequests: Array<{ url: string; reason: string }> = [];
     const context = await browser.newContext({
       acceptDownloads: false,
       serviceWorkers: "block",
@@ -67,7 +144,7 @@ export async function runBrowserInspection(
       javaScriptEnabled: true,
     });
 
-    context.setDefaultTimeout(3000);
+    context.setDefaultTimeout(8000);
     context.setDefaultNavigationTimeout(BROWSER_LIMITS.timeoutMs);
 
     await context.route("**/*", async (route) => {
@@ -75,6 +152,9 @@ export async function runBrowserInspection(
         const requestUrl = new URL(route.request().url());
 
         if (!["https:", "data:", "blob:"].includes(requestUrl.protocol)) {
+          if (blockedRequests.length < 30) {
+            blockedRequests.push({ url: requestUrl.toString(), reason: "protocol_not_allowed" });
+          }
           await route.abort("blockedbyclient");
           return;
         }
@@ -84,14 +164,34 @@ export async function runBrowserInspection(
           return;
         }
 
-        if (!origins.includes(requestUrl.origin)) {
+        if (!requestOrigins.has(requestUrl.origin)) {
+          if (blockedRequests.length < 30) {
+            blockedRequests.push({ url: requestUrl.toString(), reason: "origin_not_allowed" });
+          }
           await route.abort("blockedbyclient");
           return;
         }
 
         await assertPublicHostname(requestUrl);
+
+        if (origins.includes(requestUrl.origin)) {
+          await route.continue({
+            headers: {
+              ...route.request().headers(),
+              ...previewHeaders,
+            },
+          });
+          return;
+        }
+
         await route.continue();
-      } catch {
+      } catch (error) {
+        if (blockedRequests.length < 30) {
+          blockedRequests.push({
+            url: route.request().url(),
+            reason: error instanceof Error ? `validation_failed: ${error.message}` : "validation_failed",
+          });
+        }
         await route.abort("blockedbyclient");
       }
     });
@@ -127,6 +227,14 @@ export async function runBrowserInspection(
     }
 
     await assertPublicHostname(finalUrl);
+    let qaAuth: BrowserInspectionResult["qa_auth"] = "not_needed";
+    try {
+      const authResult = await signInToKorbenPreview(page);
+      qaAuth = authResult === "succeeded" ? "succeeded" : authResult;
+    } catch (error) {
+      qaAuth = "failed";
+      throw error;
+    }
 
     if ((input.text_scale_percent || 100) !== 100) {
       const scale = (input.text_scale_percent || 100) / 100;
@@ -206,17 +314,22 @@ export async function runBrowserInspection(
     let screenshotBase64: string | null = null;
 
     if (input.screenshot) {
-      const screenshot = await page.screenshot({
-        type: "png",
-        fullPage: false,
-        animations: "disabled",
-      });
+      try {
+        const screenshot = await page.screenshot({
+          type: "png",
+          fullPage: false,
+          animations: "disabled",
+          timeout: 8000,
+        });
 
-      if (screenshot.byteLength > BROWSER_LIMITS.maxScreenshotBytes) {
-        throw new Error("Screenshot exceeds the browser artifact limit.");
+        if (screenshot.byteLength <= BROWSER_LIMITS.maxScreenshotBytes) {
+          screenshotBase64 = screenshot.toString("base64");
+        }
+      } catch {
+        // Screenshot capture is best-effort. Preserve DOM/layout/console findings
+        // instead of failing the entire inspection on a slow visual artifact.
+        screenshotBase64 = null;
       }
-
-      screenshotBase64 = screenshot.toString("base64");
     }
 
     return {
@@ -230,6 +343,8 @@ export async function runBrowserInspection(
       overflow_elements: layout.overflowElements,
       console_errors: consoleErrors,
       page_errors: pageErrors,
+      blocked_requests: blockedRequests,
+      qa_auth: qaAuth,
       screenshot_base64: screenshotBase64,
     };
   } finally {
