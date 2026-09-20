@@ -35,6 +35,7 @@ type ProjectRecord = {
   slug: string;
   github_repo: string | null;
   vercel_project_id: string | null;
+  setup_instructions: string | null;
 };
 
 type ToolRecord = {
@@ -376,6 +377,7 @@ const fallbackGreeting: Message = {
 export default function Home() {
   const pathname = usePathname();
   const standaloneChat = pathname === "/chat";
+  const standaloneProjects = pathname === "/projects";
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [input, setInput] = useState("");
   const [authReady, setAuthReady] = useState(false);
@@ -388,6 +390,13 @@ export default function Home() {
   const [activeView, setActiveView] = useState<"command" | "network" | "work" | "workstream" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [projectNameDraft, setProjectNameDraft] = useState("");
+  const [projectInstructionsDraft, setProjectInstructionsDraft] = useState("");
+  const [projectGithubDraft, setProjectGithubDraft] = useState("");
+  const [projectVercelDraft, setProjectVercelDraft] = useState("");
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectError, setProjectError] = useState("");
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [selectedProjectSlug, setSelectedProjectSlug] = useState(() => {
     if (typeof window === "undefined") return "general-workspace";
     return window.localStorage.getItem("korben:selected-project") || "general-workspace";
