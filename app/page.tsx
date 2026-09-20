@@ -1353,22 +1353,24 @@ export default function Home() {
         : `I finished ${completedCount} step${completedCount === 1 ? "" : "s"}, but I hit a problem with ${blocked.title}. I left the details in Tasks so you can see exactly what happened.`
       : `Done. I completed all ${completedCount} step${completedCount === 1 ? "" : "s"} in ${projectNameForReport}.`;
 
-    setMessages((current) => [
-      ...current,
-      { role: "assistant", text: completionReport },
-    ]);
+    const reportPhase = blocked ? blocked.status : "complete";
+    const reportKey = `korben:objective-report:${objectiveIdForReport}:${reportPhase}`;
 
-    await supabase.from("messages").insert({
-      conversation_id: conversationIdForReport,
-      role: "assistant",
-      content: completionReport,
-      input_mode: "system",
-    });
+    if (window.localStorage.getItem(reportKey) !== "1") {
+      window.localStorage.setItem(reportKey, "1");
 
-    window.localStorage.setItem(
-      `korben:objective-report:${objectiveIdForReport}:${blocked ? blocked.status : "complete"}`,
-      "1"
-    );
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", text: completionReport },
+      ]);
+
+      await supabase.from("messages").insert({
+        conversation_id: conversationIdForReport,
+        role: "assistant",
+        content: completionReport,
+        input_mode: "system",
+      });
+    }
 
     setLoadingState(
       blocked?.status === "awaiting_approval"
@@ -1510,6 +1512,7 @@ export default function Home() {
 
     if (objective) {
       setActiveObjective(objective.title);
+      setActiveObjectiveId(objective.id);
 
       const taskRows = plan.tasks.map((task, index) => ({
         objective_id: objective.id,
