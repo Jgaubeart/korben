@@ -3880,6 +3880,79 @@ export default function Home() {
     );
   };
 
+  const renderMessageAttachments = (attachments?: ChatAttachment[]) => {
+    if (!attachments?.length) return null;
+
+    return (
+      <div className="korben-attachment-list">
+        {attachments.map((attachment, index) => (
+          <div
+            className="korben-attachment-chip"
+            key={attachment.id || `${attachment.file_name}-${index}`}
+            title={attachment.file_name}
+          >
+            <span>{attachment.openai_input_type === "input_image" || attachment.mime_type.startsWith("image/") ? "▧" : "⌑"}</span>
+            <div>
+              <strong>{attachment.file_name}</strong>
+              <small>{Math.max(1, Math.round(attachment.size_bytes / 1024))} KB</small>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderPendingAttachments = () => (
+    <>
+      {pendingFiles.length > 0 && (
+        <div className="korben-pending-files">
+          {pendingFiles.map((file, index) => (
+            <div className="korben-pending-file" key={`${file.name}-${file.lastModified}-${index}`}>
+              <span>⌑</span>
+              <strong>{file.name}</strong>
+              <button
+                type="button"
+                onClick={() =>
+                  setPendingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))
+                }
+                aria-label={`Remove ${file.name}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {fileUploadError && <div className="korben-file-error">{fileUploadError}</div>}
+    </>
+  );
+
+  const renderFileButton = (className = "korben-file-button") => (
+    <>
+      <input
+        ref={fileInputRef}
+        className="korben-file-input"
+        type="file"
+        multiple
+        accept=".pdf,.txt,.md,.csv,.json,.xml,.html,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif"
+        onChange={(event) => {
+          if (event.target.files) addPendingFiles(event.target.files);
+          event.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        className={className}
+        onClick={() => fileInputRef.current?.click()}
+        disabled={sending || pendingFiles.length >= 8}
+        aria-label="Attach files"
+        title="Attach files"
+      >
+        ＋
+      </button>
+    </>
+  );
+
   if (standaloneChat) {
     return (
       <main className="korben-chat-page">
@@ -3907,43 +3980,53 @@ export default function Home() {
               >
                 <span>{message.role === "user" ? "You" : "Korben"}</span>
                 <p>{message.text}</p>
+                {renderMessageAttachments(message.attachments)}
               </article>
             ))}
           </div>
 
-          <div className="korben-chat-composer">
-            <button
-              className={`zen-listener korben-chat-listener ${orbState} ${voiceMode ? "active" : ""}`}
-              onClick={toggleVoiceMode}
-              aria-label="Talk to Korben"
-            >
-              <span className="zen-ring zen-ring-outer">
-                <span className="zen-node zen-node-left" />
-                <span className="zen-node zen-node-right" />
-              </span>
-              <span className="zen-ring zen-ring-inner" />
-              <span className="zen-core"><span className="zen-core-glow" /></span>
-            </button>
-            <input
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
-                  event.preventDefault();
-                  void sendMessage();
-                }
-              }}
-              placeholder="Message Korben…"
-              aria-label="Message Korben"
-            />
-            <button
-              className="korben-chat-send"
-              onClick={() => void sendMessage()}
-              disabled={sending || !input.trim()}
-              aria-label="Send to Korben"
-            >
-              ↑
-            </button>
+          <div className="korben-chat-compose-wrap">
+            {renderPendingAttachments()}
+            <div className="korben-chat-composer">
+              <button
+                className={`zen-listener korben-chat-listener ${orbState} ${voiceMode ? "active" : ""}`}
+                onClick={toggleVoiceMode}
+                aria-label="Talk to Korben"
+              >
+                <span className="zen-ring zen-ring-outer">
+                  <span className="zen-node zen-node-left" />
+                  <span className="zen-node zen-node-right" />
+                </span>
+                <span className="zen-ring zen-ring-inner" />
+                <span className="zen-core"><span className="zen-core-glow" /></span>
+              </button>
+              {renderFileButton()}
+              <input
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    (input.trim() || pendingFiles.length) &&
+                    !sending
+                  ) {
+                    event.preventDefault();
+                    void sendMessage();
+                  }
+                }}
+                placeholder={pendingFiles.length ? "Ask Korben about the attached file…" : "Message Korben…"}
+                aria-label="Message Korben"
+              />
+              <button
+                className="korben-chat-send"
+                onClick={() => void sendMessage()}
+                disabled={sending || (!input.trim() && !pendingFiles.length)}
+                aria-label="Send to Korben"
+              >
+                ↑
+              </button>
+            </div>
           </div>
         </section>
       </main>
@@ -4033,30 +4116,40 @@ export default function Home() {
             >
               <span>{message.role === "user" ? "You" : "Korben"}</span>
               <p>{message.text}</p>
+              {renderMessageAttachments(message.attachments)}
             </div>
           ))}
         </div>
 
-        <div className="korben-rail-input">
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && input.trim() && !sending) {
-                event.preventDefault();
-                void sendMessage();
-              }
-            }}
-            placeholder="Ask Korben…"
-            aria-label="Ask Korben"
-          />
-          <button
-            onClick={() => void sendMessage()}
-            disabled={sending || !input.trim()}
-            aria-label="Send to Korben"
-          >
-            ↑
-          </button>
+        <div className="korben-rail-compose">
+          {renderPendingAttachments()}
+          <div className="korben-rail-input">
+            {renderFileButton("korben-rail-file-button")}
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  (input.trim() || pendingFiles.length) &&
+                  !sending
+                ) {
+                  event.preventDefault();
+                  void sendMessage();
+                }
+              }}
+              placeholder={pendingFiles.length ? "Ask about the file…" : "Ask Korben…"}
+              aria-label="Ask Korben"
+            />
+            <button
+              onClick={() => void sendMessage()}
+              disabled={sending || (!input.trim() && !pendingFiles.length)}
+              aria-label="Send to Korben"
+            >
+              ↑
+            </button>
+          </div>
         </div>
 
         {tasks.some((task) => ["in_progress", "awaiting_approval"].includes(task.status)) && (
