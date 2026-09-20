@@ -26,6 +26,8 @@ export type BrowserInspectionResult = {
   }>;
   console_errors: string[];
   page_errors: string[];
+  blocked_requests: Array<{ url: string; reason: string }>;
+  qa_auth: "not_configured" | "not_needed" | "attempted" | "succeeded" | "failed";
   screenshot_base64: string | null;
 };
 
@@ -59,12 +61,14 @@ async function protectedPreviewHeaders() {
   return headers;
 }
 
-async function signInToKorbenPreview(page: import("playwright-core").Page) {
+async function signInToKorbenPreview(
+  page: import("playwright-core").Page
+): Promise<"not_configured" | "not_needed" | "succeeded"> {
   const email = process.env.KORBEN_QA_EMAIL;
   const password = process.env.KORBEN_QA_PASSWORD;
 
   if (!email || !password) {
-    return false;
+    return "not_configured";
   }
 
   const signInHeading = page.getByRole("heading", { name: "Sign in to Korben." });
@@ -72,7 +76,7 @@ async function signInToKorbenPreview(page: import("playwright-core").Page) {
 
   const visible = await signInHeading.isVisible().catch(() => false);
   if (!visible) {
-    return false;
+    return "not_needed";
   }
 
   await page.locator('input[type="email"]').fill(email);
@@ -92,7 +96,7 @@ async function signInToKorbenPreview(page: import("playwright-core").Page) {
   }
 
   await page.waitForTimeout(500);
-  return true;
+  return "succeeded";
 }
 
 export async function runBrowserInspection(
@@ -132,6 +136,7 @@ export async function runBrowserInspection(
 
   try {
     const previewHeaders = await protectedPreviewHeaders();
+    const blockedRequests: Array<{ url: string; reason: string }> = [];
     const context = await browser.newContext({
       acceptDownloads: false,
       serviceWorkers: "block",
@@ -147,6 +152,9 @@ export async function runBrowserInspection(
         const requestUrl = new URL(route.request().url());
 
         if (!["https:", "data:", "blob:"].includes(requestUrl.protocol)) {
+          if (blockedRequests.length < 30) {
+            blockedRequests.push({ url: requestUrl.toString(), reason: "protocol_not_allowed" });
+          }
           await route.abort("blockedbyclient");
           return;
         }
@@ -157,6 +165,9 @@ export async function runBrowserInspection(
         }
 
         if (!requestOrigins.has(requestUrl.origin)) {
+          if (blockedRequests.length < 30) {
+            blockedRequests.push({ url: requestUrl.toString(), reason: "origin_not_allowed" });
+          }
           await route.abort("blockedbyclient");
           return;
         }
@@ -174,7 +185,13 @@ export async function runBrowserInspection(
         }
 
         await route.continue();
-      } catch {
+      } catch (error) {
+        if (blockedRequests.length < 30) {
+          blockedRequests.push({
+            url: route.request().url(),
+            reason: error instanceof Error ? `validation_failed: ${error.message}` : "validation_failed",
+          });
+        }
         await route.abort("blockedbyclient");
       }
     });
@@ -210,7 +227,14 @@ export async function runBrowserInspection(
     }
 
     await assertPublicHostname(finalUrl);
-    await signInToKorbenPreview(page);
+    let qaAuth: BrowserInspectionResult["qa_auth"] = "not_needed";
+    try {
+      const authResult = await signInToKorbenPreview(page);
+      qaAuth = authResult === "succeeded" ? "succeeded" : authResult;
+    } catch (error) {
+      qaAuth = "failed";
+      throw error;
+    }
 
     if ((input.text_scale_percent || 100) !== 100) {
       const scale = (input.text_scale_percent || 100) / 100;
@@ -319,6 +343,8 @@ export async function runBrowserInspection(
       overflow_elements: layout.overflowElements,
       console_errors: consoleErrors,
       page_errors: pageErrors,
+      blocked_requests: blockedRequests,
+      qa_auth: qaAuth,
       screenshot_base64: screenshotBase64,
     };
   } finally {
