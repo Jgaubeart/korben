@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "npm test && next build",
     "start": "next start",
-    "test": "node --experimental-strip-types lib/approval-policy.test.ts"
+    "test": "node --experimental-strip-types lib/approval-policy.test.ts && node --experimental-strip-types lib/dashboard-navigation.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
