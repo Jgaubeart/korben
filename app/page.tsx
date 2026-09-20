@@ -1068,8 +1068,10 @@ export default function Home() {
     reason?: string;
     resumeTaskId?: string | null;
   }) => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
+    const { data: refreshedSession } = await supabase.auth.refreshSession();
+    const token =
+      refreshedSession.session?.access_token ||
+      (await supabase.auth.getSession()).data.session?.access_token;
 
     if (!token) {
       setLoadingState("Sign in required");
