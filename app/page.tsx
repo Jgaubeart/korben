@@ -214,7 +214,7 @@ const normalizeKorbenName = (value: string) =>
 
 const parseBrowserOpenRequest = (value: string) => {
   const match = value.match(
-    /^\s*(?:korben[,\s]+)?(?:please\s+)?(?:open(?:\s+up)?|go\s+to|navigate\s+to|launch|take\s+me\s+to)\s+(.+?)\s*[.!]?\s*$/i
+    /^\s*(?:korben[,\s]+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?(?:open(?:\s+up)?|go\s+to|navigate\s+to|launch|take\s+me\s+to)\s+(.+?)(?:\s+for\s+me)?\s*[.!]?\s*$/i
   );
 
   if (!match) return null;
@@ -224,6 +224,7 @@ const parseBrowserOpenRequest = (value: string) => {
 
   const knownSites: Record<string, { url: string; label: string }> = {
     gmail: { url: "https://mail.google.com/", label: "Gmail" },
+    "my gmail": { url: "https://mail.google.com/", label: "Gmail" },
     "gmail.com": { url: "https://mail.google.com/", label: "Gmail" },
     "mail.google.com": { url: "https://mail.google.com/", label: "Gmail" },
     "google mail": { url: "https://mail.google.com/", label: "Gmail" },
