@@ -45,9 +45,13 @@ function supabaseFor(token: string) {
 
 function appOrigin() {
   const host =
-    process.env.KORBEN_APP_ORIGIN ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    "korbenos.com";
+    process.env.VERCEL_ENV === "preview" && process.env.VERCEL_URL
+      ? process.env.VERCEL_URL
+      : process.env.KORBEN_APP_ORIGIN ||
+        process.env.VERCEL_URL ||
+        process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+        "korbenos.com";
+
   return host.startsWith("http") ? host : `https://${host}`;
 }
 
