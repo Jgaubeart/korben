@@ -2034,14 +2034,20 @@ export default function Home() {
     if (!hasRunnableQueuedTask) return;
 
     const recoveryKey = `korben:background-recovery:${activeObjectiveId}`;
-    if (window.sessionStorage.getItem(recoveryKey) === "1") return;
-    window.sessionStorage.setItem(recoveryKey, "1");
+    const lastAttempt = Number(window.sessionStorage.getItem(recoveryKey) || "0");
+    const now = Date.now();
+    if (Number.isFinite(lastAttempt) && now - lastAttempt < 30_000) return;
+    window.sessionStorage.setItem(recoveryKey, String(now));
 
     void enqueueObjectiveWork({
       objectiveId: activeObjectiveId,
       conversationIdForWork: conversationId,
       projectName: currentProjectName,
       reason: "browser-recovery",
+    }).then((queued) => {
+      if (!queued) {
+        window.sessionStorage.removeItem(recoveryKey);
+      }
     });
   }, [activeObjectiveId, conversationId, currentProjectName, signedIn, tasks]);
 
