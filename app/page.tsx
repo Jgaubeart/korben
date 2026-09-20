@@ -8,11 +8,22 @@ import { SpiritOrb } from "../components/orb/SpiritOrb";
 import { SiteNavbar } from "../components/navigation/SiteNavbar";
 import { getAmbientState, getGreetingForHour, getSimulatedTime } from "../lib/ambient-time";
 
+type ChatAttachment = {
+  id?: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  storage_path?: string;
+  openai_file_id?: string | null;
+  openai_input_type?: "input_file" | "input_image";
+};
+
 type Message = {
   id?: string;
   role: "user" | "assistant";
   text: string;
   inputMode?: "text" | "voice";
+  attachments?: ChatAttachment[];
 };
 
 type Agent = {
@@ -398,6 +409,9 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [messages, setMessages] = useState<Message[]>([fallbackGreeting]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileUploadError, setFileUploadError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [activeView, setActiveView] = useState<"command" | "network" | "work" | "workstream" | "runs" | "brain" | "sops" | "tools" | "integrations" | "focus" | "preflight">("command");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
