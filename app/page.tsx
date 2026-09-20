@@ -320,6 +320,7 @@ export default function Home() {
   const [focusLockTab, setFocusLockTab] = useState(false);
   const [focusInterruptions, setFocusInterruptions] = useState(0);
   const [focusReport, setFocusReport] = useState<string | null>(null);
+  const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
   const [focusStreak, setFocusStreak] = useState(() => {
     if (typeof window === "undefined") return 0;
     return Number(window.localStorage.getItem("korben:focus-streak") || "0");
@@ -981,7 +982,7 @@ export default function Home() {
     }
   };
 
-  const startFocus = () => {
+  const startFocus = async () => {
     const minutes = Math.max(1, Math.min(240, Number(focusMinutes) || 30));
     setFocusMinutes(minutes);
     setFocusRemaining(minutes * 60);
@@ -990,19 +991,82 @@ export default function Home() {
     setFocusPaused(false);
     setFocusRunning(true);
     setLoadingState("Focus session active");
+
+    if (projectId) {
+      const { data } = await supabase
+        .from("focus_sessions")
+        .insert({
+          project_id: projectId,
+          goal: focusGoal || "Focused work",
+          duration_minutes: minutes,
+          status: "active",
+          interruptions: 0,
+        })
+        .select("id")
+        .single();
+
+      if (data?.id) setFocusSessionId(data.id);
+    }
   };
 
-  const endFocus = () => {
+  const endFocus = async () => {
     const elapsedSeconds = Math.max(0, focusMinutes * 60 - focusRemaining);
     const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const report = `Focus session ended after ${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} on ${focusGoal || "your priority"}, with ${focusInterruptions} detected tab drift${focusInterruptions === 1 ? "" : "s"}.`;
 
     setFocusRunning(false);
     setFocusPaused(false);
     setFocusLockTab(false);
-    setFocusReport(
-      `Focus session ended after ${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} on ${focusGoal || "your priority"}, with ${focusInterruptions} detected tab drift${focusInterruptions === 1 ? "" : "s"}.`
-    );
+    setFocusReport(report);
     setLoadingState("System online");
+
+    if (focusSessionId) {
+      await supabase
+        .from("focus_sessions")
+        .update({
+          status: "complete",
+          interruptions: focusInterruptions,
+          ended_at: new Date().toISOString(),
+          report,
+        })
+        .eq("id", focusSessionId);
+      setFocusSessionId(null);
+    }
+
+    if (projectId) {
+      const { data: held } = await supabase
+        .from("notifications")
+        .select("id,title,body,urgency")
+        .eq("project_id", projectId)
+        .eq("status", "held")
+        .order("created_at", { ascending: true });
+
+      if (held?.length) {
+        await supabase
+          .from("notifications")
+          .update({ status: "unread" })
+          .in("id", held.map((item) => item.id));
+
+        const digest =
+          held.length === 1
+            ? held[0].body
+            : `While you were focused, ${held.length} updates came in. ${held
+                .slice(0, 3)
+                .map((item) => item.body)
+                .join(" ")}`;
+
+        setMessages((current) => [...current, { role: "assistant", text: digest }]);
+
+        if (conversationId) {
+          await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            role: "assistant",
+            content: digest,
+            input_mode: "system",
+          });
+        }
+      }
+    }
   };
 
   const toggleVoiceMode = () => {
