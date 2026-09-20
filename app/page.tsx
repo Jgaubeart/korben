@@ -212,6 +212,56 @@ const normalizeKorbenName = (value: string) =>
     match[0] === match[0]?.toUpperCase() ? "Korben" : "korben"
   );
 
+const parseBrowserOpenRequest = (value: string) => {
+  const match = value.match(
+    /^\s*(?:korben[,\s]+)?(?:please\s+)?(?:open(?:\s+up)?|go\s+to|navigate\s+to|launch|take\s+me\s+to)\s+(.+?)\s*[.!]?\s*$/i
+  );
+
+  if (!match) return null;
+
+  let target = match[1].trim().replace(/^["']|["']$/g, "");
+  const normalized = target.toLowerCase().replace(/\s+/g, " ");
+
+  const knownSites: Record<string, { url: string; label: string }> = {
+    gmail: { url: "https://mail.google.com/", label: "Gmail" },
+    "gmail.com": { url: "https://mail.google.com/", label: "Gmail" },
+    "mail.google.com": { url: "https://mail.google.com/", label: "Gmail" },
+    "google mail": { url: "https://mail.google.com/", label: "Gmail" },
+    "google calendar": { url: "https://calendar.google.com/", label: "Google Calendar" },
+    "calendar.google.com": { url: "https://calendar.google.com/", label: "Google Calendar" },
+    "google drive": { url: "https://drive.google.com/", label: "Google Drive" },
+    "drive.google.com": { url: "https://drive.google.com/", label: "Google Drive" },
+    youtube: { url: "https://www.youtube.com/", label: "YouTube" },
+    "youtube.com": { url: "https://www.youtube.com/", label: "YouTube" },
+    github: { url: "https://github.com/", label: "GitHub" },
+    "github.com": { url: "https://github.com/", label: "GitHub" },
+  };
+
+  if (knownSites[normalized]) return knownSites[normalized];
+
+  if (/^https?:\/\//i.test(target)) {
+    try {
+      const parsed = new URL(target);
+      if (!["http:", "https:"].includes(parsed.protocol)) return null;
+      return { url: parsed.toString(), label: parsed.hostname.replace(/^www\./, "") };
+    } catch {
+      return null;
+    }
+  }
+
+  const compactTarget = target.replace(/\s+/g, "");
+  if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?$/i.test(compactTarget)) {
+    try {
+      const parsed = new URL(`https://${compactTarget}`);
+      return { url: parsed.toString(), label: parsed.hostname.replace(/^www\./, "") };
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+};
+
 const toSpokenReply = (value: string) => {
   const cleaned = value
     .replace(/```[\s\S]*?```/g, " ")
@@ -1653,6 +1703,11 @@ export default function Home() {
     const userMessage: Message = { role: "user", text, inputMode: currentInputMode };
     setMessages((current) => [...current, userMessage]);
 
+    const browserOpenRequest = parseBrowserOpenRequest(text);
+    const openedBrowserWindow = browserOpenRequest
+      ? window.open(browserOpenRequest.url, "_blank", "noopener,noreferrer")
+      : null;
+
     let resolvedProjectId: string;
     let resolvedConversationId: string;
 
@@ -1683,6 +1738,78 @@ export default function Home() {
       })
       .select("id")
       .single();
+
+    if (browserOpenRequest) {
+      const reply = `Opening ${browserOpenRequest.label}.`;
+      const assistantMessage: Message = { role: "assistant", text: reply };
+      setMessages((current) => [...current, assistantMessage]);
+
+      await Promise.all([
+        supabase.from("messages").insert({
+          conversation_id: resolvedConversationId,
+          role: "assistant",
+          content: reply,
+          input_mode: "system",
+        }),
+        supabase.from("activity_events").insert({
+          project_id: resolvedProjectId,
+          objective_id: null,
+          event_type: "browser_navigation",
+          message: reply,
+          metadata: {
+            destination: browserOpenRequest.url,
+            input_mode: currentInputMode,
+            message_id: insertedMessage?.id || null,
+          },
+        }),
+      ]);
+
+      setInputMode("text");
+      setLoadingState("System online");
+      sendingRef.current = false;
+      setSending(false);
+
+      if (!openedBrowserWindow) {
+        window.location.assign(browserOpenRequest.url);
+        return;
+      }
+
+      if (voiceModeRef.current && "speechSynthesis" in window) {
+        setVoiceState("speaking");
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(reply);
+        utterance.rate = 0.98;
+        utterance.pitch = 0.9;
+        const preferredVoice = await resolveKorbenVoice();
+        if (preferredVoice) utterance.voice = preferredVoice;
+        utterance.onend = () => {
+          voiceSubmittedRef.current = false;
+          if (conversationActiveRef.current) {
+            setVoiceState("listening");
+            armConversationTimeout();
+            window.setTimeout(() => {
+              try {
+                recognitionRef.current?.start();
+              } catch {}
+            }, 350);
+          } else {
+            returnToWakeStandby();
+          }
+        };
+        utterance.onerror = utterance.onend;
+        window.speechSynthesis.speak(utterance);
+      } else {
+        voiceSubmittedRef.current = false;
+        if (conversationActiveRef.current) {
+          setVoiceState("listening");
+          armConversationTimeout();
+        } else {
+          returnToWakeStandby();
+        }
+      }
+
+      return;
+    }
 
     let plan = fallbackPlan(text);
 
