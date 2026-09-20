@@ -7,7 +7,6 @@ import {
   type ProtectedAction,
   type VerifiedEffects,
 } from "../../../../lib/approval-policy";
-import { runBrowserInspection } from "../../../../lib/browser-inspection-runner";
 
 type ToolRequest = {
   tool_system_key?: string;
@@ -1259,6 +1258,7 @@ export async function POST(request: Request) {
       }
 
       const allowedOrigins = await browserAllowedOrigins(project, targetUrl);
+      const { runBrowserInspection } = await import("../../../../lib/browser-inspection-runner");
       result = await runBrowserInspection(params, allowedOrigins);
     } else {
       throw new Error("This tool adapter is registered but not implemented yet.");

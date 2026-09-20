@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { POST as executeToolRoute } from "../../tools/execute/route";
 
 type InputItem = Record<string, any>;
 
@@ -63,7 +64,7 @@ async function executeToolRequestWithRetry(
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      const response = await fetch(url, {
+      const toolRequest = new Request(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -71,6 +72,7 @@ async function executeToolRequestWithRetry(
         },
         body: JSON.stringify(body),
       });
+      const response = await executeToolRoute(toolRequest);
 
       const raw = await response.text();
       let result: any;
@@ -439,7 +441,7 @@ export async function POST(request: Request) {
 
   if (allowedToolKeys.includes("knowledge.search")) {
     try {
-      const knowledgeResponse = await fetch(
+      const knowledgeRequest = new Request(
         `${new URL(request.url).origin}/api/tools/execute`,
         {
           method: "POST",
@@ -463,6 +465,7 @@ export async function POST(request: Request) {
           }),
         }
       );
+      const knowledgeResponse = await executeToolRoute(knowledgeRequest);
 
       if (knowledgeResponse.ok) {
         const payload = await knowledgeResponse.json();
