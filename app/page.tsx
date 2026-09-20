@@ -131,6 +131,14 @@ type PlannedTask = {
   agent_system_key: string;
   acceptance_criteria: string[];
   approval_level: number;
+  stage: string;
+  parallel_group: number;
+};
+
+type PlannedOpenLoop = {
+  title: string;
+  detail: string;
+  waiting_on: string;
 };
 
 type OrchestrationPlan = {
@@ -140,6 +148,10 @@ type OrchestrationPlan = {
   title: string;
   summary: string;
   assistant_reply: string;
+  execution_mode: "sequential" | "fleet";
+  mission_summary: string;
+  open_loops: PlannedOpenLoop[];
+  resolved_loop_ids: string[];
   tasks: PlannedTask[];
 };
 
@@ -153,6 +165,46 @@ type Task = {
   result_summary?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
+  stage?: string | null;
+  parallel_group?: number;
+  progress_message?: string | null;
+  last_heartbeat_at?: string | null;
+};
+
+type OpenLoop = {
+  id: string;
+  title: string;
+  detail: string | null;
+  status: "open" | "waiting" | "closed";
+  waiting_on: string | null;
+  due_at: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolution: string | null;
+};
+
+type ActionReceipt = {
+  id: string;
+  objective_id: string | null;
+  task_id: string | null;
+  agent_id: string | null;
+  tool_system_key: string | null;
+  action: string;
+  status: string;
+  summary: string;
+  evidence: Record<string, any>;
+  created_at: string;
+};
+
+type NotificationRecord = {
+  id: string;
+  objective_id: string | null;
+  kind: string;
+  title: string;
+  body: string;
+  urgency: "low" | "normal" | "high";
+  status: "unread" | "read" | "held";
+  created_at: string;
 };
 
 const normalizeKorbenName = (value: string) =>
@@ -268,6 +320,7 @@ export default function Home() {
   const [focusLockTab, setFocusLockTab] = useState(false);
   const [focusInterruptions, setFocusInterruptions] = useState(0);
   const [focusReport, setFocusReport] = useState<string | null>(null);
+  const [focusSessionId, setFocusSessionId] = useState<string | null>(null);
   const [focusStreak, setFocusStreak] = useState(() => {
     if (typeof window === "undefined") return 0;
     return Number(window.localStorage.getItem("korben:focus-streak") || "0");
@@ -277,6 +330,11 @@ export default function Home() {
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [openLoops, setOpenLoops] = useState<OpenLoop[]>([]);
+  const [actionReceipts, setActionReceipts] = useState<ActionReceipt[]>([]);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const [missionSummary, setMissionSummary] = useState("");
+  const [missionExecutionMode, setMissionExecutionMode] = useState<"sequential" | "fleet">("sequential");
   const [activeObjective, setActiveObjective] = useState<string>("No active objective");
   const [activeObjectiveId, setActiveObjectiveId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -291,7 +349,14 @@ export default function Home() {
   const [speechSupported, setSpeechSupported] = useState(true);
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const [ambientClock, setAmbientClock] = useState(() => new Date());
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [dailyBriefing, setDailyBriefing] = useState("");
+  const [presenceState, setPresenceState] = useState<"present" | "idle" | "away">("present");
+  const [screenAware, setScreenAware] = useState(false);
+  const [screenSummary, setScreenSummary] = useState("");
   const recognitionRef = useRef<any>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const lastPresenceActivityRef = useRef(Date.now());
   const heldShortcutRef = useRef(false);
   const sendingRef = useRef(false);
   const voiceModeRef = useRef(false);
@@ -315,6 +380,172 @@ export default function Home() {
     const interval = window.setInterval(resolveAmbientClock, 60_000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if ("Notification" in window) {
+      setNotificationPermission(Notification.permission);
+    }
+
+    if ("serviceWorker" in navigator) {
+      void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    const markPresent = () => {
+      lastPresenceActivityRef.current = Date.now();
+      setPresenceState(document.hidden ? "away" : "present");
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        setPresenceState("away");
+      } else {
+        markPresent();
+      }
+    };
+
+    window.addEventListener("pointerdown", markPresent);
+    window.addEventListener("keydown", markPresent);
+    window.addEventListener("mousemove", markPresent, { passive: true });
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    const interval = window.setInterval(() => {
+      if (document.hidden) {
+        setPresenceState("away");
+        return;
+      }
+
+      const idleFor = Date.now() - lastPresenceActivityRef.current;
+      setPresenceState(idleFor > 5 * 60_000 ? "idle" : "present");
+    }, 15_000);
+
+    return () => {
+      window.removeEventListener("pointerdown", markPresent);
+      window.removeEventListener("keydown", markPresent);
+      window.removeEventListener("mousemove", markPresent);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!signedIn || !projectId) return;
+
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const storageKey = `korben:daily-briefing:${projectId}:${dayKey}`;
+    if (window.localStorage.getItem(storageKey) === "1") return;
+
+    const activeCount = tasks.filter((task) => ["queued", "in_progress", "awaiting_approval"].includes(task.status)).length;
+    const waitingCount = openLoops.filter((loop) => loop.status === "waiting").length;
+    const parts = [
+      openLoops.length ? `${openLoops.length} open loop${openLoops.length === 1 ? "" : "s"}` : "no open loops",
+      activeCount ? `${activeCount} active mission step${activeCount === 1 ? "" : "s"}` : "no active mission steps",
+      waitingCount ? `${waitingCount} waiting on someone else` : "",
+    ].filter(Boolean);
+
+    setDailyBriefing(`Today: ${parts.join(" · ")}.`);
+    window.localStorage.setItem(storageKey, "1");
+  }, [openLoops, projectId, signedIn, tasks]);
+
+  useEffect(() => {
+    const unreadCount = notifications.filter((item) => item.status === "unread").length;
+    if (typeof (navigator as any).setAppBadge === "function") {
+      if (unreadCount > 0) {
+        void (navigator as any).setAppBadge(unreadCount);
+      } else if (typeof (navigator as any).clearAppBadge === "function") {
+        void (navigator as any).clearAppBadge();
+      }
+    }
+  }, [notifications]);
+
+  useEffect(() => {
+    if (!signedIn || !notifications.length || notificationPermission !== "granted") return;
+
+    const seenKey = "korben:browser-notification-seen";
+    const seen = new Set<string>(
+      JSON.parse(window.localStorage.getItem(seenKey) || "[]")
+    );
+
+    const fresh = notifications
+      .filter((item) => item.status === "unread" && !seen.has(item.id))
+      .slice(0, 5);
+
+    for (const item of fresh) {
+      new Notification(item.title, {
+        body: item.body,
+        icon: "/icon.svg",
+        tag: item.id,
+      });
+      seen.add(item.id);
+    }
+
+    window.localStorage.setItem(seenKey, JSON.stringify([...seen].slice(-200)));
+  }, [notificationPermission, notifications, signedIn]);
+
+  useEffect(() => {
+    if (!screenAware || !screenStreamRef.current) return;
+
+    let cancelled = false;
+
+    const capture = async () => {
+      const stream = screenStreamRef.current;
+      const track = stream?.getVideoTracks()[0];
+      if (!stream || !track || track.readyState !== "live" || cancelled) return;
+
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+
+      try {
+        await video.play();
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+
+        const width = Math.min(1280, video.videoWidth || 1280);
+        const scale = width / Math.max(video.videoWidth || width, 1);
+        const height = Math.max(1, Math.round((video.videoHeight || 720) * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(video, 0, 0, width, height);
+        const image = canvas.toDataURL("image/jpeg", 0.55);
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+
+        const response = await fetch("/api/awareness/screen", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ image }),
+        });
+
+        if (response.ok) {
+          const payload = await response.json();
+          if (payload?.summary) setScreenSummary(String(payload.summary));
+        }
+      } catch {
+        // Screen awareness is intentionally best-effort.
+      } finally {
+        video.pause();
+        video.srcObject = null;
+      }
+    };
+
+    void capture();
+    const interval = window.setInterval(capture, 12_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [screenAware, supabase]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -443,7 +674,7 @@ export default function Home() {
 
       const { data: objective } = await supabase
         .from("objectives")
-        .select("id,title,status,created_at")
+        .select("id,title,status,created_at,execution_mode,mission_summary,report_back")
         .eq("project_id", project.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -452,12 +683,17 @@ export default function Home() {
       if (objective) {
         setActiveObjective(objective.title);
         setActiveObjectiveId(objective.id);
+        setMissionSummary(objective.mission_summary || "");
+        setMissionExecutionMode(objective.execution_mode === "fleet" ? "fleet" : "sequential");
         const { data: taskRows } = await supabase
           .from("tasks")
-          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
+          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at,stage,parallel_group,progress_message,last_heartbeat_at")
           .eq("objective_id", objective.id)
           .order("sequence");
         setTasks(taskRows || []);
+      } else {
+        setMissionSummary("");
+        setMissionExecutionMode("sequential");
       }
 
       const { data: projectObjectives } = await supabase
@@ -487,6 +723,32 @@ export default function Home() {
         .limit(100);
 
       setRunEvents(eventRows || []);
+
+      const [{ data: loopRows }, { data: receiptRows }, { data: notificationRows }] = await Promise.all([
+        supabase
+          .from("open_loops")
+          .select("id,title,detail,status,waiting_on,due_at,created_at,resolved_at,resolution")
+          .eq("project_id", project.id)
+          .neq("status", "closed")
+          .order("created_at", { ascending: false })
+          .limit(30),
+        supabase
+          .from("action_receipts")
+          .select("id,objective_id,task_id,agent_id,tool_system_key,action,status,summary,evidence,created_at")
+          .eq("project_id", project.id)
+          .order("created_at", { ascending: false })
+          .limit(40),
+        supabase
+          .from("notifications")
+          .select("id,objective_id,kind,title,body,urgency,status,created_at")
+          .eq("project_id", project.id)
+          .order("created_at", { ascending: false })
+          .limit(40),
+      ]);
+
+      setOpenLoops((loopRows || []) as OpenLoop[]);
+      setActionReceipts((receiptRows || []) as ActionReceipt[]);
+      setNotifications((notificationRows || []) as NotificationRecord[]);
 
       const { data: sourceRows } = await supabase
         .from("knowledge_sources")
@@ -522,7 +784,7 @@ export default function Home() {
     const refreshWorkstream = async () => {
       const { data: objective } = await supabase
         .from("objectives")
-        .select("id,title")
+        .select("id,title,execution_mode,mission_summary,report_back")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -530,10 +792,17 @@ export default function Home() {
 
       if (cancelled || !objective) return;
 
-      const [{ data: taskRows }, { data: eventRows }, { data: agentRows }] = await Promise.all([
+      const [
+        { data: taskRows },
+        { data: eventRows },
+        { data: agentRows },
+        { data: loopRows },
+        { data: receiptRows },
+        { data: notificationRows },
+      ] = await Promise.all([
         supabase
           .from("tasks")
-          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at")
+          .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at,stage,parallel_group,progress_message,last_heartbeat_at")
           .eq("objective_id", objective.id)
           .order("sequence"),
         supabase
@@ -546,14 +815,59 @@ export default function Home() {
           .from("agents")
           .select("id,name,role,status,system_key,department_id")
           .order("name"),
+        supabase
+          .from("open_loops")
+          .select("id,title,detail,status,waiting_on,due_at,created_at,resolved_at,resolution")
+          .eq("project_id", projectId)
+          .neq("status", "closed")
+          .order("created_at", { ascending: false })
+          .limit(30),
+        supabase
+          .from("action_receipts")
+          .select("id,objective_id,task_id,agent_id,tool_system_key,action,status,summary,evidence,created_at")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(40),
+        supabase
+          .from("notifications")
+          .select("id,objective_id,kind,title,body,urgency,status,created_at")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(40),
       ]);
 
       if (cancelled) return;
       setActiveObjective(objective.title);
       setActiveObjectiveId(objective.id);
+      setMissionSummary(objective.mission_summary || "");
+      setMissionExecutionMode(objective.execution_mode === "fleet" ? "fleet" : "sequential");
       setTasks((taskRows || []) as Task[]);
       setRunEvents((eventRows || []) as RunEvent[]);
       setAgents((agentRows || []) as Agent[]);
+      setOpenLoops((loopRows || []) as OpenLoop[]);
+      setActionReceipts((receiptRows || []) as ActionReceipt[]);
+      setNotifications((notificationRows || []) as NotificationRecord[]);
+
+      if (conversationId) {
+        const { data: messageRows } = await supabase
+          .from("messages")
+          .select("id,role,content,input_mode,created_at")
+          .eq("conversation_id", conversationId)
+          .in("role", ["user", "assistant"])
+          .order("created_at", { ascending: true })
+          .limit(120);
+
+        if (!cancelled && messageRows?.length) {
+          setMessages(
+            messageRows.map((row) => ({
+              id: row.id,
+              role: row.role as "user" | "assistant",
+              text: row.content,
+              inputMode: row.input_mode === "voice" ? "voice" : "text",
+            }))
+          );
+        }
+      }
     };
 
     void refreshWorkstream();
@@ -563,7 +877,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [projectId, signedIn, supabase]);
+  }, [conversationId, projectId, signedIn, supabase]);
 
   useEffect(() => {
     const SpeechRecognition =
@@ -831,6 +1145,11 @@ export default function Home() {
     setSignedIn(false);
     setMessages([fallbackGreeting]);
     setTasks([]);
+    setOpenLoops([]);
+    setActionReceipts([]);
+    setNotifications([]);
+    setMissionSummary("");
+    setMissionExecutionMode("sequential");
     setProjectId(null);
     setConversationId(null);
     setActiveObjective("No active objective");
@@ -862,7 +1181,7 @@ export default function Home() {
     }
   };
 
-  const startFocus = () => {
+  const startFocus = async () => {
     const minutes = Math.max(1, Math.min(240, Number(focusMinutes) || 30));
     setFocusMinutes(minutes);
     setFocusRemaining(minutes * 60);
@@ -871,19 +1190,117 @@ export default function Home() {
     setFocusPaused(false);
     setFocusRunning(true);
     setLoadingState("Focus session active");
+
+    if (projectId) {
+      const { data } = await supabase
+        .from("focus_sessions")
+        .insert({
+          project_id: projectId,
+          goal: focusGoal || "Focused work",
+          duration_minutes: minutes,
+          status: "active",
+          interruptions: 0,
+        })
+        .select("id")
+        .single();
+
+      if (data?.id) setFocusSessionId(data.id);
+    }
   };
 
-  const endFocus = () => {
+  const endFocus = async () => {
     const elapsedSeconds = Math.max(0, focusMinutes * 60 - focusRemaining);
     const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const report = `Focus session ended after ${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} on ${focusGoal || "your priority"}, with ${focusInterruptions} detected tab drift${focusInterruptions === 1 ? "" : "s"}.`;
 
     setFocusRunning(false);
     setFocusPaused(false);
     setFocusLockTab(false);
-    setFocusReport(
-      `Focus session ended after ${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} on ${focusGoal || "your priority"}, with ${focusInterruptions} detected tab drift${focusInterruptions === 1 ? "" : "s"}.`
-    );
+    setFocusReport(report);
     setLoadingState("System online");
+
+    if (focusSessionId) {
+      await supabase
+        .from("focus_sessions")
+        .update({
+          status: "complete",
+          interruptions: focusInterruptions,
+          ended_at: new Date().toISOString(),
+          report,
+        })
+        .eq("id", focusSessionId);
+      setFocusSessionId(null);
+    }
+
+    if (projectId) {
+      const { data: held } = await supabase
+        .from("notifications")
+        .select("id,title,body,urgency")
+        .eq("project_id", projectId)
+        .eq("status", "held")
+        .order("created_at", { ascending: true });
+
+      if (held?.length) {
+        await supabase
+          .from("notifications")
+          .update({ status: "unread" })
+          .in("id", held.map((item) => item.id));
+
+        const digest =
+          held.length === 1
+            ? held[0].body
+            : `While you were focused, ${held.length} updates came in. ${held
+                .slice(0, 3)
+                .map((item) => item.body)
+                .join(" ")}`;
+
+        setMessages((current) => [...current, { role: "assistant", text: digest }]);
+
+        if (conversationId) {
+          await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            role: "assistant",
+            content: digest,
+            input_mode: "system",
+          });
+        }
+      }
+    }
+  };
+
+  const enableNotifications = async () => {
+    if (!("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+  };
+
+  const toggleScreenAwareness = async () => {
+    if (screenAware) {
+      screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
+      setScreenAware(false);
+      setScreenSummary("");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      screenStreamRef.current = stream;
+      setScreenAware(true);
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        screenStreamRef.current = null;
+        setScreenAware(false);
+        setScreenSummary("");
+      });
+    } catch {
+      setScreenAware(false);
+    }
   };
 
   const toggleVoiceMode = () => {
@@ -930,12 +1347,18 @@ export default function Home() {
     summary: requestText,
     assistant_reply:
       "I could not reach the intent router, so I preserved this as structured work without executing any external action.",
+    execution_mode: "sequential",
+    mission_summary: requestText,
+    open_loops: [],
+    resolved_loop_ids: [],
     tasks: [
       {
         title: "Product Spec",
         description: "Define requirements and acceptance criteria",
         agent_system_key: "product_manager",
         acceptance_criteria: ["Requirements are explicit and testable."],
+        stage: "Plan",
+        parallel_group: 0,
         approval_level: 0,
       },
       {
@@ -943,6 +1366,8 @@ export default function Home() {
         description: "Map dependencies and implementation path",
         agent_system_key: "solutions_architect",
         acceptance_criteria: ["Architecture and dependencies are documented."],
+        stage: "Recon",
+        parallel_group: 0,
         approval_level: 0,
       },
       {
@@ -950,6 +1375,8 @@ export default function Home() {
         description: "Implement the requested change on a feature branch",
         agent_system_key: "frontend_engineer",
         acceptance_criteria: ["Requested behavior is implemented."],
+        stage: "Build",
+        parallel_group: 0,
         approval_level: 1,
       },
       {
@@ -957,6 +1384,8 @@ export default function Home() {
         description: "Test behavior, permissions and regressions",
         agent_system_key: "qa_engineer",
         acceptance_criteria: ["Acceptance criteria pass without critical regressions."],
+        stage: "Verify",
+        parallel_group: 0,
         approval_level: 0,
       },
       {
@@ -964,6 +1393,8 @@ export default function Home() {
         description: "Ship a Vercel preview for owner review",
         agent_system_key: "devops_engineer",
         acceptance_criteria: ["A preview deployment is available for review."],
+        stage: "Release",
+        parallel_group: 0,
         approval_level: 1,
       },
     ],
@@ -1049,6 +1480,11 @@ export default function Home() {
     setProjectId(null);
     setConversationId(null);
     setTasks([]);
+    setOpenLoops([]);
+    setActionReceipts([]);
+    setNotifications([]);
+    setMissionSummary("");
+    setMissionExecutionMode("sequential");
     setActiveObjective("No active objective");
     setActiveObjectiveId(null);
     setMessages([fallbackGreeting]);
@@ -1268,6 +1704,20 @@ export default function Home() {
             role: message.role,
             content: message.text,
           })),
+          activeOpenLoops: openLoops
+            .filter((loop) => loop.status !== "closed")
+            .slice(0, 30)
+            .map((loop) => ({
+              id: loop.id,
+              title: loop.title,
+              detail: loop.detail,
+              waiting_on: loop.waiting_on,
+            })),
+          ambientContext: {
+            presence: presenceState,
+            screen_summary: screenAware ? screenSummary : "",
+            focus_active: focusRunning && !focusPaused,
+          },
         }),
       });
 
@@ -1322,6 +1772,8 @@ export default function Home() {
           description: plan.summary || text,
           status: "planned",
           priority: "normal",
+          execution_mode: plan.execution_mode || "sequential",
+          mission_summary: plan.mission_summary || plan.summary || text,
         })
         .select("id,title")
         .single();
@@ -1332,6 +1784,8 @@ export default function Home() {
     if (objective) {
       setActiveObjective(objective.title);
       setActiveObjectiveId(objective.id);
+      setMissionSummary(plan.mission_summary || plan.summary || "");
+      setMissionExecutionMode(plan.execution_mode === "fleet" ? "fleet" : "sequential");
 
       const taskRows = plan.tasks.map((task, index) => ({
         objective_id: objective.id,
@@ -1342,12 +1796,15 @@ export default function Home() {
         status: "queued",
         sequence: index + 1,
         acceptance_criteria: task.acceptance_criteria,
+        stage: task.stage || "Operate",
+        parallel_group: Number(task.parallel_group || 0),
+        progress_message: `Queued for ${task.stage || "execution"}.`,
       }));
 
       const { data } = await supabase
         .from("tasks")
         .insert(taskRows)
-        .select("id,title,description,status,sequence,assigned_agent_id")
+        .select("id,title,description,status,sequence,assigned_agent_id,result_summary,started_at,completed_at,stage,parallel_group,progress_message,last_heartbeat_at")
         .order("sequence");
 
       createdTasks = data || [];
@@ -1399,6 +1856,51 @@ export default function Home() {
       });
     }
 
+    if (plan.open_loops?.length) {
+      const existingTitles = new Set(
+        openLoops
+          .filter((loop) => loop.status !== "closed")
+          .map((loop) => loop.title.trim().toLowerCase())
+      );
+
+      const loopRows = plan.open_loops
+        .slice(0, 8)
+        .filter((loop) => !existingTitles.has(loop.title.trim().toLowerCase()))
+        .map((loop) => ({
+          project_id: executionProjectId,
+          conversation_id:
+            executionProjectId === resolvedProjectId ? resolvedConversationId : null,
+          source_message_id:
+            executionProjectId === resolvedProjectId ? insertedMessage?.id || null : null,
+          title: loop.title,
+          detail: loop.detail || null,
+          status: loop.waiting_on ? "waiting" : "open",
+          waiting_on: loop.waiting_on || null,
+        }));
+
+      if (loopRows.length) {
+        await supabase.from("open_loops").insert(loopRows);
+      }
+    }
+
+    if (plan.resolved_loop_ids?.length) {
+      const validLoopIds = openLoops
+        .filter((loop) => plan.resolved_loop_ids.includes(loop.id))
+        .map((loop) => loop.id);
+
+      if (validLoopIds.length) {
+        await supabase
+          .from("open_loops")
+          .update({
+            status: "closed",
+            resolved_at: new Date().toISOString(),
+            resolution: `Resolved from conversation: ${text.slice(0, 500)}`,
+            updated_at: new Date().toISOString(),
+          })
+          .in("id", validLoopIds);
+      }
+    }
+
     await supabase
       .from("conversations")
       .update({ updated_at: new Date().toISOString() })
@@ -1439,6 +1941,8 @@ export default function Home() {
           task_count: createdTasks.length,
           intent: plan.intent,
           requires_execution: plan.requires_execution,
+          execution_mode: plan.execution_mode,
+          mission_summary: plan.mission_summary,
           target_project_slug: routedProject?.slug || null,
         },
       },
@@ -1661,7 +2165,7 @@ export default function Home() {
   const viewTitle =
     activeView === "command" ? "Command Center" :
     activeView === "network" ? "Agent Network" :
-    activeView === "work" ? "Work Routing" :
+    activeView === "work" ? "Mission Control" :
     activeView === "workstream" ? "Delegation Feed" :
     activeView === "runs" ? "Runs & Activity" :
     activeView === "brain" ? "Brain & Memory" :
@@ -1806,7 +2310,7 @@ export default function Home() {
 
           <div className="korben-home-account">
             <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-            <span className="presence-dot" />
+            <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
             <button className="account-trigger" onClick={signOut} title="Sign out">Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span></button>
           </div>
         </header>
@@ -1845,6 +2349,35 @@ export default function Home() {
           </div>
 
           <aside className="korben-home-sidecar" aria-label="Korben conversation and delegation">
+            {dailyBriefing && (
+              <section className="home-briefing-card">
+                <div>
+                  <span>DAILY BRIEFING</span>
+                  <strong>{dailyBriefing}</strong>
+                </div>
+                <small>{presenceState === "away" ? "Korben is staying quiet while you're away." : "Korben is keeping the day organized."}</small>
+              </section>
+            )}
+
+            <div className="home-awareness-strip">
+              <button className={screenAware ? "active" : ""} onClick={() => void toggleScreenAwareness()}>
+                <i />
+                {screenAware ? "Screen aware" : "Share screen context"}
+              </button>
+              {notificationPermission !== "granted" && notificationPermission !== "unsupported" ? (
+                <button onClick={() => void enableNotifications()}>Enable alerts</button>
+              ) : (
+                <span>{notifications.filter((item) => item.status === "unread").length} updates</span>
+              )}
+            </div>
+
+            {screenAware && screenSummary && (
+              <div className="home-screen-context">
+                <span>VISIBLE CONTEXT</span>
+                <p>{screenSummary}</p>
+              </div>
+            )}
+
             {latestUserMessage && (
               <div className="korben-live-transcript" aria-live="polite">
                 <div className="transcript-line user">
@@ -1864,7 +2397,7 @@ export default function Home() {
               <section className="home-delegation-feed" aria-label="Delegation activity">
                 <div className="home-delegation-header">
                   <div>
-                    <span>DELEGATION</span>
+                    <span>{missionExecutionMode === "fleet" ? "FLEET MISSION" : "DELEGATION"}</span>
                     <strong>{activeObjective}</strong>
                   </div>
                   <button onClick={() => setActiveView("workstream")}>View all</button>
@@ -1875,11 +2408,11 @@ export default function Home() {
                     const agent = agentById(task.assigned_agent_id);
                     const taskEvent = runEvents.find((event) => event.task_id === task.id);
                     const statusText =
-                      task.status === "in_progress" ? "Working" :
+                      task.status === "in_progress" ? `${task.stage || "Working"}` :
                       task.status === "awaiting_approval" ? "Waiting on you" :
                       task.status === "complete" ? "Complete" :
                       task.status === "failed" ? "Needs attention" :
-                      "Queued";
+                      task.stage || "Queued";
 
                     return (
                       <button
@@ -1895,9 +2428,10 @@ export default function Home() {
                             <strong>{agent?.name || "Korben agent"}</strong>
                             <small>{statusText}</small>
                           </span>
-                          <p>{task.status === "complete"
-                            ? task.result_summary || taskEvent?.message || task.title
-                            : taskEvent?.message || task.title}
+                          <p>{task.progress_message ||
+                            (task.status === "complete"
+                              ? task.result_summary || taskEvent?.message || task.title
+                              : taskEvent?.message || task.title)}
                           </p>
                         </span>
                         <i className={task.status} />
@@ -1906,6 +2440,37 @@ export default function Home() {
                   })}
                 </div>
               </section>
+            )}
+
+            {openLoops.length > 0 && (
+              <section className="home-open-loops" aria-label="Open loops">
+                <div className="home-delegation-header">
+                  <div>
+                    <span>OPEN LOOPS</span>
+                    <strong>{openLoops.length} still unresolved</strong>
+                  </div>
+                  <button onClick={() => setActiveView("work")}>Review</button>
+                </div>
+                <div className="home-loop-list">
+                  {openLoops.slice(0, 3).map((loop) => (
+                    <div className="home-loop-row" key={loop.id}>
+                      <i className={loop.status} />
+                      <div>
+                        <strong>{loop.title}</strong>
+                        <small>{loop.waiting_on ? `Waiting on ${loop.waiting_on}` : loop.detail || "Open"}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {actionReceipts.length > 0 && (
+              <button className="home-latest-receipt" onClick={() => setActiveView("work")}>
+                <span>PROOF OF WORK</span>
+                <strong>{actionReceipts[0].summary}</strong>
+                <small>{new Date(actionReceipts[0].created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small>
+              </button>
             )}
           </aside>
         </main>
@@ -2028,8 +2593,8 @@ export default function Home() {
       <div className="view-heading">
         <div>
           <span className="eyebrow">ROUTING LEDGER</span>
-          <h1>Work Routing</h1>
-          <p>See what Korben has routed, who owns it, and where each task sits in the workflow.</p>
+          <h1>Mission Control</h1>
+          <p>See the mission outcome, the agents Korben delegated to, live stages, proof of action, and anything still open.</p>
         </div>
         <div className="metric-strip">
           <div><strong>{tasks.length}</strong><span>Current tasks</span></div>
@@ -2037,6 +2602,23 @@ export default function Home() {
           <div><strong>{tasks.filter((task) => task.status === "complete").length}</strong><span>Complete</span></div>
         </div>
       </div>
+
+      {activeObjectiveId && (
+        <section className="mission-banner">
+          <div className="mission-banner-main">
+            <span className="eyebrow">ACTIVE MISSION</span>
+            <h2>{activeObjective}</h2>
+            <p>{missionSummary || "Korben is coordinating this mission."}</p>
+          </div>
+          <div className="mission-banner-meta">
+            <span className={`mission-mode ${missionExecutionMode}`}>
+              {missionExecutionMode === "fleet" ? "Fleet · parallel agents" : "Sequential mission"}
+            </span>
+            <strong>{progress}%</strong>
+            <small>{completedTasks} of {tasks.length} steps complete</small>
+          </div>
+        </section>
+      )}
 
       {approvals.some((approval) => approval.status === "pending") && (
         <section className="approval-panel">
@@ -2100,7 +2682,7 @@ export default function Home() {
                 const latestEvent = runEvents.find((event) => event.task_id === task.id);
                 const statusCopy =
                   task.status === "in_progress"
-                    ? latestEvent?.message || `${owner?.name || "Agent"} is working on this now.`
+                    ? task.progress_message || latestEvent?.message || `${owner?.name || "Agent"} is working on this now.`
                     : task.status === "complete"
                       ? task.result_summary || latestEvent?.message || "Completed."
                       : task.status === "awaiting_approval"
@@ -2113,6 +2695,7 @@ export default function Home() {
                   <article className={`task-card task-card-${task.status}`} key={task.id}>
                     <div className="task-card-topline">
                       <span className="task-sequence">#{task.sequence}</span>
+                      <span className="task-stage-pill">{task.stage || "Operate"}</span>
                       <span className={`task-status-pill ${task.status}`}>
                         {task.status === "in_progress"
                           ? "Working"
@@ -2153,6 +2736,59 @@ export default function Home() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="mission-support-grid">
+        <section className="mission-support-card">
+          <div className="mission-support-head">
+            <div>
+              <span className="eyebrow">OPEN LOOPS</span>
+              <h3>Still unresolved</h3>
+            </div>
+            <b>{openLoops.length}</b>
+          </div>
+          <div className="mission-loop-list">
+            {openLoops.slice(0, 8).map((loop) => (
+              <article key={loop.id}>
+                <i className={loop.status} />
+                <div>
+                  <strong>{loop.title}</strong>
+                  <p>{loop.detail || "Waiting for resolution."}</p>
+                  {loop.waiting_on && <small>Waiting on {loop.waiting_on}</small>}
+                </div>
+              </article>
+            ))}
+            {!openLoops.length && <div className="lane-empty">No unresolved loops.</div>}
+          </div>
+        </section>
+
+        <section className="mission-support-card">
+          <div className="mission-support-head">
+            <div>
+              <span className="eyebrow">ACTION RECEIPTS</span>
+              <h3>Proof of work</h3>
+            </div>
+            <b>{actionReceipts.length}</b>
+          </div>
+          <div className="mission-receipt-list">
+            {actionReceipts.slice(0, 8).map((receipt) => {
+              const owner = agentById(receipt.agent_id);
+              return (
+                <article key={receipt.id}>
+                  <span>{owner ? owner.name.slice(0, 2).toUpperCase() : "K"}</span>
+                  <div>
+                    <strong>{receipt.summary}</strong>
+                    <small>
+                      {receipt.tool_system_key || "Korben"} · {new Date(receipt.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                    </small>
+                  </div>
+                  <i className={receipt.status} />
+                </article>
+              );
+            })}
+            {!actionReceipts.length && <div className="lane-empty">Receipts appear after Korben takes real actions.</div>}
+          </div>
+        </section>
       </div>
     </section>
   );
@@ -2228,7 +2864,7 @@ export default function Home() {
                       <span>Delegated to {agent?.name || "an agent"}</span>
                     </div>
                     <p>{task.title}</p>
-                    {task.description && <small>{task.description}</small>}
+                    {task.description && <small>{task.stage || "Operate"} · {task.description}</small>}
                   </div>
                 </article>
 
@@ -2250,8 +2886,8 @@ export default function Home() {
                       </>
                     ) : task.status === "in_progress" ? (
                       <>
-                        <p>{event?.message || `Working on ${task.title.toLowerCase()}.`}</p>
-                        <small>Live status · updates automatically</small>
+                        <p>{task.progress_message || event?.message || `Working on ${task.title.toLowerCase()}.`}</p>
+                        <small>{task.stage || "Operate"} · live status updates automatically</small>
                       </>
                     ) : task.status === "awaiting_approval" ? (
                       <>
@@ -2649,7 +3285,7 @@ export default function Home() {
 
         <div className="korben-home-account">
           <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
-          <span className="presence-dot" />
+          <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
           <button className="account-trigger" onClick={signOut} title="Sign out">
             Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
           </button>

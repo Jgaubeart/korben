@@ -116,7 +116,7 @@ export async function POST(request: Request) {
   const { data: task, error: taskError } = await supabase
     .from("tasks")
     .select(
-      "id,title,description,status,sequence,acceptance_criteria,assigned_agent_id,objective_id"
+      "id,title,description,status,sequence,acceptance_criteria,assigned_agent_id,objective_id,stage,parallel_group,progress_message,last_heartbeat_at,started_at"
     )
     .eq("id", taskId)
     .maybeSingle();
@@ -320,7 +320,9 @@ export async function POST(request: Request) {
       .from("tasks")
       .update({
         status: "in_progress",
-        started_at: new Date().toISOString(),
+        started_at: task.started_at || new Date().toISOString(),
+        progress_message: `Working · ${task.stage || "Operate"}`,
+        last_heartbeat_at: new Date().toISOString(),
       })
       .eq("id", task.id),
     supabase.from("agents").update({ status: "working" }).eq("id", agent.id),
@@ -334,6 +336,8 @@ export async function POST(request: Request) {
       message: `${agent.name} started ${task.title}`,
       payload: {
         allowed_tools: allowedToolKeys,
+        stage: task.stage || "Operate",
+        parallel_group: task.parallel_group || 0,
       },
     }),
   ]);
@@ -429,6 +433,7 @@ export async function POST(request: Request) {
     `Objective: ${objective.title}`,
     objective.description ? `Objective context: ${objective.description}` : "",
     `Task: ${task.title}`,
+    `Mission stage: ${task.stage || "Operate"}`,
     task.description ? `Task details: ${task.description}` : "",
     `Acceptance criteria: ${safeJson(task.acceptance_criteria || [])}`,
     `Allowed tools: ${allowedToolKeys.join(", ") || "none"}`,
@@ -554,6 +559,30 @@ export async function POST(request: Request) {
           .maybeSingle();
 
         const approvalId = latestApproved?.id || null;
+
+        await Promise.all([
+          supabase
+            .from("tasks")
+            .update({
+              progress_message: `${task.stage || "Operate"} · ${toolKey}:${action}`,
+              last_heartbeat_at: new Date().toISOString(),
+            })
+            .eq("id", task.id),
+          supabase.from("run_events").insert({
+            run_id: runId,
+            project_id: project.id,
+            task_id: task.id,
+            agent_id: agent.id,
+            event_type: "stage_progress",
+            status: "running",
+            message: `${task.stage || "Operate"} · ${toolKey}:${action}`,
+            payload: {
+              stage: task.stage || "Operate",
+              tool: toolKey,
+              action,
+            },
+          }),
+        ]);
 
         const toolResponse = await fetch(
           `${new URL(request.url).origin}/api/tools/execute`,
@@ -686,6 +715,13 @@ export async function POST(request: Request) {
                 ? "complete"
                 : "failed",
           result_summary: finalText,
+          progress_message:
+            finalStatus === "waiting_approval"
+              ? "Waiting for your approval."
+              : finalStatus === "complete"
+                ? `${task.stage || "Operate"} complete · ${finalText.slice(0, 220)}`
+                : `Blocked · ${finalText.slice(0, 220)}`,
+          last_heartbeat_at: new Date().toISOString(),
           completed_at:
             finalStatus === "complete" ? new Date().toISOString() : null,
         })
@@ -729,6 +765,8 @@ export async function POST(request: Request) {
         .update({
           status: "failed",
           result_summary: message,
+          progress_message: `Blocked · ${message.slice(0, 220)}`,
+          last_heartbeat_at: new Date().toISOString(),
         })
         .eq("id", task.id),
       supabase.from("agents").update({ status: "idle" }).eq("id", agent.id),
