@@ -103,12 +103,12 @@ export async function runBrowserInspection(
   const origins = normalizeOrigins(allowedOrigins);
   const requestOrigins = new Set(origins);
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    const supabaseOrigin = new URL(supabaseUrl).origin;
-    await assertPublicHostname(new URL(supabaseOrigin));
-    requestOrigins.add(supabaseOrigin);
-  }
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    "https://gojgwlnoefbpfvuffxof.supabase.co";
+  const supabaseOrigin = new URL(supabaseUrl).origin;
+  await assertPublicHostname(new URL(supabaseOrigin));
+  requestOrigins.add(supabaseOrigin);
 
   if (!origins.length) {
     throw new Error("No browser origins are authorized for this project.");
