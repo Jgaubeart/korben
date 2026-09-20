@@ -1989,6 +1989,7 @@ export default function Home() {
             slug: project.slug,
             github_repo: project.github_repo,
             vercel_project_id: project.vercel_project_id,
+            setup_instructions: project.setup_instructions,
           })),
           conversationSummary,
           recentMessages: messages.slice(-12).map((message) => ({
@@ -2563,6 +2564,175 @@ export default function Home() {
     root.dataset.theme = next;
     window.localStorage.setItem("korben:theme", next);
   };
+
+  const switchProject = (slug: string) => {
+    if (slug === "__manage__") {
+      window.location.assign("/projects");
+      return;
+    }
+
+    if (!projects.some((project) => project.slug === slug)) return;
+
+    window.localStorage.setItem("korben:selected-project", slug);
+    setSelectedProjectSlug(slug);
+    setActiveObjective("No active objective");
+    setActiveObjectiveId(null);
+    setTasks([]);
+    setApprovals([]);
+    setRunEvents([]);
+    setOpenLoops([]);
+    setActionReceipts([]);
+    setNotifications([]);
+  };
+
+  const refreshProjects = async () => {
+    const { data } = await supabase
+      .from("projects")
+      .select("id,name,slug,github_repo,vercel_project_id,setup_instructions")
+      .eq("status", "active")
+      .order("name");
+
+    setProjects((data || []) as ProjectRecord[]);
+    return (data || []) as ProjectRecord[];
+  };
+
+  const resetProjectForm = () => {
+    setEditingProjectId(null);
+    setProjectNameDraft("");
+    setProjectInstructionsDraft("");
+    setProjectGithubDraft("");
+    setProjectVercelDraft("");
+    setProjectError("");
+  };
+
+  const saveProject = async () => {
+    const name = projectNameDraft.trim();
+    if (!name) {
+      setProjectError("Give the project a name.");
+      return;
+    }
+
+    setProjectBusy(true);
+    setProjectError("");
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in again to manage projects.");
+
+      const response = await fetch("/api/projects", {
+        method: editingProjectId ? "PATCH" : "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: editingProjectId,
+          name,
+          setup_instructions: projectInstructionsDraft,
+          github_repo: projectGithubDraft,
+          vercel_project_id: projectVercelDraft,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not save project.");
+
+      const updated = await refreshProjects();
+      const saved = payload?.project as ProjectRecord | undefined;
+      if (saved && !editingProjectId) {
+        window.localStorage.setItem("korben:selected-project", saved.slug);
+        setSelectedProjectSlug(saved.slug);
+      } else if (saved?.slug === selectedProjectSlug) {
+        setCurrentProjectName(saved.name);
+      }
+      resetProjectForm();
+
+      if (!updated.some((project) => project.slug === selectedProjectSlug) && saved) {
+        setSelectedProjectSlug(saved.slug);
+      }
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : "Could not save project.");
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const editProject = (project: ProjectRecord) => {
+    setEditingProjectId(project.id);
+    setProjectNameDraft(project.name);
+    setProjectInstructionsDraft(project.setup_instructions || "");
+    setProjectGithubDraft(project.github_repo || "");
+    setProjectVercelDraft(project.vercel_project_id || "");
+    setProjectError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const deleteProject = async (project: ProjectRecord) => {
+    if (["general-workspace", "korben-os"].includes(project.slug)) return;
+
+    const confirmed = window.confirm(
+      `Delete ${project.name}? Its Korben conversations, missions, receipts, and project-scoped history will also be removed.`
+    );
+    if (!confirmed) return;
+
+    setProjectBusy(true);
+    setProjectError("");
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sign in again to manage projects.");
+
+      const response = await fetch("/api/projects", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: project.id }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not delete project.");
+
+      await refreshProjects();
+
+      if (selectedProjectSlug === project.slug) {
+        window.localStorage.setItem("korben:selected-project", "general-workspace");
+        setSelectedProjectSlug("general-workspace");
+      }
+
+      if (editingProjectId === project.id) resetProjectForm();
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : "Could not delete project.");
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const renderAccountControls = () => (
+    <div className="korben-home-account">
+      <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle light and dark mode">☼</button>
+      <span className={`presence-dot ${presenceState}`} title={`Presence: ${presenceState}`} />
+      <label className="project-switcher-wrap">
+        <span>Project</span>
+        <select
+          value={selectedProjectSlug}
+          onChange={(event) => switchProject(event.target.value)}
+          aria-label="Choose active project"
+        >
+          {projects.map((project) => (
+            <option value={project.slug} key={project.id}>{project.name}</option>
+          ))}
+          <option value="__manage__">Manage projects…</option>
+        </select>
+      </label>
+      <button className="account-trigger" onClick={signOut} title="Sign out">
+        Good {ambientClock.getHours() < 12 ? "morning" : ambientClock.getHours() < 18 ? "afternoon" : "evening"}, Jordan <span>⌄</span>
+      </button>
+    </div>
+  );
 
   const renderCommandCenter = () => {
     const pendingApprovalCount = approvals.filter((approval) => approval.status === "pending").length;
