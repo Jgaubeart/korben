@@ -1,0 +1,160 @@
+:root {
+  --type-display: clamp(1.75rem, 2vw + 1rem, 2rem);
+  --type-section: clamp(1.375rem, 1vw + 1rem, 1.5rem);
+  --type-heading: 1.125rem;
+  --type-body: 1rem;
+  --type-control: 0.875rem;
+  --type-support: 0.875rem;
+  --type-meta: 0.8125rem;
+  --type-label: 0.75rem;
+}
+
+html {
+  font-size: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-size: var(--type-body);
+  line-height: 1.6;
+}
+
+p, li, dd, td, th { line-height: 1.55; }
+
+h1 { font-size: var(--type-display); line-height: 1.18; }
+h2 { font-size: var(--type-section); line-height: 1.25; }
+h3, h4 { font-size: var(--type-heading); line-height: 1.3; }
+
+button, input, select, textarea {
+  font-size: var(--type-control);
+  line-height: 1.45;
+}
+
+small {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+/* Korben previously used 7–11px operational copy throughout the shell.
+   Keep its compact hierarchy while making every meaningful label readable. */
+.os-shell :where(p, li, td, th),
+.zen-app-page :where(p, li, td, th),
+.auth-shell :where(p, li) {
+  font-size: max(1em, var(--type-support));
+}
+
+.os-shell :where(span, small, label, button, input, select, textarea),
+.zen-app-page :where(span, small, label, button, input, select, textarea),
+.auth-shell :where(span, small, label, button, input, select, textarea),
+.site-navbar :where(span, small, label, button, select, a),
+.korben-shell :where(span, small, label, button, input) {
+  font-size: max(1em, var(--type-label));
+  line-height: 1.4;
+}
+
+.os-nav button,
+.site-navbar a,
+.site-navbar button,
+.site-navbar select,
+.project-card-actions button,
+.project-panel-head button,
+.project-save-button {
+  font-size: var(--type-control);
+  line-height: 1.4;
+}
+
+.view-heading p,
+.project-manager-heading p,
+.project-card p,
+.rail-message p,
+.auth-copy p,
+.core-status p {
+  font-size: var(--type-support);
+  line-height: 1.55;
+}
+
+.rail-message p { font-size: var(--type-body); }
+
+.eyebrow,
+.nav-section,
+.topbar-kicker,
+.footer-label,
+.project-card-kicker,
+.project-manager-current small,
+.metric-strip span {
+  font-size: var(--type-label);
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+}
+
+.sidebar-brand small,
+.sidebar-system small,
+.rail-live,
+.rail-message-meta span,
+.rail-message-meta small,
+.agent-detail span,
+.department-header span,
+.department-header b,
+.network-orchestrator span,
+.network-orchestrator p,
+.project-connection-row span,
+.project-field small,
+.project-boundary-note,
+.project-form-error {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+.sidebar-brand strong,
+.sidebar-system strong,
+.agent-detail strong,
+.department-header h2,
+.network-orchestrator strong,
+.topbar-title {
+  font-size: var(--type-control);
+  line-height: 1.4;
+}
+
+.project-field > span,
+.auth-form label {
+  font-size: var(--type-control);
+  line-height: 1.4;
+}
+
+.project-field input,
+.project-field textarea,
+.auth-form input {
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+
+/* Larger copy must wrap instead of clipping inside dense operational rows. */
+.os-shell :where(.rail-footer strong, .agent-detail, .network-orchestrator, .department-header, .project-connection-row),
+.zen-app-page :where(.project-card, .project-manager-current, .project-field),
+.site-navbar :where(a, button, label) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.os-shell :where(.network-agent, .department-header, .rail-footer, .metric-strip > div),
+.zen-app-page :where(.project-card, .project-connection-row) {
+  min-height: max-content;
+}
+
+@media (max-width: 680px) {
+  button, input, select, textarea,
+  .os-nav button,
+  .site-navbar a,
+  .site-navbar button,
+  .site-navbar select,
+  .project-card-actions button {
+    font-size: var(--type-body);
+  }
+
+  .os-shell :where(p, li, td, th),
+  .zen-app-page :where(p, li, td, th),
+  .auth-shell :where(p, li) {
+    overflow-wrap: anywhere;
+  }
+}
